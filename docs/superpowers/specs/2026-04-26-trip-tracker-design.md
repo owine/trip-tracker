@@ -17,7 +17,7 @@ A self-hosted itinerary aggregator that replaces TripIt for a household. Forward
 - **Household sharing**: multiple authenticated users, with co-traveler trips that auto-merge bookings from any traveler's email
 - **Public share links** (read-only, sanitized by default, revocable, optional expiration/password)
 - **PWA** (installable, offline view of upcoming segments, web push for parser-confirms)
-- **ICS subscribable feed**, world map of trip route, document vault (boarding passes, etc.), per-trip expense tracking with frozen FX, weather forecast at destination
+- **ICS subscribable feed**, world map of trip route, document vault (boarding passes, etc.) **with text extraction + OCR for full-text search**, per-trip expense tracking with frozen FX, weather forecast at destination
 - **Self-hosted, Docker-based**, designed to fit a Traefik + Authelia stack with no cloud dependencies (other than the Anthropic API and forwardemail.net's webhook)
 
 ### Non-Goals (v1, deferred)
@@ -181,7 +181,11 @@ documents (
   size_bytes     bigint,
   storage_key    text,                  -- '<sha256[:2]>/<sha256>'
   sha256         text,
-  category       text                   -- boarding_pass|visa|voucher|other
+  category       text,                  -- boarding_pass|visa|voucher|other
+  extracted_text text,                  -- pdfplumber output OR tesseract OCR
+  extract_status text,                  -- pending|extracted|ocr|failed|empty
+  extract_method text,                  -- 'pdfplumber' | 'tesseract' | 'none'
+  extracted_at   timestamptz
 )
 
 expenses (
@@ -252,6 +256,17 @@ Six stages, all idempotent. Each can be re-run independently from stored MIME.
 ### Re-parse
 
 `POST /api/segments/:id/reparse` and bulk `arq reparse --since=DATE`. Original segments are versioned, not destroyed. Used when adding a provider rule, swapping the LLM, or fixing a bug.
+
+### Document text extraction (separate pipeline)
+
+Triggered on document upload (and as a backfill ARQ job for existing documents). Steps per document:
+
+1. **Try `pdfplumber`** for PDFs (or skip for non-PDF). If extracted text per page ≥ 50 chars on average → store as `extract_method='pdfplumber'`, status `'extracted'`.
+2. **Fall back to Tesseract** (`pytesseract`) for empty PDF results, scanned PDFs (rasterize via `pdf2image`), and images (PNG/JPG/HEIC). Lang pack: `eng+fra+deu+spa+ita+jpn+chi_sim` (configurable via `OCR_LANGS` env). Status `'ocr'`. Slow (2–5s/page) but async — UI doesn't wait.
+3. On failure → `'failed'` with no text. On a PDF with truly no extractable content → `'empty'`.
+4. After extraction, enqueue a Meilisearch sync for that document so it's searchable in ⌘K.
+
+Tesseract is a system package in the worker image only (~50MB). The web app container does not need it.
 
 ---
 
@@ -349,6 +364,8 @@ The `/share` and `/api/ingest/email` routers are wired with **no shared dependen
 | LLM              | Anthropic Python SDK, Claude Haiku 4.5 (`claude-haiku-4-5-20251001`), prompt caching enabled on system prompt |
 | Email parsing    | `mail-parser` (RFC 822) + `extruct` (JSON-LD) + custom rules           |
 | Document storage | `Protocol` adapter: `LocalFsStorage` or `S3Storage` (`aioboto3`)       |
+| PDF text         | `pdfplumber` (text-based PDFs, fast, free)                              |
+| OCR              | Tesseract via `pytesseract` (scanned PDFs + images), langs: `eng+fra+deu+spa+ita+jpn+chi_sim` |
 | Map              | Leaflet + OpenStreetMap tiles                                          |
 | Weather          | Open-Meteo (keyless)                                                   |
 | FX rates         | Frankfurter (ECB, keyless)                                             |
@@ -426,9 +443,7 @@ Meilisearch is a **derived index**, not a system of record. Every searchable val
 |---|---|---|---|
 | `segments` | `segments` (joined w/ `trips`, `users`) | provider, confirmation_number, flight_number, hotel name, route (e.g. "JFK → CDG"), notes | trip_id, owner_user_id, traveler_ids[], type, year, status |
 | `trips` | `trips` (joined w/ `trip_travelers`, agg of `segments.primary_destination`) | title, primary_destination, notes, destinations[] | traveler_ids[], year |
-| `documents` | `documents` (filename + extracted text v2) | filename, category | trip_id, owner_user_id |
-
-Documents content extraction (PDF text → searchable) is deferred to v2.
+| `documents` | `documents` (filename + `extracted_text`) | filename, extracted_text, category | trip_id, owner_user_id, extract_method |
 
 ### Sync mechanism
 
@@ -555,6 +570,7 @@ Effect: weekly grouped patch/minor + digest PRs auto-merge after CI; majors get 
 - **Email provider coverage** beyond v1 set — add as needed via new rule modules. Each one is ~50 LOC.
 - **Live flight status** (v2) — likely AeroAPI; needs decision on cost model (per-poll vs per-trip).
 - **Travel stats** (v2) — countries visited, miles flown, etc. Pure SQL over existing data, fast follow.
+- **Claude vision ingestion** (v2) — `POST /api/ingest/image` endpoint accepts uploaded photos/screenshots; PWA share-sheet target on iOS/Android; image goes through the parse-strategy ladder using Claude Haiku 4.5 vision (4th strategy: `llm-vision:haiku-4-5`). Turns the phone camera into another forwarder. ~3× the per-email cost of text Haiku (~$0.015/image), still trivial at household scale.
 - **Multi-leg flight detection** — single email with 2+ legs. Schema supports it (multiple segments per `raw_email_id`); needs care in clustering.
 - **Cancellations** — confirmation emails for cancellations should mark existing segments `cancelled` rather than create new ones. Match by confirmation_number + provider.
 - **Gate / terminal updates** — could come via email *or* a future flight-status integration.
@@ -590,7 +606,7 @@ Suggested order, each phase shippable:
 7. **Meilisearch integration** — sync jobs, ⌘K palette, scoped tenant tokens. Replaces ILIKE in trip/segment lists.
 8. **PWA shell + offline cache.**
 9. **Map + weather.**
-10. **Documents + S3 backend.**
+10. **Documents + S3 backend + text extraction (pdfplumber + Tesseract).**
 11. **Expenses + FX.**
 12. **Public share links + sanitized view.**
 13. **ICS feed.**
