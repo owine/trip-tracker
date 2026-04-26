@@ -141,7 +141,17 @@ segments (
   parse_source        text,             -- json-ld | rules:delta | llm:haiku-4-5 | manual
   parse_confidence    float,            -- 0..1; <0.7 → review queue
   search_text         tsvector,         -- generated, FTS index
-  raw_email_id        uuid FK NULL
+  raw_email_id        uuid FK NULL,
+  superseded_by       uuid FK NULL          -- self-FK; non-null means a newer version exists
+)
+
+segment_versions (                          -- audit trail for manual edits + re-parse
+  id              uuid PK,
+  segment_id      uuid FK,                  -- the *current* segment row
+  snapshot_jsonb  jsonb,                    -- full prior row at the moment of change
+  changed_by      uuid FK,                  -- user who edited, or NULL for parser
+  change_reason   text,                     -- 'manual_edit' | 'reparse' | 'inbox_confirm'
+  created_at      timestamptz
 )
 
 raw_emails (
@@ -232,7 +242,7 @@ Six stages, all idempotent. Each can be re-run independently from stored MIME.
    - **3b. Provider rules** — match `From:` against handlers. v1 set: Delta, United, American, Southwest, Marriott, Hilton, Hyatt, IHG, Hertz, Avis, National, Enterprise, Amtrak, Booking.com, Airbnb. (Avis covers Avis + Budget; Enterprise covers Enterprise + National + Alamo.) Confidence ~0.9.
    - **3c. Claude Haiku 4.5** — last resort. System prompt + few-shot examples (cached via prompt caching). Body sent via tool-use with `Segment` JSON schema. Model self-rates confidence, clamped ≤0.85. Cost: ~$0.005/email; ~$0.25/year at household scale.
 4. **Normalize + enrich** — Resolve airport codes → IANA tz + lat/lon (static `airports.csv`). Geocode hotel addresses (cached, OSM Nominatim, low rate). Normalize provider names.
-5. **Cluster into a trip** — Find existing trip where `(date_overlap OR adjacent±1d) AND (location proximity OR shared traveler with overlapping trip)`. Otherwise create new with auto-title `"{primary_destination} {month year}"`.
+5. **Cluster into a trip** — Find existing trip where `(date_overlap OR adjacent±1d) AND (location proximity OR shared traveler with overlapping trip)`. **Tiebreak:** if multiple existing trips match, pick the one whose date range center is closest to the segment's start. If the score gap to the next-best match is < 20%, route the segment to `/inbox` for manual disambiguation instead of guessing. Otherwise create a new trip with auto-title `"{primary_destination} {month year}"`.
 6. **Outcome:**
    - `confidence ≥ 0.7` → `parsed`, visible in timeline, owner gets web-push notification.
    - `confidence < 0.7` → `review` → `/inbox` queue.
@@ -259,7 +269,11 @@ PWA. Mobile-first. Server-rendered HTML via Jinja + HTMX for interactivity. Tail
 2. **Trips** — list. Big cards on mobile (cover color, dates, destination), compact rows on desktop. Filters: upcoming / past / shared with me.
 3. **Trip detail** — vertical day-grouped timeline of segments. Time on left rail, type icon + provider + key details in each card. Tap → segment detail (raw email link, documents, edit, re-parse). Co-traveler avatar tag visible on segments contributed by another traveler.
 4. **Map** — Leaflet + OSM tiles (no API key). Pins for location-having segments + curved arcs for flight routes. Weather card pinned to current/upcoming destination (Open-Meteo).
-5. **Inbox** — review queue. Three buckets: low-confidence parses (confirm/edit/discard), no-segments emails (view raw / re-parse / discard), possible duplicates (merge / keep both / discard). Empty inbox = parser working.
+5. **Inbox** — review queue. Three buckets: low-confidence parses, no-segments emails, possible duplicates.
+   - **Low-confidence parses** open into an editable form **pre-filled with whatever the parser extracted** (even partial). Each pre-filled field shows a small "AI-suggested" indicator (✨ icon + tooltip with the source: `json-ld` / `rules:delta` / `llm:haiku-4-5`); user-confirmed fields drop the indicator. The raw email is shown side-by-side (collapsible iframe sandbox of the HTML body, or plain-text fallback) so the user can verify against the source. Actions: **Confirm** (accept all current values, status → parsed), **Edit** (modify fields, then confirm), **Re-ask Claude with hint** (one-line text input → re-runs Haiku with the hint appended to the prompt, repopulates the form), **Split** (this email actually contains multiple segments — opens a multi-segment editor), **Discard** (mark email as `parse_status='no_segments'`, no segment created).
+   - **No-segments emails:** view raw / re-parse / "Add segment manually" (empty form pre-populated only with sender → provider guess and email date → start date) / Discard.
+   - **Possible duplicates:** merge / keep both / discard.
+   - All edits via the inbox flow are recorded in `segment_versions` with `change_reason='inbox_confirm'` for audit and undo. Empty inbox = parser working.
 6. **Trip → Documents** — list + upload + view. Boarding passes, visas, vouchers. Served via short-TTL presigned URLs when on S3, X-Sendfile-style on local FS.
 7. **Trip → Expenses** — line items, category breakdown, currency-aware. FX frozen at entry.
 8. **Settings** — household members (admin only), forwarding aliases (admin), theme toggle, ICS feed URL, share token management.
@@ -307,7 +321,12 @@ Generate 32-byte token via `secrets.token_urlsafe(32)`. Store `sha256(token)` in
 /share/<token>           EXEMPT — token-verified, read-only router
 /auth/callback           EXEMPT — OIDC redirect
 /healthz                 EXEMPT — health check
+/ics/<user_token>.ics    EXEMPT — per-user signed token (32-byte, regenerable in Settings)
 ```
+
+A second host, `search.trips.yourdomain.com`, fronts the **Meilisearch** container directly via Traefik (no Authelia). It is auth'd by **scoped Meilisearch tenant tokens** issued by FastAPI (signed JWT, scoped to the user's `traveler_ids`, 1h TTL). See §8.5. The Meilisearch master key never leaves the app container.
+
+ICS feed URLs include a 32-byte `user_token` stored hashed on the user row. Regenerable from Settings (rotates the URL); revocation is just regeneration.
 
 The `/share` and `/api/ingest/email` routers are wired with **no shared dependencies** on session-auth machinery. They cannot accidentally inherit a logged-in user's permissions.
 
@@ -567,14 +586,14 @@ Suggested order, each phase shippable:
 3. **Parsers** — JSON-LD path → 1-2 provider rules (Delta, Marriott as exemplars) → Haiku fallback.
 4. **Trip clustering** — auto-cluster + manual split/merge.
 5. **Day-of view + timeline** — the headline UI.
-6. **Inbox / review queue.**
-7. **PWA shell + offline cache.**
-8. **Map + weather.**
-9. **Documents + S3 backend.**
-10. **Expenses + FX.**
-11. **Public share links + sanitized view.**
-12. **ICS feed.**
-13. **Remaining provider parsers** (United, AA, Southwest, Hilton, Hyatt, IHG, Hertz, Avis, Enterprise, Amtrak, Booking.com, Airbnb).
-14. **Web push notifications.**
-15. **Meilisearch integration** — sync jobs, ⌘K palette, scoped tenant tokens.
+6. **Inbox / review queue** — pre-filled editable form, AI-suggested indicators, Re-ask-with-hint, segment_versions audit trail. Until phase 7 lands, list/search uses Postgres ILIKE on `search_text`.
+7. **Meilisearch integration** — sync jobs, ⌘K palette, scoped tenant tokens. Replaces ILIKE in trip/segment lists.
+8. **PWA shell + offline cache.**
+9. **Map + weather.**
+10. **Documents + S3 backend.**
+11. **Expenses + FX.**
+12. **Public share links + sanitized view.**
+13. **ICS feed.**
+14. **Remaining provider parsers** (United, AA, Southwest, Hilton, Hyatt, IHG, Hertz, Avis, Enterprise, Amtrak, Booking.com, Airbnb).
+15. **Web push notifications.**
 16. **Polish, dark mode, settings, stats.**
