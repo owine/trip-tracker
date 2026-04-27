@@ -25,6 +25,9 @@ build/
 # Tailwind output (built in CI; shipped in image)
 src/trip_tracker/static/tailwind.css
 
+# Tailwind standalone binary
+.tailwind/
+
 # Environment
 .env
 .env.local

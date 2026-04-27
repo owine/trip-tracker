@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+  {% if user %}
+    <h1 class="text-3xl font-semibold">Hello, {{ user.display_name }}</h1>
+    <p class="mt-4 text-zinc-600 dark:text-zinc-400">
+      You're signed in. <a class="underline" href="/auth/logout">Sign out</a>.
+    </p>
+  {% else %}
+    <h1 class="text-3xl font-semibold">trip-tracker</h1>
+    <p class="mt-4 text-zinc-600 dark:text-zinc-400">
+      <a class="underline" href="/auth/login">Sign in</a> to see your trips.
+    </p>
+  {% endif %}
+{% endblock %}
