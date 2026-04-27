@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from unittest.mock import patch
 
 import pytest
 
@@ -48,10 +49,10 @@ def test_wrong_secret_raises() -> None:
 
 
 def test_expired_cookie_raises() -> None:
-    cookie = encode_session(
-        SessionPayload(user_id=uuid.uuid4(), oidc_subject="s"),
-        secret="x" * 32,
-        max_age=-1,
-    )
+    secret = "x" * 32
+    payload = SessionPayload(user_id=uuid.uuid4(), oidc_subject="s")
+    # Sign the cookie at fake epoch=0 so any positive decode max_age sees it expired.
+    with patch("time.time", return_value=0.0):
+        cookie = encode_session(payload, secret=secret, max_age=3600)
     with pytest.raises(SessionExpired):
-        decode_session(cookie, secret="x" * 32, max_age=1)
+        decode_session(cookie, secret=secret, max_age=3600)
