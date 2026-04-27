@@ -1,39 +1,89 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", ":dependencyDashboard"],
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":automergeDigest",
+    "helpers:pinGitHubActionDigests",
+    "security:openssf-scorecard"
+  ],
   "schedule": ["before 6am on monday"],
   "timezone": "America/Los_Angeles",
   "labels": ["dependencies"],
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 10,
+  "rebaseWhen": "behind-base-branch",
+  "configMigration": true,
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "automerge": true,
+    "minimumReleaseAge": "0 days"
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
   "packageRules": [
     {
+      "description": "Group + automerge patch & minor Python deps",
+      "matchManagers": ["pep621"],
       "matchUpdateTypes": ["patch", "minor"],
-      "matchManagers": ["pep621", "pip_requirements"],
       "groupName": "python (patch+minor)",
       "automerge": true
     },
     {
+      "description": "Auto-pin and bump docker image digests",
       "matchManagers": ["dockerfile", "docker-compose"],
       "matchUpdateTypes": ["digest", "pinDigest"],
       "groupName": "docker digests",
       "automerge": true
     },
     {
+      "description": "Auto-merge GitHub Action patch/minor/digest bumps after a 3-day soak",
       "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["patch", "minor", "digest"],
+      "matchUpdateTypes": ["patch", "minor", "digest", "pinDigest"],
       "groupName": "github-actions",
+      "automerge": true,
+      "minimumReleaseAge": "3 days"
+    },
+    {
+      "description": "Auto-merge pre-commit hook patch/minor bumps",
+      "matchManagers": ["pre-commit"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "pre-commit hooks",
       "automerge": true
     },
     {
+      "description": "Major bumps always need human review and a 7-day soak",
       "matchUpdateTypes": ["major"],
       "automerge": false,
-      "addLabels": ["needs-review"]
+      "addLabels": ["needs-review"],
+      "minimumReleaseAge": "7 days"
     },
     {
-      "matchPackageNames": ["python", "postgres"],
+      "description": "Flag the runtime/data-tier majors so they stand out on the dashboard",
+      "matchPackageNames": ["python", "postgres", "/^postgres:/", "/python:.*-slim/"],
       "matchUpdateTypes": ["major"],
       "addLabels": ["breaking", "needs-review"]
+    },
+    {
+      "description": "uv ships frequently and we trust the upstream — auto-merge non-major",
+      "matchPackageNames": ["ghcr.io/astral-sh/uv"],
+      "matchUpdateTypes": ["patch", "minor", "digest", "pinDigest"],
+      "automerge": true
     }
   ],
-  "vulnerabilityAlerts": { "labels": ["security"], "automerge": true },
-  "lockFileMaintenance": { "enabled": true, "schedule": ["before 6am on monday"] }
+  "customManagers": [
+    {
+      "description": "Track standalone Tailwind CLI version pinned in build-tailwind.sh",
+      "customType": "regex",
+      "fileMatch": ["^scripts/build-tailwind\\.sh$"],
+      "matchStrings": ["VERSION=\"(?<currentValue>v[0-9.]+)\""],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "tailwindlabs/tailwindcss",
+      "extractVersionTemplate": "^(?<version>v.+)$"
+    }
+  ]
 }
