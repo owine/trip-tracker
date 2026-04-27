@@ -34,9 +34,8 @@ async def db_session(db_url: str) -> AsyncIterator[AsyncSession]:
     # Create schema for every test session — Phase 1 only has `users`,
     # so we bring it up via metadata.create_all rather than running Alembic
     # in test (Alembic is exercised by its own test in Task 6).
+    import trip_tracker.models.user  # noqa: F401  (register mapper)
     from trip_tracker.models.base import Base
-
-    # Task 5: add `import trip_tracker.models.user` here to register the mapper.
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
