@@ -1,0 +1,39 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":dependencyDashboard"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "America/Los_Angeles",
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["patch", "minor"],
+      "matchManagers": ["pep621", "pip_requirements"],
+      "groupName": "python (patch+minor)",
+      "automerge": true
+    },
+    {
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "matchUpdateTypes": ["digest", "pinDigest"],
+      "groupName": "docker digests",
+      "automerge": true
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["patch", "minor", "digest"],
+      "groupName": "github-actions",
+      "automerge": true
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "addLabels": ["needs-review"]
+    },
+    {
+      "matchPackageNames": ["python", "postgres"],
+      "matchUpdateTypes": ["major"],
+      "addLabels": ["breaking", "needs-review"]
+    }
+  ],
+  "vulnerabilityAlerts": { "labels": ["security"], "automerge": true },
+  "lockFileMaintenance": { "enabled": true, "schedule": ["before 6am on monday"] }
+}
