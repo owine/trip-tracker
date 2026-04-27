@@ -1,1 +1,30 @@
 .superpowers/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Tailwind output (built in CI; shipped in image)
+src/trip_tracker/static/tailwind.css
+
+# Environment
+.env
+.env.local
