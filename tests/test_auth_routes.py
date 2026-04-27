@@ -8,8 +8,8 @@ import respx
 from authlib.jose import RSAKey, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from trip_tracker.app import create_app
 
+from trip_tracker.app import create_app
 from trip_tracker.models.user import User
 
 ISSUER = "https://auth.example.com"
@@ -68,27 +68,31 @@ async def test_callback_creates_user_and_sets_session(
     id_token, jwks = signed_id_token
     app = create_app()
     transport = httpx.ASGITransport(app=app)
-    with respx.mock(assert_all_called=False) as router:
-        router.get(f"{ISSUER}/.well-known/openid-configuration").mock(
-            return_value=httpx.Response(200, json=DISC)
-        )
-        router.post(DISC["token_endpoint"]).mock(
-            return_value=httpx.Response(200, json={
-                "id_token": id_token, "access_token": "at",
-                "token_type": "Bearer", "expires_in": 3600,
-            })
-        )
-        router.get(DISC["jwks_uri"]).mock(return_value=httpx.Response(200, json=jwks))
-
-        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
-            r = await client.get(
-                "/auth/callback",
-                params={"code": "thecode", "state": "thestate"},
-                cookies={"tt_oauth_state": "thestate", "tt_oauth_pkce": "v" * 64},
-                follow_redirects=False,
+    async with app.router.lifespan_context(app):
+        with respx.mock(assert_all_called=False) as router:
+            router.get(f"{ISSUER}/.well-known/openid-configuration").mock(
+                return_value=httpx.Response(200, json=DISC)
             )
-            assert r.status_code == 302
-            assert "tt_session" in r.cookies
+            router.post(DISC["token_endpoint"]).mock(
+                return_value=httpx.Response(200, json={
+                    "id_token": id_token, "access_token": "at",
+                    "token_type": "Bearer", "expires_in": 3600,
+                })
+            )
+            router.get(DISC["jwks_uri"]).mock(return_value=httpx.Response(200, json=jwks))
+
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://test",
+                cookies={"tt_oauth_state": "thestate", "tt_oauth_pkce": "v" * 64},
+            ) as client:
+                r = await client.get(
+                    "/auth/callback",
+                    params={"code": "thecode", "state": "thestate"},
+                    follow_redirects=False,
+                )
+                assert r.status_code == 302
+                assert "tt_session" in r.cookies
 
     # User upserted, marked admin (first user).
     user = (
