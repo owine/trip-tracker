@@ -1,0 +1,17 @@
+.git
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+.tailwind
+.env
+.env.local
+docs/
+tests/
+.github/
+.superpowers/
+.pre-commit-config.yaml
