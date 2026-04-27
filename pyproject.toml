@@ -100,11 +100,16 @@ filterwarnings = [
 [tool.coverage.run]
 source = ["src/trip_tracker"]
 branch = true
+omit = ["src/trip_tracker/__main__.py"]
 
 [tool.coverage.report]
 fail_under = 85
 show_missing = true
 skip_covered = false
+exclude_also = [
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
 
 [tool.bandit]
 exclude_dirs = ["tests", "migrations"]

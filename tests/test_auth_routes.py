@@ -111,3 +111,63 @@ async def test_callback_creates_user_and_sets_session(
     ).scalar_one()
     assert user.is_admin is True
     assert user.email == "oliver@example.com"
+
+
+@pytest.mark.asyncio
+async def test_callback_state_mismatch_returns_400(
+    db_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        with respx.mock(assert_all_called=False) as router:
+            router.get(f"{ISSUER}/.well-known/openid-configuration").mock(
+                return_value=httpx.Response(200, json=DISC)
+            )
+            async with httpx.AsyncClient(
+                transport=transport,
+                base_url="http://test",
+                cookies={"tt_oauth_state": "expected", "tt_oauth_pkce": "v" * 64},
+            ) as client:
+                r = await client.get(
+                    "/auth/callback",
+                    params={"code": "x", "state": "tampered"},
+                    follow_redirects=False,
+                )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_callback_missing_oauth_cookies_returns_400(
+    db_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        with respx.mock(assert_all_called=False) as router:
+            router.get(f"{ISSUER}/.well-known/openid-configuration").mock(
+                return_value=httpx.Response(200, json=DISC)
+            )
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                r = await client.get(
+                    "/auth/callback",
+                    params={"code": "x", "state": "y"},
+                    follow_redirects=False,
+                )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_logout_redirects_to_end_session() -> None:
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+    with respx.mock(assert_all_called=False) as router:
+        router.get(f"{ISSUER}/.well-known/openid-configuration").mock(
+            return_value=httpx.Response(200, json=DISC)
+        )
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.get("/auth/logout", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == DISC["end_session_endpoint"]
