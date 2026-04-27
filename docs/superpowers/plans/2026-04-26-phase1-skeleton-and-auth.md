@@ -175,7 +175,6 @@ dev = [
     "pytest-postgresql>=6.1",
     "psycopg[binary]>=3.2",            # used by pytest-postgresql
     "respx>=0.21",                     # mock httpx
-    "playwright>=1.48",                # smoke E2E (used by CI)
     "ruff>=0.7",
     "mypy>=1.13",
     "types-passlib",
@@ -1882,8 +1881,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
 
     # Static files (Tailwind output ships baked into the image).
-    static_dir = "src/trip_tracker/static"
-    app.mount("/static", StaticFiles(directory=static_dir, check_dir=False), name="static")
+    # Use a path computed from __file__ so the app works regardless of CWD.
+    from pathlib import Path
+    static_dir = Path(__file__).parent / "static"
+    app.mount("/static", StaticFiles(directory=str(static_dir), check_dir=False), name="static")
 
     app.include_router(health_router)
     app.include_router(auth_router)
@@ -2118,7 +2119,11 @@ from trip_tracker.auth.deps import current_user
 from trip_tracker.models.user import User
 
 router = APIRouter()
-templates = Jinja2Templates(directory="src/trip_tracker/templates")
+
+# Templates path computed from __file__ for CWD-independence.
+from pathlib import Path
+_TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 
 @router.get("/", response_class=HTMLResponse)
