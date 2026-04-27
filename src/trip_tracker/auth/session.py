@@ -6,8 +6,7 @@ import time
 import uuid
 from dataclasses import dataclass
 
-from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from itsdangerous.timed import TimestampSigner
+from itsdangerous import BadSignature, SignatureExpired, TimestampSigner, URLSafeTimedSerializer
 
 _SALT = "trip-tracker.session.v1"
 
@@ -34,6 +33,8 @@ class _OffsetTimestampSigner(TimestampSigner):
     """
 
     def __init__(self, *args: object, offset_seconds: int = 0, **kwargs: object) -> None:
+        if offset_seconds > 0:
+            raise ValueError("offset_seconds must be non-positive")
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
         self._offset_seconds = offset_seconds
 
@@ -44,14 +45,14 @@ class _OffsetTimestampSigner(TimestampSigner):
 def encode_session(payload: SessionPayload, *, secret: str, max_age: int) -> str:
     """Return a signed cookie value carrying the payload.
 
-    When ``max_age`` is negative the cookie is back-dated by ``|max_age|``
-    seconds so that ``decode_session`` will raise :exc:`SessionExpired`
-    immediately.  For non-negative ``max_age`` the value is informational;
-    expiry enforcement happens on decode.
+    When ``max_age`` is negative the cookie is back-dated by a large fixed
+    offset so that ``decode_session`` raises :exc:`SessionExpired` immediately,
+    regardless of the decode ``max_age``.  For non-negative ``max_age`` the
+    value is informational; expiry enforcement happens on decode.
     """
     # When max_age is negative, back-date the token far enough into the past
     # that any reasonable decode max_age will see it as expired.
-    offset = -86400 if max_age < 0 else 0
+    offset = -(10**9) if max_age < 0 else 0
     serializer = URLSafeTimedSerializer(
         secret,
         salt=_SALT,
@@ -75,4 +76,7 @@ def decode_session(cookie: str, *, secret: str, max_age: int) -> SessionPayload:
         raise SessionExpired(str(e)) from e
     except BadSignature as e:
         raise SessionTampered(str(e)) from e
-    return SessionPayload(user_id=uuid.UUID(data["uid"]), oidc_subject=data["sub"])
+    try:
+        return SessionPayload(user_id=uuid.UUID(data["uid"]), oidc_subject=data["sub"])
+    except (KeyError, ValueError) as e:
+        raise SessionTampered(str(e)) from e
