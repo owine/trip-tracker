@@ -16,7 +16,8 @@ from trip_tracker.models.user import User
 
 @pytest.mark.asyncio
 async def test_home_anonymous_shows_login(
-    db_url: str, monkeypatch: pytest.MonkeyPatch,
+    db_url: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", db_url)
     app = create_app()
@@ -32,14 +33,19 @@ async def test_home_anonymous_shows_login(
 
 @pytest.mark.asyncio
 async def test_home_logged_in_greets_user(
-    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession,
+    db_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: AsyncSession,
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
 
     user = User(
-        id=uuid.uuid4(), oidc_subject="s", email="o@example.com",
-        display_name="Oliver", is_admin=False,
+        id=uuid.uuid4(),
+        oidc_subject="s",
+        email="o@example.com",
+        display_name="Oliver",
+        is_admin=False,
     )
     db_session.add(user)
     await db_session.commit()

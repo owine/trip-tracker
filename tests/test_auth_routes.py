@@ -29,9 +29,13 @@ DISC = {
 @pytest.fixture
 def signed_id_token(monkeypatch: pytest.MonkeyPatch) -> tuple[str, dict]:  # type: ignore[type-arg]
     payload = {
-        "iss": ISSUER, "sub": "subj-1", "aud": "trip-tracker",
-        "exp": 9999999999, "iat": 1000000000,
-        "email": "oliver@example.com", "preferred_username": "oliver",
+        "iss": ISSUER,
+        "sub": "subj-1",
+        "aud": "trip-tracker",
+        "exp": 9999999999,
+        "iat": 1000000000,
+        "email": "oliver@example.com",
+        "preferred_username": "oliver",
         "groups": [],
     }
     key = RSAKey.generate_key(2048, is_private=True)
@@ -41,7 +45,8 @@ def signed_id_token(monkeypatch: pytest.MonkeyPatch) -> tuple[str, dict]:  # typ
 
 @pytest.mark.asyncio
 async def test_login_redirects_to_authorize(
-    db_url: str, monkeypatch: pytest.MonkeyPatch,
+    db_url: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", db_url)
     app = create_app()
@@ -60,7 +65,8 @@ async def test_login_redirects_to_authorize(
 
 @pytest.mark.asyncio
 async def test_callback_creates_user_and_sets_session(
-    db_url: str, monkeypatch: pytest.MonkeyPatch,
+    db_url: str,
+    monkeypatch: pytest.MonkeyPatch,
     signed_id_token: tuple[str, dict],  # type: ignore[type-arg]
     db_session: AsyncSession,
 ) -> None:
@@ -74,10 +80,15 @@ async def test_callback_creates_user_and_sets_session(
                 return_value=httpx.Response(200, json=DISC)
             )
             router.post(DISC["token_endpoint"]).mock(
-                return_value=httpx.Response(200, json={
-                    "id_token": id_token, "access_token": "at",
-                    "token_type": "Bearer", "expires_in": 3600,
-                })
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "id_token": id_token,
+                        "access_token": "at",
+                        "token_type": "Bearer",
+                        "expires_in": 3600,
+                    },
+                )
             )
             router.get(DISC["jwks_uri"]).mock(return_value=httpx.Response(200, json=jwks))
 

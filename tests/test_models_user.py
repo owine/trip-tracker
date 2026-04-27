@@ -64,6 +64,9 @@ async def test_alembic_upgrade_creates_users_table(db_url: str) -> None:
     }
     result = subprocess.run(  # noqa: ASYNC221
         ["uv", "run", "alembic", "upgrade", "head"],
-        env=env, capture_output=True, text=True, check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr

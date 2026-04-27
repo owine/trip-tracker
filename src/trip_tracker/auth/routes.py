@@ -73,9 +73,7 @@ async def callback(
     tt_oauth_pkce: str | None = Cookie(default=None),
 ) -> RedirectResponse:
     if not tt_oauth_state or not tt_oauth_pkce:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="missing oauth cookies"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="missing oauth cookies")
     if tt_oauth_state != state:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="state mismatch")
 
@@ -88,9 +86,7 @@ async def callback(
     ).scalar_one_or_none()
     if user is None:
         # First-user-is-admin or explicit group membership.
-        existing_count = (
-            await db.execute(select(func.count()).select_from(User))
-        ).scalar_one()
+        existing_count = (await db.execute(select(func.count()).select_from(User))).scalar_one()
         is_admin = existing_count == 0 or settings.admin_group in claims.groups
         user = User(
             oidc_subject=claims.sub,

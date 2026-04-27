@@ -79,12 +79,15 @@ async def test_exchange_code_returns_claims() -> None:
 
     with respx.mock(assert_all_called=False) as router:
         router.post(DISCOVERY["token_endpoint"]).mock(
-            return_value=httpx.Response(200, json={
-                "id_token": id_token,
-                "access_token": "at",
-                "token_type": "Bearer",
-                "expires_in": 3600,
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "id_token": id_token,
+                    "access_token": "at",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                },
+            )
         )
         router.get(DISCOVERY["jwks_uri"]).mock(return_value=httpx.Response(200, json=public_jwks))
 
