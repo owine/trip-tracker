@@ -8,7 +8,7 @@ import uvicorn
 def main() -> None:
     uvicorn.run(
         "trip_tracker.app:create_app",
-        host="0.0.0.0",  # noqa: S104  — bound inside container; reverse proxy enforces auth
+        host="0.0.0.0",  # noqa: S104  # nosec B104 - bound inside container; reverse proxy enforces auth
         port=8000,
         factory=True,
         proxy_headers=True,

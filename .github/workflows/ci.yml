@@ -8,6 +8,8 @@ on:
 permissions:
   contents: read
   security-events: write
+  pull-requests: read      # gitleaks/semgrep enumerate PR commits
+  actions: read            # semgrep reads workflow-runs API
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -124,7 +126,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           image-ref: trip-tracker:ci
           format: sarif
