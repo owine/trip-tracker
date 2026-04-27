@@ -1,0 +1,20 @@
+# Local development: skip Traefik, expose port 8000, mount source for live reload.
+services:
+  trip-tracker-app:
+    build: .
+    image: trip-tracker:dev
+    ports:
+      - "8000:8000"
+    environment:
+      LOG_FORMAT: console
+    labels: []                         # ignore traefik in dev
+    networks: [internal]
+    # No source mount in dev — uvicorn reload would require a different command;
+    # rebuild on change is simple and matches the prod entrypoint exactly.
+
+  trip-tracker-db:
+    ports:
+      - "5432:5432"
+
+networks:
+  internal:

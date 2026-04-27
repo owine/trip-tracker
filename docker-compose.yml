@@ -1,0 +1,52 @@
+# Phase 1 compose: app + postgres only. Worker, redis, meilisearch land in their phases.
+services:
+  trip-tracker-app:
+    image: ${TRIP_TRACKER_IMAGE:-ghcr.io/REPLACE_OWNER/trip-tracker:latest}
+    restart: unless-stopped
+    depends_on:
+      trip-tracker-db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      SESSION_SECRET: ${SESSION_SECRET}
+      OIDC_ISSUER: ${OIDC_ISSUER}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
+      BASE_URL: ${BASE_URL}
+      ADMIN_GROUP: ${ADMIN_GROUP:-trip-tracker:admin}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      TZ: ${TZ:-UTC}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.trip.rule=Host(`${TRIP_HOST:-trips.example.com}`)"
+      - "traefik.http.routers.trip.entrypoints=websecure"
+      - "traefik.http.routers.trip.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.trip.middlewares=authelia@docker"
+      - "traefik.http.services.trip.loadbalancer.server.port=8000"
+    networks: [proxy, internal]
+
+  trip-tracker-db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trip
+      POSTGRES_DB: trip
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - trip-tracker-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trip -d trip"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+volumes:
+  trip-tracker-pg:
+
+networks:
+  proxy:
+    external: true
+  internal:
