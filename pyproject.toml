@@ -94,6 +94,7 @@ addopts = "-ra --strict-markers --strict-config"
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning:passlib.*",
+    "ignore::DeprecationWarning:authlib.*",
 ]
 
 [tool.coverage.run]
