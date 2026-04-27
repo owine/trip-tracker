@@ -10,11 +10,10 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from trip_tracker.config import Settings
-from trip_tracker.models.base import Base
-
 # Import all models so metadata is populated.
 import trip_tracker.models.user  # noqa: F401
+from trip_tracker.config import Settings
+from trip_tracker.models.base import Base
 
 config = context.config
 
