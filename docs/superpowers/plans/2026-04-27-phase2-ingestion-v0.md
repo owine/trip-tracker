@@ -887,14 +887,21 @@ class RawEmail(Base):
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-    to_address: Mapped[str] = mapped_column(String(320), nullable=False, index=True)
+    # Note: NO `index=True` on these columns — the Alembic migration creates
+    # the indexes with explicit names. Setting `index=True` here would cause
+    # SQLAlchemy's metadata naming convention (from models/base.py) to also
+    # auto-create an index, colliding with the migration on the same column.
+    # `unique=True` on message_id is fine because Alembic creates the unique
+    # *constraint* (named `uq_raw_emails_message_id`) which Postgres backs
+    # with a btree — different name space from `ix_*` indexes.
+    to_address: Mapped[str] = mapped_column(String(320), nullable=False)
     from_address: Mapped[str] = mapped_column(String(320), nullable=False)
     subject: Mapped[str | None] = mapped_column(Text, nullable=True)
     message_id: Mapped[str] = mapped_column(String(998), unique=True, nullable=False)
     mime_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     headers: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     parse_status: Mapped[str] = mapped_column(
-        String(16), nullable=False, server_default="pending", index=True
+        String(16), nullable=False, server_default="pending"
     )
     parse_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -1367,10 +1374,12 @@ class Segment(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
+    # NO `index=True` on these columns — see RawEmail comment. Alembic owns
+    # all `ix_*` index creation; ORM-level index=True would collide.
     trip_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("trips.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
     )
     owner_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -1384,7 +1393,7 @@ class Segment(Base):
     confirmation_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider: Mapped[str | None] = mapped_column(String(128), nullable=True)
     start_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, index=True
+        DateTime(timezone=True), nullable=False
     )
     start_tz: Mapped[str] = mapped_column(String(64), nullable=False)
     end_at: Mapped[datetime | None] = mapped_column(
@@ -1398,7 +1407,11 @@ class Segment(Base):
     )
     parse_source: Mapped[str] = mapped_column(String(64), nullable=False)
     parse_confidence: Mapped[float] = mapped_column(Float(precision=53), nullable=False)
-    search_text: Mapped[Any] = mapped_column(
+    # `Mapped[str | None]`: SQLAlchemy's TSVECTOR adapter round-trips as text.
+    # Nullable in the ORM even though Postgres always populates it, because at
+    # INSERT-time the Python side has no value to send and the generated value
+    # is only visible after a refresh. Tests use raw SQL to read this column.
+    search_text: Mapped[str | None] = mapped_column(
         TSVECTOR, Computed(_SEARCH_TEXT_EXPR, persisted=True), nullable=True
     )
     raw_email_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -1987,6 +2000,116 @@ async def test_duplicate_message_id_returns_202_silently(
     assert r2.status_code == 202
     n = await db_session.execute(select(func.count()).select_from(RawEmail))
     assert n.scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_missing_nonce_returns_400(
+    db_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    monkeypatch.setenv("WEBHOOK_SECRET", SECRET)
+    app = create_app()
+    body = FIXTURE.read_bytes()
+    h = _headers(body, nonce="x")
+    h.pop("X-Webhook-Nonce")
+    r = await _post(app, body, h, db_url)
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_oversized_nonce_returns_400(
+    db_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    monkeypatch.setenv("WEBHOOK_SECRET", SECRET)
+    app = create_app()
+    body = FIXTURE.read_bytes()
+    h = _headers(body, nonce="x" * 65)  # 65 > max 64
+    r = await _post(app, body, h, db_url)
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_non_integer_timestamp_returns_400(
+    db_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    monkeypatch.setenv("WEBHOOK_SECRET", SECRET)
+    app = create_app()
+    body = FIXTURE.read_bytes()
+    h = _headers(body, nonce="x")
+    h["X-Webhook-Timestamp"] = "not-a-number"
+    r = await _post(app, body, h, db_url)
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_unknown_alias_still_persists(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    """Spec §5: unknown alias = persist anyway, parse_status='pending'.
+    Owner is derived lazily via JOIN at /admin/raw-emails query time.
+    """
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    monkeypatch.setenv("WEBHOOK_SECRET", SECRET)
+    app = create_app()
+    body = FIXTURE.read_bytes()  # to: oliver@trips.example.com — no alias for "oliver" yet
+    r = await _post(app, body, _headers(body, nonce="orphan"), db_url)
+    assert r.status_code == 202
+
+    re = (await db_session.execute(select(RawEmail))).scalar_one()
+    assert re.to_address == "oliver@trips.example.com"
+    assert re.parse_status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_missing_message_id_synthesizes(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    """Spec §5 step 6: missing Message-ID → synthesize <sha256:...@trip-tracker.local>."""
+    import hashlib as _hashlib
+
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    monkeypatch.setenv("WEBHOOK_SECRET", SECRET)
+    app = create_app()
+    body = FIXTURE.read_bytes().replace(
+        b"Message-ID: <abc123-confirm@delta.com>\r\n", b""
+    )
+    expected_hex = _hashlib.sha256(body).hexdigest()
+    r = await _post(app, body, _headers(body, nonce="synth"), db_url)
+    assert r.status_code == 202
+
+    re = (await db_session.execute(select(RawEmail))).scalar_one()
+    assert re.message_id == f"<sha256:{expected_hex}@trip-tracker.local>"
+
+
+@pytest.mark.asyncio
+async def test_crlf_bom_body_round_trips_hmac(
+    db_url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A BOM-prefixed CRLF body must HMAC-verify against the exact bytes sent.
+
+    Validates that no middleware (uvicorn/ASGITransport) silently rewrites the
+    request body. If this test fails, our HMAC math is computed over different
+    bytes than the server sees.
+    """
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    monkeypatch.setenv("WEBHOOK_SECRET", SECRET)
+    app = create_app()
+    body = b"\xef\xbb\xbf" + FIXTURE.read_bytes()  # UTF-8 BOM prefix
+    r = await _post(app, body, _headers(body, nonce="bom"), db_url)
+    assert r.status_code == 202
+
+
+@pytest.fixture(autouse=True)
+def _reset_prune_gate(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The webhook module owns a process-wide PruneGate singleton; reset it
+    per-test so prune-frequency is deterministic and one test's prune doesn't
+    silence the next test's expected prune.
+    """
+    from trip_tracker.ingest import webhook as wh
+
+    monkeypatch.setattr(wh, "_PRUNE_GATE", wh.PruneGate(interval_seconds=60.0))
 ```
 
 - [ ] **Step 9.2 — Implement `webhook.py`**
@@ -2067,17 +2190,27 @@ async def ingest_email(
             {"error": "bad_request", "detail": "timestamp skew"}, 400
         )
 
-    # Step 4: Periodic prune (best-effort).
+    # Step 4: Periodic prune (best-effort). Run BEFORE opening the main txn so
+    # this is a separate, committed unit of work — pruning is hygiene, not
+    # correctness, and we don't want it tangled with the nonce-insert txn.
+    # Note: bind the context manager to a name first because Python's `async
+    # with X if cond else Y:` is a SyntaxError (the `with` statement does not
+    # accept inline conditional expressions for the cm).
     if _PRUNE_GATE.should_prune():
-        async with db.begin_nested() if db.in_transaction() else db.begin():
+        prune_cm = db.begin_nested() if db.in_transaction() else db.begin()
+        async with prune_cm:
             await prune_replay_cache(db)
+
+    # Parse MIME *before* opening the main txn so the structured logging line
+    # at the bottom can reference `parsed` even if the txn body raises before
+    # the INSERT — the parse itself is pure CPU and always safe.
+    parsed = parse_mime(body)
 
     # Step 5–6: Single transaction for nonce-insert + raw_emails-insert.
     async with db.begin():
         recorded = await record_nonce(db, ts_seconds=ts, nonce=nonce)
         replay = not recorded
 
-        parsed = parse_mime(body)
         stmt = (
             pg_insert(RawEmail)
             .values(
@@ -3541,7 +3674,70 @@ Create `src/trip_tracker/templates/segments/flight_form.html`:
 {% endblock %}
 ```
 
-Create the remaining five form templates following the same pattern (`lodging_form.html`, `car_form.html`, `train_form.html`, `transfer_form.html`, `activity_form.html`) — each extends `base.html`, includes `segments/_common_fields.html`, and renders type-specific fields per the spec §6 table.
+Create the remaining five form templates following the same pattern. Each: extends `base.html`, includes `segments/_common_fields.html`, hidden `<input name="type" value="<type>">` is already inside `_common_fields.html`, then renders the type-specific fields. Use `value="{{ values.get('<field>', '') }}"` on every input so a server-side validation error round-trip preserves what the user typed.
+
+Full second example — `src/trip_tracker/templates/segments/lodging_form.html`:
+
+```html
+{% extends "base.html" %}
+{% block title %}New lodging · trip-tracker{% endblock %}
+{% block content %}
+  <h1 class="text-3xl font-semibold">New lodging</h1>
+  {% if errors %}<p class="mt-2 text-red-600">{{ errors._form }}</p>{% endif %}
+  <form method="post" action="/segments" class="mt-6 space-y-4">
+    {% include "segments/_common_fields.html" %}
+    <label class="block text-sm">Hotel name
+      <input class="mt-1 w-full rounded border p-2" name="hotel_name" required
+             value="{{ values.get('hotel_name', '') }}">
+    </label>
+    <label class="block text-sm">Address
+      <input class="mt-1 w-full rounded border p-2" name="address"
+             value="{{ values.get('address', '') }}">
+    </label>
+    <div class="grid grid-cols-2 gap-3">
+      <label class="block text-sm">City
+        <input class="mt-1 w-full rounded border p-2" name="city"
+               value="{{ values.get('city', '') }}">
+      </label>
+      <label class="block text-sm">Country
+        <input class="mt-1 w-full rounded border p-2" name="country"
+               value="{{ values.get('country', '') }}">
+      </label>
+    </div>
+    <label class="block text-sm">Room type
+      <input class="mt-1 w-full rounded border p-2" name="room_type"
+             value="{{ values.get('room_type', '') }}">
+    </label>
+    <button class="rounded bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">Create</button>
+  </form>
+{% endblock %}
+```
+
+For the remaining four (`car_form.html`, `train_form.html`, `transfer_form.html`, `activity_form.html`), follow this exact structure but swap the type-specific fields per these tables. **All inputs use `name="<field>"` and `value="{{ values.get('<field>', '') }}"`. Fields marked `*` are `required`; others are optional.**
+
+`car_form.html`:
+- `pickup_location` * (text)
+- `pickup_city` (text)
+- `dropoff_location` * (text)
+- `dropoff_city` (text)
+- `car_class` (text)
+
+`train_form.html`:
+- `train_number` (text)
+- `origin_station` * (text)
+- `destination_station` * (text)
+- `seat` (text)
+
+`transfer_form.html`:
+- `pickup_location` * (text)
+- `dropoff_location` * (text)
+
+`activity_form.html`:
+- `venue_name` * (text)
+- `address` (text)
+- `city` (text)
+
+H1 text per type: "New car rental", "New train", "New transfer", "New activity". `<title>` block follows the same pattern as `lodging_form.html`.
 
 Create `src/trip_tracker/templates/segments/_row.html`:
 
@@ -3595,38 +3791,192 @@ git commit -m "feat(routes): segments type picker + per-type forms + create"
 - Modify: `src/trip_tracker/routes/segments.py` (add edit + update + delete)
 - Append to: `tests/test_routes_segments.py`
 
-- [ ] **Step 14.1 — Failing test**
+- [ ] **Step 14.1 — Failing tests (full bodies)**
 
-Append to `tests/test_routes_segments.py`:
+Append to `tests/test_routes_segments.py`. Each test creates state via direct ORM inserts (faster than going through the `POST /segments` form for setup) and only exercises the new edit/delete routes via HTTP:
 
 ```python
-@pytest.mark.asyncio
-async def test_edit_segment_round_trip(
-    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
-) -> None:
-    # ... create flight via POST /segments first ...
-    # then GET /trips/:tid/segments/:sid/edit, assert form pre-filled
-    # then POST same URL with changes, assert 303 + DB updated
-    pass  # implementer: write the full body following test_create_flight_with_new_trip
+async def _seed_flight(
+    db: AsyncSession, owner: User, trip: Trip
+) -> Segment:
+    seg = Segment(
+        trip_id=trip.id,
+        owner_user_id=owner.id,
+        type="flight",
+        status="confirmed",
+        provider="Delta",
+        confirmation_number="ABC123",
+        start_at=datetime(2026, 6, 1, 13, 0, tzinfo=timezone.utc),  # 09:00 EDT
+        start_tz="America/New_York",
+        end_at=datetime(2026, 6, 2, 2, 0, tzinfo=timezone.utc),     # 22:00 CEST
+        end_tz="Europe/Paris",
+        start_location={"iata": "JFK", "city": "New York"},
+        end_location={"iata": "CDG", "city": "Paris"},
+        details={"flight_number": "DL44", "seat": "12A"},
+        parse_source="manual",
+        parse_confidence=1.0,
+    )
+    db.add(seg)
+    await db.commit()
+    return seg
 
 
 @pytest.mark.asyncio
-async def test_delete_segment(
+async def test_edit_segment_renders_prefilled_form(
     db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
 ) -> None:
-    # ... create + delete + assert empty ...
-    pass
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user = await _user(db_session)
+    trip = Trip(title="T", start_date=date(2026, 6, 1),
+                end_date=date(2026, 6, 5), created_by=user.id)
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+    seg = await _seed_flight(db_session, user, trip)
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test",
+            cookies=_cookie(user, settings),
+        ) as c:
+            r = await c.get(f"/trips/{trip.id}/segments/{seg.id}/edit")
+
+    assert r.status_code == 200
+    # Prefilled values from the segment:
+    assert "Delta" in r.text
+    assert "ABC123" in r.text
+    assert "DL44" in r.text
+    assert "JFK" in r.text
+    assert "CDG" in r.text
+    # The local datetime display (note: 13:00 UTC → 09:00 in America/New_York):
+    assert "2026-06-01T09:00" in r.text
+
+
+@pytest.mark.asyncio
+async def test_edit_segment_round_trip_updates_db(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user = await _user(db_session)
+    trip = Trip(title="T", start_date=date(2026, 6, 1),
+                end_date=date(2026, 6, 5), created_by=user.id)
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+    seg = await _seed_flight(db_session, user, trip)
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test",
+            cookies=_cookie(user, settings),
+        ) as c:
+            r = await c.post(
+                f"/trips/{trip.id}/segments/{seg.id}",
+                data={
+                    "type": "flight",
+                    "trip_selector_existing_trip_id": str(trip.id),
+                    "status": "confirmed",
+                    "provider": "Delta",
+                    "confirmation_number": "ABC123",
+                    "flight_number": "DL44",
+                    "origin_iata": "JFK",
+                    "origin_city": "New York",
+                    "destination_iata": "ORY",  # changed
+                    "destination_city": "Paris",
+                    "start_local": "2026-06-01T09:00",
+                    "start_tz": "America/New_York",
+                    "end_local": "2026-06-01T22:00",
+                    "end_tz": "Europe/Paris",
+                    "seat": "1A",  # changed
+                },
+                follow_redirects=False,
+            )
+    assert r.status_code == 303
+
+    await db_session.refresh(seg)
+    assert seg.end_location["iata"] == "ORY"
+    assert seg.details["seat"] == "1A"
+    # confirmation/provider/flight_number unchanged:
+    assert seg.confirmation_number == "ABC123"
+
+
+@pytest.mark.asyncio
+async def test_delete_segment_removes_row(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user = await _user(db_session)
+    trip = Trip(title="T", start_date=date(2026, 6, 1),
+                end_date=date(2026, 6, 5), created_by=user.id)
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+    seg = await _seed_flight(db_session, user, trip)
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test",
+            cookies=_cookie(user, settings),
+        ) as c:
+            r = await c.post(
+                f"/trips/{trip.id}/segments/{seg.id}/delete",
+                follow_redirects=False,
+            )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/trips/{trip.id}"
+
+    rows = (await db_session.execute(select(Segment))).scalars().all()
+    assert rows == []
 
 
 @pytest.mark.asyncio
 async def test_edit_segment_404_for_non_traveler(
     db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
 ) -> None:
-    # Create segment as user A; user B should get 404 on edit URL.
-    pass
-```
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    creator = await _user(db_session)
+    other = User(oidc_subject="other", email="other@x.com", display_name="O")
+    db_session.add(other)
+    await db_session.flush()
+    trip = Trip(title="T", start_date=date(2026, 6, 1),
+                end_date=date(2026, 6, 5), created_by=creator.id)
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=creator.id, role="owner"))
+    seg = await _seed_flight(db_session, creator, trip)
 
-(Three full test bodies — implementer fills them out using the patterns from Task 13's test file.)
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with app.router.lifespan_context(app):
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test",
+            cookies=_cookie(other, settings),
+        ) as c:
+            r_edit = await c.get(f"/trips/{trip.id}/segments/{seg.id}/edit")
+            r_post = await c.post(
+                f"/trips/{trip.id}/segments/{seg.id}",
+                data={"type": "flight"}, follow_redirects=False,
+            )
+            r_del = await c.post(
+                f"/trips/{trip.id}/segments/{seg.id}/delete",
+                follow_redirects=False,
+            )
+
+    # All three must 404 — non-member can't see the trip exists.
+    assert r_edit.status_code == 404
+    assert r_post.status_code == 404
+    assert r_del.status_code == 404
+```
 
 - [ ] **Step 14.2 — Implement edit/update/delete handlers**
 
@@ -3661,10 +4011,79 @@ async def update_segment(
     user: User = Depends(require_user),
     db: AsyncSession = Depends(get_session),
 ):
+    """Update an existing segment in place.
+
+    Phase 2 scope: type and trip CANNOT change. The form re-uses the per-type
+    template, so the `type` field is hidden and immutable; the `trip_selector`
+    is forced to the current trip (we ignore any new-trip submission). This
+    keeps the diff small — moving a segment between trips can land later.
+
+    Auto-widening of trip dates DOES re-run on update (the new datetime may
+    extend or shrink the range).
+    """
     seg = await _load_segment_for_user(db, trip_id, segment_id, user.id)
-    # Re-validate via the same form_cls path used in create_segment.
-    # ... copy the validation+shape logic, mutate seg fields, commit, redirect.
-    raise NotImplementedError("implementer: complete this following create_segment")
+    # Re-load the trip so we can widen its dates after recomputing.
+    trip = (
+        await db.execute(select(Trip).where(Trip.id == trip_id))
+    ).scalar_one()
+
+    form_data = await request.form()
+    seg_type = form_data.get("type")
+    if seg_type != seg.type:
+        # Defensive: form posts the hidden `type` field; mismatch is tampering.
+        raise HTTPException(400, detail="segment type immutable")
+    form_cls = FORM_BY_TYPE[seg_type]
+
+    raw: dict[str, Any] = dict(form_data)
+    # Force the trip selector to the current trip — edits never re-route trips.
+    raw["trip_selector"] = TripSelector(
+        existing_trip_id=trip.id, new_trip_title=None
+    ).model_dump()
+    raw.pop("trip_selector_existing_trip_id", None)
+    raw.pop("trip_selector_new_trip_title", None)
+
+    try:
+        form = form_cls.model_validate(raw)
+    except ValidationError as e:
+        return templates.TemplateResponse(
+            request, f"segments/{seg_type}_form.html",
+            {
+                "user": user, "trips": [trip], "timezones": TIMEZONES,
+                "values": raw, "errors": {"_form": str(e)}, "type": seg_type,
+                "edit_segment_id": str(seg.id),
+            },
+            status_code=200,
+        )
+
+    start_at = _to_utc(form.start_local, form.start_tz)
+    end_at = (
+        _to_utc(form.end_local, form.end_tz)
+        if form.end_local and form.end_tz else None
+    )
+    start_loc, end_loc, details = _shape_payload(form)
+
+    async with db.begin():
+        seg.status = form.status
+        seg.confirmation_number = form.confirmation_number
+        seg.provider = form.provider
+        seg.start_at = start_at
+        seg.start_tz = form.start_tz
+        seg.end_at = end_at
+        seg.end_tz = form.end_tz
+        seg.start_location = start_loc
+        seg.end_location = end_loc
+        seg.details = details
+
+        # Re-widen trip dates against the new segment timing.
+        seg_start_date = start_at.date()
+        seg_end_date = (end_at or start_at).date()
+        new_start = min(trip.start_date, seg_start_date)
+        new_end = max(trip.end_date, seg_end_date)
+        if (new_start, new_end) != (trip.start_date, trip.end_date):
+            trip.start_date = new_start
+            trip.end_date = new_end
+
+    return RedirectResponse(f"/trips/{trip_id}", status_code=303)
 
 
 @router.post("/trips/{trip_id}/segments/{segment_id}/delete")
@@ -3871,15 +4290,18 @@ Create `src/trip_tracker/routes/admin.py`:
 
 from __future__ import annotations
 
+import re
 import uuid
 from email import message_from_bytes
 from email.policy import default as email_policy_default
 from pathlib import Path
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.auth.deps import require_admin
@@ -3925,15 +4347,44 @@ async def alias_new_form(
     )
 
 
+# RFC-5321 valid local-part chars (lowercase only — we normalize on input).
+# Spec §4: forwarding_aliases.local_part is "lowercase, RFC-5321 valid local-part chars only".
+_LOCAL_PART_RE = re.compile(r"^[a-z0-9._%+\-]+$")
+
+
 @router.post("/aliases")
 async def alias_create(
+    request: Request,
     user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_session),
     local_part: str = Form(...),
     user_id: uuid.UUID = Form(...),
 ):
-    db.add(ForwardingAlias(local_part=local_part.lower().strip(), user_id=user_id))
-    await db.commit()
+    normalized = local_part.lower().strip()
+    if not _LOCAL_PART_RE.match(normalized) or len(normalized) > 64:
+        users = (await db.execute(select(User).order_by(User.email))).scalars().all()
+        return templates.TemplateResponse(
+            request, "admin/alias_form.html",
+            {
+                "user": user, "users": users, "alias": None,
+                "errors": {"_form": "invalid local part"},
+            },
+            status_code=200,
+        )
+    try:
+        db.add(ForwardingAlias(local_part=normalized, user_id=user_id))
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        users = (await db.execute(select(User).order_by(User.email))).scalars().all()
+        return templates.TemplateResponse(
+            request, "admin/alias_form.html",
+            {
+                "user": user, "users": users, "alias": None,
+                "errors": {"_form": f"alias {normalized!r} already exists"},
+            },
+            status_code=200,
+        )
     return RedirectResponse("/admin/aliases", status_code=303)
 
 
@@ -4110,7 +4561,7 @@ async def raw_email_download(
     )
 ```
 
-Add `import sqlalchemy as sa` at the top of `admin.py`.
+(`import sqlalchemy as sa` is already at the top of `admin.py` from Task 15's imports.)
 
 - [ ] **Step 16.2 — Templates**
 
