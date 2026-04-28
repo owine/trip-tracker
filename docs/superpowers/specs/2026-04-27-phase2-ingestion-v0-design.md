@@ -159,29 +159,40 @@ CHECK constraint: `end_date >= start_date`.
 | `start_location` | jsonb | NULL, shape `{name, iata?, lat?, lon?, address?, city?, country?}` |
 | `end_location` | jsonb | NULL, same shape |
 | `details` | jsonb | NOT NULL, default `'{}'::jsonb`, type-specific fields |
-| `parse_source` | varchar(32) | NOT NULL (Phase 2: always `'manual'`) |
-| `parse_confidence` | real | NOT NULL, CHECK BETWEEN 0 AND 1 (Phase 2: always `1.0`) |
+| `parse_source` | varchar(64) | NOT NULL (Phase 2: always `'manual'`); width chosen so future values like `'llm-vision:haiku-4-5-20260101'` fit |
+| `parse_confidence` | double precision | NOT NULL, CHECK BETWEEN 0 AND 1 (Phase 2: always `1.0`); double rather than real to avoid Phase 3 widening |
 | `search_text` | tsvector | GENERATED column (see below), GIN index |
 | `raw_email_id` | uuid FK → `raw_emails.id` | NULL ON DELETE SET NULL (Phase 2 manual entries: always NULL) |
 | `superseded_by` | uuid FK → `segments.id` | NULL self-FK ON DELETE SET NULL (used by Phase 3 re-parse versioning; Phase 2 never sets) |
 | `created_at`, `updated_at` | timestamptz | as above |
 
-Indexes: `(trip_id)`, `(owner_user_id, start_at)`, `(start_at)`, GIN on `search_text`.
+Indexes (all explicitly named per the `models/base.py` convention):
 
-`search_text` is a generated column:
+- `ix_segments_trip_id` on `(trip_id)`
+- `ix_segments_owner_user_id_start_at` on `(owner_user_id, start_at)`
+- `ix_segments_start_at` on `(start_at)`
+- `ix_segments_search_text` on `(search_text)` `USING gin` — Alembic emits `op.create_index('ix_segments_search_text', 'segments', ['search_text'], postgresql_using='gin')`. SQLAlchemy's metadata naming convention does not auto-name expression-based or alternative-method indexes reliably, so this name is set explicitly.
+
+`search_text` is a generated column. The expression must be IMMUTABLE for Postgres to accept it in a `GENERATED ALWAYS AS ... STORED` column:
 
 ```sql
 GENERATED ALWAYS AS (
-  to_tsvector('simple',
-    coalesce(provider, '')        || ' ' ||
-    coalesce(confirmation_number, '') || ' ' ||
-    coalesce(start_location ->> 'name', '') || ' ' ||
-    coalesce(end_location   ->> 'name', '') || ' ' ||
-    coalesce(start_location ->> 'city', '') || ' ' ||
+  to_tsvector(
+    'simple'::regconfig,
+    coalesce(provider, '')                       || ' ' ||
+    coalesce(confirmation_number, '')            || ' ' ||
+    coalesce(start_location ->> 'name', '')      || ' ' ||
+    coalesce(end_location   ->> 'name', '')      || ' ' ||
+    coalesce(start_location ->> 'city', '')      || ' ' ||
     coalesce(end_location   ->> 'city', '')
   )
 ) STORED
 ```
+
+Notes for the implementer:
+- The `'simple'::regconfig` cast (rather than the bare string) is what makes the two-argument `to_tsvector(regconfig, text)` overload resolve to the IMMUTABLE variant.
+- `->>` returns `text`, so all `||` operands are `text` — no implicit casts that would break IMMUTABLE.
+- A migration test (`tests/test_models_segment.py::test_search_text_generated`) must INSERT a row, then `SELECT search_text` to verify the GENERATED expression actually executed and is non-empty when source fields are non-null.
 
 Phase 2 has no UI consumer for `search_text`, but emitting the column now means the Meilisearch sync in Phase 7 doesn't require a schema migration.
 
@@ -207,12 +218,14 @@ Indexes: `(received_at DESC)`, `(parse_status)`, `(to_address)`.
 
 | Column | Type | Notes |
 |---|---|---|
-| `timestamp` | bigint | epoch seconds from `X-Webhook-Timestamp` |
+| `ts_seconds` | bigint | epoch seconds from `X-Webhook-Timestamp` (column named `ts_seconds`, not `timestamp`, to avoid shadowing the SQL keyword) |
 | `nonce` | varchar(64) | from `X-Webhook-Nonce` |
 | `expires_at` | timestamptz | NOT NULL — `now() + interval '24 hours'` at insert |
-| PK | (timestamp, nonce) | composite |
+| PK | (ts_seconds, nonce) | composite |
 
-Index: `(expires_at)` for inline cleanup.
+Index: `ix_webhook_replay_cache_expires_at` on `(expires_at)` for cleanup queries.
+
+Cleanup strategy: a periodic-ish opportunistic prune runs at most once every 60 s (gated by a tiny in-memory timestamp guard in the webhook handler) — it is **not** colocated with the nonce-insert transaction. Reasoning: a cleanup-then-insert ordering can race with a 24h-and-a-second replay between two webhook calls; relying on the PK unique constraint as the only enforcement point is correct under all orderings, and cleanup is purely about table size, not correctness. The first webhook in any given minute issues a single `DELETE FROM webhook_replay_cache WHERE expires_at < now()` *before* its own work, in its own short transaction. Subsequent calls within the minute skip the DELETE.
 
 ---
 
@@ -232,40 +245,75 @@ Index: `(expires_at)` for inline cleanup.
 
 | Env var | Type | Default | Notes |
 |---|---|---|---|
-| `WEBHOOK_SECRET` | str (secret) | (required) | Shared secret with forwardemail.net |
+| `WEBHOOK_SECRET` | `SecretStr` | (required) | Shared secret with forwardemail.net |
 | `WEBHOOK_SIGNATURE_HEADER` | str | `X-Webhook-Signature` | Header name to read |
 | `WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS` | int | `300` | ±5 min skew tolerated |
 | `WEBHOOK_MAX_BODY_BYTES` | int | `26214400` | 25 MiB |
 
-All added to `Settings` in `config.py`.
+All added to `Settings` in `config.py`. Pydantic validators reject:
+- empty / whitespace-only `WEBHOOK_SIGNATURE_HEADER`
+- `WEBHOOK_SIGNATURE_HEADER` matching `^(authorization|cookie|host|content-length|content-type|x-forwarded-.*)$` case-insensitive (collision with reserved/proxy headers)
+- `WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS` ≤ 0 or > 3600
+- `WEBHOOK_MAX_BODY_BYTES` ≤ 0 or > 100 MiB
 
 ### Algorithm (in order)
 
-1. Read raw body, capped at `WEBHOOK_MAX_BODY_BYTES`. Reject `413 Payload Too Large` if exceeded.
-2. Read signature header. If missing → `401`. Compute `hmac.new(WEBHOOK_SECRET, body, sha256).hexdigest()`, compare with `hmac.compare_digest`. Expected format `"sha256=<hex>"`. If mismatch → `401`.
-3. Read `X-Webhook-Timestamp` and `X-Webhook-Nonce`. Missing or non-integer timestamp → `400`. If `abs(now_epoch - timestamp) > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS` → `400`.
-4. Inline cleanup: `DELETE FROM webhook_replay_cache WHERE expires_at < now()`.
-5. `INSERT INTO webhook_replay_cache (timestamp, nonce, expires_at) VALUES (...) ON CONFLICT (timestamp, nonce) DO NOTHING RETURNING id`. If no row returned (replay) → `200 OK` empty body silent (don't reveal replay-detection state to the caller).
-6. Parse MIME with `email.parser.BytesParser(policy=email.policy.default).parsebytes(body)`. Extract Message-ID, To, From, Subject, Date, all-headers-as-dict. Missing Message-ID → generate a synthetic one of form `<sha256(body)@local>`.
-7. `INSERT INTO raw_emails (...) ON CONFLICT (message_id) DO NOTHING RETURNING id`. If no row returned (duplicate Message-ID) → `200 OK` silent.
-8. Return `202 Accepted` with empty body.
+1. **Read body with a streaming size cap.** Iterate `request.stream()` collecting into a `bytearray`. After each chunk, check `len(buf) > WEBHOOK_MAX_BODY_BYTES`; if so, return `413` and discard buffer. Do **not** call `request.body()`, which would buffer without bound. End of loop yields the full body bytes.
+
+2. **Verify HMAC.** Read the configured signature header. If missing or empty → `401`. The header value MUST start with `"sha256="`; if not → `401`. Strip prefix:
+   ```python
+   raw = headers.get(SIG_HEADER, "")
+   if not raw.startswith("sha256="):
+       return 401
+   provided_hex = raw.removeprefix("sha256=")
+   expected_hex = hmac.new(secret_bytes, body, "sha256").hexdigest()
+   if not hmac.compare_digest(provided_hex, expected_hex):
+       return 401
+   ```
+   `hmac.compare_digest` is constant-time and accepts equal-length strings; both are 64 hex chars.
+
+3. **Verify timestamp + nonce headers.** Read `X-Webhook-Timestamp` (integer seconds since Unix epoch — the implementer must validate via `int(value)`; non-integer → `400`). Read `X-Webhook-Nonce` (max 64 chars; missing/empty → `400`). If `abs(int(time.time()) - ts) > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS` → `400`.
+
+4. **Periodic cache prune (best-effort).** Maintain a process-local `_last_prune_at` epoch. If `time.time() - _last_prune_at > 60`, run `DELETE FROM webhook_replay_cache WHERE expires_at < now()` in its own short transaction and update `_last_prune_at`. This is purely table-size hygiene and explicitly **not** load-bearing for replay protection (the PK constraint in step 5 is).
+
+5. **Open a single transaction for steps 5–6.** Inside `async with session.begin():`:
+   ```sql
+   INSERT INTO webhook_replay_cache (ts_seconds, nonce, expires_at)
+   VALUES (:ts, :nonce, now() + interval '24 hours')
+   ON CONFLICT (ts_seconds, nonce) DO NOTHING
+   ```
+   Detect the conflict via the row count of the result (`result.rowcount == 0` ⇒ replay).
+
+6. **Within the same transaction**, parse MIME with `email.parser.BytesParser(policy=email.policy.default).parsebytes(body)`. Extract Message-ID, To, From, Subject, Date, and the full header set as a dict (header values are `str`, with leading/trailing whitespace stripped). Missing Message-ID → synthesize as the literal string `<sha256:<64-hex>@trip-tracker.local>` where the hex is `hashlib.sha256(body).hexdigest()`. **The stored value includes the angle brackets**, per RFC 5322. Then:
+   ```sql
+   INSERT INTO raw_emails (...)
+   VALUES (...)
+   ON CONFLICT (message_id) DO NOTHING
+   ```
+   Detect duplicate via `result.rowcount`.
+
+7. **Decide response code.** Both inserts are now committed (or both rolled back if either threw). Outcome:
+   - replay (step 5 conflict) → return `202 Accepted` empty body.
+   - duplicate Message-ID (step 6 conflict, step 5 fresh) → return `202 Accepted` empty body.
+   - both fresh → return `202 Accepted` empty body.
+
+   Returning `202` uniformly once HMAC + timestamp pass eliminates the side-channel where 200-vs-202 leaks "have I seen this nonce before". forwardemail.net treats both as success regardless.
 
 ### Error response shapes
 
 | Code | Cause | Body |
 |---|---|---|
-| 200 | replay or duplicate Message-ID | empty |
-| 202 | new email persisted | empty |
+| 202 | accepted (whether stored or deduped) | empty |
 | 400 | missing/bad timestamp/nonce headers | `{"error": "bad_request", "detail": "..."}` |
-| 401 | missing or wrong HMAC | `{"error": "unauthorized"}` |
-| 413 | body too large | `{"error": "payload_too_large", "max_bytes": ...}` |
-| 500 | unexpected | `{"error": "internal"}` (logged with stack) |
+| 401 | missing/wrong HMAC, missing `sha256=` prefix | `{"error": "unauthorized"}` |
+| 413 | body too large (caught streaming) | `{"error": "payload_too_large", "max_bytes": ...}` |
+| 500 | unexpected | `{"error": "internal"}` (logged with stack, no body) |
 
-All responses are `application/json` except 202/200 which are empty.
+All non-202 responses are `application/json`; 202 has empty body.
 
 ### Logging
 
-Every webhook call emits one structlog `info` line with: `event="ingest_webhook"`, `status=<code>`, `to_address`, `from_address`, `message_id` (truncated to 64), `body_bytes`, `replay=<bool>`, `duplicate_message_id=<bool>`. No body content. No headers (PII).
+Every webhook call emits one structlog `info` line with: `event="ingest_webhook"`, `status=<code>`, `to_address`, `from_address`, `message_id` (truncated to 64), `body_bytes`, `replay=<bool>`, `duplicate_message_id=<bool>`. No body content. No header values beyond the address fields above. Self-host single-tenant context: address fields are household members' own emails, so logging them is acceptable; this is documented here so a future multi-tenant migration knows to revisit.
 
 ---
 
@@ -338,7 +386,21 @@ No day grouping, no calendar visualization. (Both arrive in Phase 5.)
 
 ### Datetime + timezone UX
 
-Server-rendered: form has `<input type="datetime-local">` (browser-local time) plus a `<select>` of common IANA tz names ordered with a tiny piece of inline JS that pre-selects `Intl.DateTimeFormat().resolvedOptions().timeZone` if found in the list, fallback `UTC`. List source: `zoneinfo.available_timezones()` filtered to "common" set (Region/City names with `/` only — drops `posix/*`, `right/*`, etc.). Backend: form submits local datetime + tz string, backend computes the UTC `timestamptz` via `zoneinfo.ZoneInfo(tz).localize(dt).astimezone(timezone.utc)` and stores both.
+Server-rendered: form has `<input type="datetime-local">` (browser-local time) plus a `<select>` of common IANA tz names ordered with a tiny piece of inline JS that pre-selects `Intl.DateTimeFormat().resolvedOptions().timeZone` if found in the list, fallback `UTC`.
+
+**Timezone list source:** the static fixture `src/trip_tracker/static/iana_timezones.json` — committed to the repo, generated once from `zoneinfo.available_timezones()` filtered to names containing exactly one `/` and not starting with `Etc/`/`posix/`/`right/`/`SystemV/` (drops platform aliases). Regenerated only when needed via a `make update-tz` target (out-of-scope script for Phase 2; document the regen recipe in the file's docstring).
+
+**Backend conversion (stdlib only — no `pytz`):**
+```python
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+local_dt = datetime.fromisoformat(form.start_local)         # naive
+aware_dt = local_dt.replace(tzinfo=ZoneInfo(form.start_tz)) # localize via tzinfo attach
+utc_dt = aware_dt.astimezone(ZoneInfo("UTC"))               # convert
+# store: start_at=utc_dt, start_tz=form.start_tz
+```
+The Pydantic form model validates `form.start_tz in zoneinfo.available_timezones()` and rejects unknown names with a clear field error. (Note: the stdlib idiom is `replace(tzinfo=...)`, **not** `.localize()` — that's a pytz API.)
 
 ---
 
@@ -404,17 +466,18 @@ Test patterns match Phase 1: `pytest-asyncio` in auto mode, real Postgres via `p
 
 | File | Coverage focus |
 |---|---|
-| `test_ingest_webhook.py` | Happy path (202), HMAC absent (401), HMAC mismatch (401), body >25 MB (413), timestamp skew (400), missing headers (400), replay (200 silent), duplicate Message-ID (200 silent), unknown alias (still 202, owner derived NULL on read), missing Message-ID synthesizes one. |
-| `test_ingest_mime.py` | Multipart, attachments, malformed encoding, missing Message-ID, very long subject, header normalization. |
-| `test_ingest_hmac.py` | `verify_signature` on known fixtures, `prune_replay_cache` clears old rows, `record_nonce` returns False on conflict. |
+| `test_ingest_webhook.py` | Happy path (202), HMAC absent (401), HMAC mismatch (401), HMAC header missing `sha256=` prefix (401), body >25 MB streaming abort (413), timestamp skew (400), non-integer timestamp (400), missing nonce (400), replay returns 202 silently, duplicate Message-ID returns 202 silently, unknown alias still persists (202, owner derived NULL via JOIN), missing Message-ID synthesizes `<sha256:...@trip-tracker.local>`, body containing CRLF + UTF-8 BOM round-trips HMAC correctly (fixture-based against a captured forwardemail.net sample under `tests/fixtures/webhooks/`). |
+| `test_ingest_mime.py` | Multipart/alternative, attachments, malformed encoding, missing Message-ID, very long subject (>998 chars truncates safely), header value whitespace stripped. |
+| `test_ingest_hmac.py` | `verify_signature` on fixture body returns True for matching hex / False for mismatched hex / False for missing `sha256=` prefix. `prune_replay_cache` clears rows past `expires_at`. `record_nonce` returns False on PK conflict. |
+| `test_config_webhook_validators.py` | Pydantic Settings rejects empty signature header / collision header names / out-of-range tolerance / out-of-range max-body. |
 | `test_models_forwarding_alias.py` | Uniqueness, FK cascade on user delete, lowercase normalization. |
 | `test_models_trip.py` | CRUD, `end_date >= start_date` constraint, FK cascade on owner delete (RESTRICT actually — verify trip can't be orphaned). |
 | `test_models_trip_traveler.py` | Composite PK, role check constraint, owner-vs-companion semantics. |
-| `test_models_segment.py` | CRUD per type, jsonb roundtrip, generated `search_text` column populated, `start_tz` IANA validation. |
+| `test_models_segment.py` | CRUD per type, jsonb roundtrip, generated `search_text` column populated and non-empty when source fields set, `start_tz` IANA validation rejects unknown name, `parse_confidence` boundaries (0, 1, -0.001 rejected, 1.001 rejected). |
 | `test_models_raw_email.py` | Message-ID uniqueness, jsonb headers roundtrip, parse_status check constraint. |
 | `test_models_webhook_replay.py` | Composite PK, expires_at index pruning. |
 | `test_routes_trips.py` | List shows only trips the user travels; detail 404 for non-traveler; edit/update/delete; nav link visibility. |
-| `test_routes_segments.py` | Type picker page; each per-type form renders; happy POST per type creates segment + (when new trip) creates trip + trip_traveler in one transaction; validation errors return 422 with field detail; edit/update/delete; ownership scoping (can't edit segment in a trip you don't travel). |
+| `test_routes_segments.py` | Type picker page; each per-type form renders; happy POST per type creates segment + (when new trip) creates trip + trip_traveler in one transaction; trip-creation transactional rollback if segment INSERT fails; existing-trip path auto-widens trip dates when segment falls outside; primary_destination derivation per type (flight ⇒ end city, lodging ⇒ start city, etc.); validation errors re-render form with field messages (200 + form HTML, not 422 — server-rendered convention); edit/update/delete; ownership scoping (can't edit segment in a trip you don't travel — 404). |
 | `test_routes_admin.py` | Non-admin gets 403 on `/admin/*`; alias CRUD round-trip; raw-email list paginates and shows owner via JOIN (and `—` for orphans); raw-email detail decodes MIME correctly. |
 | `test_auth_deps_admin.py` | `require_admin` raises 403 (not 404) — admin pages may exist; `require_traveler` raises 404 for non-traveler. |
 
@@ -450,14 +513,17 @@ One migration only. Since Phase 1 has no domain tables besides `users`, this is 
 
 ### Security review checklist
 
-- [x] HMAC compared with `compare_digest` (constant-time).
+- [x] HMAC compared with `compare_digest` (constant-time); explicit `sha256=` prefix enforcement.
 - [x] Timestamp skew check rejects replays older than 5 min (defense in depth alongside nonce cache).
-- [x] Body size capped *before* HMAC computation to bound memory/CPU.
+- [x] Body size capped via streaming read to bound memory before HMAC compute.
 - [x] `WEBHOOK_SECRET` in `Settings` as `SecretStr` (Phase 1 pattern).
+- [x] `WEBHOOK_SIGNATURE_HEADER` validated at startup against collision/empty/dangerous values.
 - [x] Admin pages use `require_admin` not just `current_user.is_admin` (centralized).
 - [x] `require_traveler` returns 404 (not 403) on non-trip-member access to avoid trip-existence enumeration.
 - [x] Email body is stored verbatim — no log lines emit body content.
 - [x] Raw email detail page's text/plain body rendered server-side, never the HTML body in Phase 2 (defer iframe sandbox to Phase 6 inbox; Phase 2 admin sees text only). HTML body is in `mime_blob` if needed.
+- [x] Webhook returns `202 Accepted` uniformly once HMAC + timestamp pass (replay vs duplicate-Message-ID indistinguishable from an attacker's perspective).
+- [x] Replay-cache nonce-insert + raw_emails insert in a single DB transaction so a half-state cannot exist.
 
 ---
 
@@ -483,3 +549,7 @@ Phase 2 is "done" when:
 - **Should admins see a "Re-process" button on `/admin/raw-emails/:id`?** Defer to Phase 3 when there's something to re-process *with*.
 - **HTMX for forms?** Pure HTML POST forms with full-page redirects in Phase 2. HTMX wires in Phase 6 with the inbox. Smaller scope now.
 - **Soft-delete vs hard-delete?** Hard delete in Phase 2 (no audit trail until Phase 6). Trip delete cascades to segments via FK.
+- **Forwarding-alias `disabled_at` for soft-disable?** Deferred. Compromised aliases can be hard-deleted in Phase 2 (orphaned `raw_emails` retain `to_address` and survive — admin still sees them in the list). If/when we get a use case for "preserve history but stop ingesting", add a nullable `disabled_at` column.
+- **`trips.cover_color` format validation?** Deferred. Phase 2 has no UI that picks a color; the column is reserved for Phase 5's timeline. Add a hex-format CHECK constraint when the color picker lands.
+- **Trip-detail flat list vs day-grouped:** flat list ordered by `start_at ASC` only. Phase 5 introduces day-grouping. `start_at` is NOT NULL on segments so no null-ordering concern.
+- **Body-mismatch on duplicate Message-ID:** if an attacker spoofs an existing Message-ID with different body bytes, the second insert is a no-op (`ON CONFLICT (message_id) DO NOTHING`). The original `mime_blob` is preserved. The webhook returns 202 in both cases (per the silent-uniform 202 policy in §5). No spoofing-via-replay risk because the nonce cache catches the replay first.
