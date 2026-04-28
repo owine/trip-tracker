@@ -48,7 +48,7 @@ packages = ["src/trip_tracker"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py314"
+target-version = "py313"  # ruff doesn't yet recognize py314; py313 is a safe subset
 src = ["src", "tests"]
 
 [tool.ruff.lint]
