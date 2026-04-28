@@ -347,6 +347,28 @@ Every webhook call emits one structlog `info` line with: `event="ingest_webhook"
 
 Auth dependency: `require_user` from Phase 1 covers logged-in. New `require_admin` raises 403 if `not current_user.is_admin`. New `require_traveler(trip_id)` raises 404 if user is not in `trip_travelers` for that trip (404 instead of 403 to avoid revealing trip existence).
 
+### Trip list ordering
+
+`GET /trips` orders results: trips with `end_date >= today` first, ascending by `start_date`; then past trips (`end_date < today`), descending by `start_date`. Implemented as `ORDER BY (end_date < CURRENT_DATE), CASE WHEN end_date >= CURRENT_DATE THEN start_date END ASC, CASE WHEN end_date < CURRENT_DATE THEN start_date END DESC`.
+
+### `POST /segments` submission flow
+
+The handler validates the per-type Pydantic form, then opens **one** `async with session.begin():` block covering all writes:
+
+1. **New-trip path** (form submitted with `+ New trip` toggled and a title): INSERT `trips (title, start_date, end_date, primary_destination, created_by)` with the dates and destination auto-derived (rule below); INSERT `trip_travelers (trip_id, user_id=current_user.id, role='owner')`.
+2. **Existing-trip path** (form submitted with an existing trip selected): verify membership via `require_traveler(trip_id)` → 404 if not. Auto-widen the trip's date range: `new_start = min(trip.start_date, segment_start_date)`, `new_end = max(trip.end_date, segment_end_date or segment_start_date)`. Issue an UPDATE only if either bound actually changed.
+3. INSERT the `segments` row with `parse_source='manual'`, `parse_confidence=1.0`, `raw_email_id=NULL`, all other fields from the validated form.
+
+Any failure inside the block triggers a transaction rollback (no orphan trips, no orphan travelers). On success, redirect `303 See Other` to `GET /trips/:id`. On Pydantic validation failure, re-render the form with the entered values and inline error messages (HTTP 200 + form HTML — server-rendered convention; the implementer should NOT return 422 from the form route).
+
+**`primary_destination` derivation rule (new-trip path only):**
+
+| Segment type | Source for `primary_destination` |
+|---|---|
+| flight, train, transfer | `end_location.city` |
+| lodging, car, activity | `start_location.city` |
+| (any) | fallback: the other side's city, then `None` |
+
 ### Per-type segment form fields
 
 All six forms share these common fields:
