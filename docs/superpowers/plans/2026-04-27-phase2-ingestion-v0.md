@@ -932,8 +932,12 @@ class WebhookReplay(Base):
 
     ts_seconds: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     nonce: Mapped[str] = mapped_column(String(64), primary_key=True)
+    # No `index=True` — same rule as RawEmail/Segment: the Alembic migration
+    # owns `ix_*` index creation. The composite PK already covers (ts_seconds,
+    # nonce) lookups; the explicit `ix_webhook_replay_cache_expires_at` exists
+    # only to make the prune query fast.
     expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, index=True
+        DateTime(timezone=True), nullable=False
     )
 ```
 
@@ -3712,6 +3716,8 @@ Full second example — `src/trip_tracker/templates/segments/lodging_form.html`:
   </form>
 {% endblock %}
 ```
+
+Note on the flight form already shown: it has **no** `required` type-specific fields (origin/destination IATA + city are all optional in `FlightSegmentForm`), which is why none of its inputs carry `required`. The `*` convention below is the documented requirement marker for the remaining four templates.
 
 For the remaining four (`car_form.html`, `train_form.html`, `transfer_form.html`, `activity_form.html`), follow this exact structure but swap the type-specific fields per these tables. **All inputs use `name="<field>"` and `value="{{ values.get('<field>', '') }}"`. Fields marked `*` are `required`; others are optional.**
 
