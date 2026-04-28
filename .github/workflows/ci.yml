@@ -89,7 +89,9 @@ jobs:
       - name: bandit
         run: uv run bandit -c pyproject.toml -r src/
       - name: pip-audit
-        run: uv run pip-audit --strict
+        # Skip our own editable trip-tracker dist (not on PyPI). No --strict so
+        # pip-audit doesn't count the skip as an error.
+        run: uv run pip-audit --skip-editable
 
   security-secrets:
     runs-on: ubuntu-latest
