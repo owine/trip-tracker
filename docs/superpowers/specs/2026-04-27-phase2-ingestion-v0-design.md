@@ -272,9 +272,9 @@ All added to `Settings` in `config.py`. Pydantic validators reject:
    ```
    `hmac.compare_digest` is constant-time and accepts equal-length strings; both are 64 hex chars.
 
-3. **Verify timestamp + nonce headers.** Read `X-Webhook-Timestamp` (integer seconds since Unix epoch — the implementer must validate via `int(value)`; non-integer → `400`). Read `X-Webhook-Nonce` (max 64 chars; missing/empty → `400`). If `abs(int(time.time()) - ts) > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS` → `400`.
+3. **Verify timestamp + nonce headers.** Read `X-Webhook-Timestamp` (integer seconds since Unix epoch — the implementer must validate via `int(value)`; non-integer → `400`). Read `X-Webhook-Nonce` (1–64 chars; missing, empty, or `len > 64` → `400`; do NOT silently truncate to fit the column). If `abs(int(time.time()) - ts) > WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS` → `400`.
 
-4. **Periodic cache prune (best-effort).** Maintain a process-local `_last_prune_at` epoch. If `time.time() - _last_prune_at > 60`, run `DELETE FROM webhook_replay_cache WHERE expires_at < now()` in its own short transaction and update `_last_prune_at`. This is purely table-size hygiene and explicitly **not** load-bearing for replay protection (the PK constraint in step 5 is).
+4. **Periodic cache prune (best-effort).** Maintain a process-local `_last_prune_at` epoch. If `time.time() - _last_prune_at > 60`, run `DELETE FROM webhook_replay_cache WHERE expires_at < now()` in its own short transaction and update `_last_prune_at`. This is purely table-size hygiene and explicitly **not** load-bearing for replay protection (the PK constraint in step 5 is). Note: in a multi-worker uvicorn deployment the actual prune frequency is `workers × (1/60s)` — still bounded, no shared lock required.
 
 5. **Open a single transaction for steps 5–6.** Inside `async with session.begin():`:
    ```sql
@@ -284,7 +284,7 @@ All added to `Settings` in `config.py`. Pydantic validators reject:
    ```
    Detect the conflict via the row count of the result (`result.rowcount == 0` ⇒ replay).
 
-6. **Within the same transaction**, parse MIME with `email.parser.BytesParser(policy=email.policy.default).parsebytes(body)`. Extract Message-ID, To, From, Subject, Date, and the full header set as a dict (header values are `str`, with leading/trailing whitespace stripped). Missing Message-ID → synthesize as the literal string `<sha256:<64-hex>@trip-tracker.local>` where the hex is `hashlib.sha256(body).hexdigest()`. **The stored value includes the angle brackets**, per RFC 5322. Then:
+6. **Within the same transaction**, parse MIME with `email.parser.BytesParser(policy=email.policy.default).parsebytes(body)`. Extract Message-ID, To, From, Subject, Date, and the full header set as a dict (header values are `str`, with leading/trailing whitespace stripped). Missing Message-ID → synthesize as `f"<sha256:{hashlib.sha256(body).hexdigest()}@trip-tracker.local>"`. **The stored value includes the outer angle brackets**, per RFC 5322. A fully resolved example: `<sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855@trip-tracker.local>`. Then:
    ```sql
    INSERT INTO raw_emails (...)
    VALUES (...)
@@ -349,7 +349,7 @@ Auth dependency: `require_user` from Phase 1 covers logged-in. New `require_admi
 
 ### Trip list ordering
 
-`GET /trips` orders results: trips with `end_date >= today` first, ascending by `start_date`; then past trips (`end_date < today`), descending by `start_date`. Implemented as `ORDER BY (end_date < CURRENT_DATE), CASE WHEN end_date >= CURRENT_DATE THEN start_date END ASC, CASE WHEN end_date < CURRENT_DATE THEN start_date END DESC`.
+`GET /trips` orders results: trips with `end_date >= today` first, ascending by `start_date`; then past trips (`end_date < today`), descending by `start_date`. Implemented as `ORDER BY (end_date < CURRENT_DATE), CASE WHEN end_date >= CURRENT_DATE THEN start_date END ASC, CASE WHEN end_date < CURRENT_DATE THEN start_date END DESC`. The leading boolean partitions rows into the two buckets first; within each bucket only one CASE returns non-NULL, so Postgres' default NULLS LAST behavior on the other column is harmless.
 
 ### `POST /segments` submission flow
 
@@ -490,7 +490,7 @@ Test patterns match Phase 1: `pytest-asyncio` in auto mode, real Postgres via `p
 |---|---|
 | `test_ingest_webhook.py` | Happy path (202), HMAC absent (401), HMAC mismatch (401), HMAC header missing `sha256=` prefix (401), body >25 MB streaming abort (413), timestamp skew (400), non-integer timestamp (400), missing nonce (400), replay returns 202 silently, duplicate Message-ID returns 202 silently, unknown alias still persists (202, owner derived NULL via JOIN), missing Message-ID synthesizes `<sha256:...@trip-tracker.local>`, body containing CRLF + UTF-8 BOM round-trips HMAC correctly (fixture-based against a captured forwardemail.net sample under `tests/fixtures/webhooks/`). |
 | `test_ingest_mime.py` | Multipart/alternative, attachments, malformed encoding, missing Message-ID, very long subject (>998 chars truncates safely), header value whitespace stripped. |
-| `test_ingest_hmac.py` | `verify_signature` on fixture body returns True for matching hex / False for mismatched hex / False for missing `sha256=` prefix. `prune_replay_cache` clears rows past `expires_at`. `record_nonce` returns False on PK conflict. |
+| `test_ingest_hmac.py` | `verify_signature` on fixture body returns True for matching hex / False for mismatched hex / False for missing `sha256=` prefix. `prune_replay_cache` clears rows past `expires_at`. `record_nonce` returns False on PK conflict. Two webhook calls <60 s apart cause exactly one DELETE (prune-gate honored); a third call >60 s later issues another DELETE. |
 | `test_config_webhook_validators.py` | Pydantic Settings rejects empty signature header / collision header names / out-of-range tolerance / out-of-range max-body. |
 | `test_models_forwarding_alias.py` | Uniqueness, FK cascade on user delete, lowercase normalization. |
 | `test_models_trip.py` | CRUD, `end_date >= start_date` constraint, FK cascade on owner delete (RESTRICT actually — verify trip can't be orphaned). |
@@ -546,6 +546,7 @@ One migration only. Since Phase 1 has no domain tables besides `users`, this is 
 - [x] Raw email detail page's text/plain body rendered server-side, never the HTML body in Phase 2 (defer iframe sandbox to Phase 6 inbox; Phase 2 admin sees text only). HTML body is in `mime_blob` if needed.
 - [x] Webhook returns `202 Accepted` uniformly once HMAC + timestamp pass (replay vs duplicate-Message-ID indistinguishable from an attacker's perspective).
 - [x] Replay-cache nonce-insert + raw_emails insert in a single DB transaction so a half-state cannot exist.
+- [x] Streaming 413 fires before HMAC compute (you cannot HMAC bytes you refuse to read). Accepted tradeoff: an attacker can elicit cheap 413s without a valid signature, but they cannot consume more than `WEBHOOK_MAX_BODY_BYTES` of memory or any HMAC CPU.
 
 ---
 
@@ -574,4 +575,4 @@ Phase 2 is "done" when:
 - **Forwarding-alias `disabled_at` for soft-disable?** Deferred. Compromised aliases can be hard-deleted in Phase 2 (orphaned `raw_emails` retain `to_address` and survive — admin still sees them in the list). If/when we get a use case for "preserve history but stop ingesting", add a nullable `disabled_at` column.
 - **`trips.cover_color` format validation?** Deferred. Phase 2 has no UI that picks a color; the column is reserved for Phase 5's timeline. Add a hex-format CHECK constraint when the color picker lands.
 - **Trip-detail flat list vs day-grouped:** flat list ordered by `start_at ASC` only. Phase 5 introduces day-grouping. `start_at` is NOT NULL on segments so no null-ordering concern.
-- **Body-mismatch on duplicate Message-ID:** if an attacker spoofs an existing Message-ID with different body bytes, the second insert is a no-op (`ON CONFLICT (message_id) DO NOTHING`). The original `mime_blob` is preserved. The webhook returns 202 in both cases (per the silent-uniform 202 policy in §5). No spoofing-via-replay risk because the nonce cache catches the replay first.
+- **Body-mismatch on duplicate Message-ID:** if an attacker spoofs an existing Message-ID with different body bytes, the second insert is a no-op (`ON CONFLICT (message_id) DO NOTHING`). The original `mime_blob` is preserved. The webhook returns 202 in both cases (per the silent-uniform 202 policy in §5). No spoofing-via-replay risk because forging a fresh `(timestamp, nonce)` requires possession of `WEBHOOK_SECRET` (HMAC-SHA256 of body+headers).
