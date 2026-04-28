@@ -79,7 +79,9 @@
     {
       "description": "Track standalone Tailwind CLI version pinned in build-tailwind.sh",
       "customType": "regex",
-      "fileMatch": ["^scripts/build-tailwind\\.sh$"],
+      "managerFilePatterns": [
+        "/^scripts/build-tailwind\\.sh$/"
+      ],
       "matchStrings": ["VERSION=\"(?<currentValue>v[0-9.]+)\""],
       "datasourceTemplate": "github-releases",
       "depNameTemplate": "tailwindlabs/tailwindcss",
