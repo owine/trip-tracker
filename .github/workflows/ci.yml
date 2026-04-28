@@ -110,7 +110,7 @@ jobs:
       - run: semgrep ci --config p/owasp-top-ten --config p/python --sarif --output semgrep.sarif
         env:
           SEMGREP_RULES: p/owasp-top-ten p/python
-      - uses: github/codeql-action/upload-sarif@ce64ddcb0d8d890d2df4a9d1c04ff297367dea2a  # v3.35.2
+      - uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225  # v4.35.2
         # SARIF upload requires GHAS on private repos; tolerate failure.
         if: always()
         continue-on-error: true
@@ -139,7 +139,7 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: true
-      - uses: github/codeql-action/upload-sarif@ce64ddcb0d8d890d2df4a9d1c04ff297367dea2a  # v3.35.2
+      - uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225  # v4.35.2
         # SARIF upload requires GHAS on private repos; tolerate failure.
         if: always()
         continue-on-error: true
