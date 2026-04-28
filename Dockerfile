@@ -1,7 +1,7 @@
-# syntax=docker/dockerfile:1.10
+# syntax=docker/dockerfile:1.23
 
 # ---- Builder stage ----
-FROM python:3.13.13-slim@sha256:d2462a6bed37b4fc6cabecf5a2132ae70df772fe03c7393c4d98a0c2fb48aa2e AS builder
+FROM python:3.14.4-slim@sha256:c11aee3b3cae066f55d1e9318fc812673aa6557073b0db0d792b59491b262e0c AS builder
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -10,7 +10,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install uv from its release image (also digest-pinnable; using stable tag here is acceptable
 # as the binary is verified by uv's self-update mechanism).
-COPY --from=ghcr.io/astral-sh/uv:0.5.4@sha256:5436c72d52c9c0d011010ce68f4c399702b3b0764adcf282fe0e546f20ebaef6 /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.8@sha256:3b7b60a81d3c57ef471703e5c83fd4aaa33abcd403596fb22ab07db85ae91347 /uv /uvx /usr/local/bin/
 
 WORKDIR /app
 
@@ -37,7 +37,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
 
 # ---- Runtime stage ----
-FROM python:3.13.13-slim@sha256:d2462a6bed37b4fc6cabecf5a2132ae70df772fe03c7393c4d98a0c2fb48aa2e AS runtime
+FROM python:3.14.4-slim@sha256:c11aee3b3cae066f55d1e9318fc812673aa6557073b0db0d792b59491b262e0c AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

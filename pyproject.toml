@@ -3,7 +3,7 @@ name = "trip-tracker"
 version = "0.1.0"
 description = "Self-hosted itinerary aggregator (TripIt replacement)."
 readme = "README.md"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "fastapi>=0.136.1",
     "uvicorn[standard]>=0.46.0",
@@ -48,7 +48,7 @@ packages = ["src/trip_tracker"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py314"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -72,7 +72,7 @@ ignore = ["S101"]           # allow `assert` in tests
 "migrations/**" = ["E501"]
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.14"
 strict = true
 warn_unreachable = true
 warn_redundant_casts = true

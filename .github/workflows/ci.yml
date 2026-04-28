@@ -24,7 +24,7 @@ jobs:
         with:
           enable-cache: true
       - name: Install Python
-        run: uv python install 3.13
+        run: uv python install 3.14
       - name: Sync deps
         run: uv sync --all-groups --frozen
       - name: ruff check
@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
       - uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39  # v3.2.4
         with: { enable-cache: true }
-      - run: uv python install 3.13
+      - run: uv python install 3.14
       - run: uv sync --all-groups --frozen
       - run: uv run mypy
 
@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
       - uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39  # v3.2.4
         with: { enable-cache: true }
-      - run: uv python install 3.13
+      - run: uv python install 3.14
       - run: uv sync --all-groups --frozen
       - name: Install postgres client tools
         run: |
@@ -84,7 +84,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
       - uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39  # v3.2.4
         with: { enable-cache: true }
-      - run: uv python install 3.13
+      - run: uv python install 3.14
       - run: uv sync --all-groups --frozen
       - name: bandit
         run: uv run bandit -c pyproject.toml -r src/
