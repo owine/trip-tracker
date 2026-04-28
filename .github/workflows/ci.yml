@@ -89,7 +89,7 @@ jobs:
       - name: bandit
         run: uv run bandit -c pyproject.toml -r src/
       - name: pip-audit
-        run: uv run pip-audit --strict --disable-pip
+        run: uv run pip-audit --strict
 
   security-secrets:
     runs-on: ubuntu-latest
@@ -109,8 +109,11 @@ jobs:
         env:
           SEMGREP_RULES: p/owasp-top-ten p/python
       - uses: github/codeql-action/upload-sarif@v3
+        # SARIF upload requires GHAS on private repos; tolerate failure.
         if: always()
-        with: { sarif_file: semgrep.sarif }
+        continue-on-error: true
+        with:
+          sarif_file: semgrep.sarif
 
   docker-build-scan:
     runs-on: ubuntu-latest
@@ -126,7 +129,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: trip-tracker:ci
           format: sarif
@@ -135,5 +138,8 @@ jobs:
           exit-code: "1"
           ignore-unfixed: true
       - uses: github/codeql-action/upload-sarif@v3
+        # SARIF upload requires GHAS on private repos; tolerate failure.
         if: always()
-        with: { sarif_file: trivy.sarif }
+        continue-on-error: true
+        with:
+          sarif_file: trivy.sarif
