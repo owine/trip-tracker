@@ -57,3 +57,4 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OIDC_REDIRECT_URI", "https://trips.example.com/auth/callback")
     monkeypatch.setenv("BASE_URL", "https://trips.example.com")
     monkeypatch.setenv("LOG_FORMAT", "console")
+    monkeypatch.setenv("WEBHOOK_SECRET", "x" * 32)
