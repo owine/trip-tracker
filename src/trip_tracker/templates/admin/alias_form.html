@@ -1,17 +1,24 @@
 {% extends "base.html" %}
-{% block title %}New alias{% endblock %}
+{% block title %}{{ "Edit alias" if alias else "New alias" }}{% endblock %}
 {% block content %}
-  <h1 class="text-3xl font-semibold">New forwarding alias</h1>
-  <form method="post" action="/admin/aliases" class="mt-6 space-y-4">
+  <h1 class="text-3xl font-semibold">{{ "Edit forwarding alias" if alias else "New forwarding alias" }}</h1>
+  {% if errors %}<p class="mt-2 text-red-600">{{ errors._form }}</p>{% endif %}
+  <form method="post"
+        action="{{ '/admin/aliases/' ~ alias.id if alias else '/admin/aliases' }}"
+        class="mt-6 space-y-4">
     <label class="block text-sm">Local part
       <input class="mt-1 w-full rounded border p-2" name="local_part"
-             pattern="[a-z0-9._%+-]+" required>
+             pattern="[a-z0-9._%+-]+" required
+             value="{{ alias.local_part if alias else '' }}">
     </label>
     <label class="block text-sm">Owner
       <select class="mt-1 w-full rounded border p-2" name="user_id" required>
-        {% for u in users %}<option value="{{ u.id }}">{{ u.email }}</option>{% endfor %}
+        {% for u in users %}
+          <option value="{{ u.id }}"
+            {% if alias and alias.user_id == u.id %}selected{% endif %}>{{ u.email }}</option>
+        {% endfor %}
       </select>
     </label>
-    <button class="rounded bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">Create</button>
+    <button class="rounded bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">{{ "Save" if alias else "Create" }}</button>
   </form>
 {% endblock %}

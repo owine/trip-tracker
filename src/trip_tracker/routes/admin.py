@@ -104,6 +104,71 @@ async def alias_create(
     return RedirectResponse("/admin/aliases", status_code=303)
 
 
+@router.get("/aliases/{alias_id}/edit", response_class=HTMLResponse)
+async def alias_edit_form(
+    request: Request,
+    alias_id: uuid.UUID,
+    user: User = Depends(require_admin),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> HTMLResponse:
+    alias = await db.get(ForwardingAlias, alias_id)
+    if alias is None:
+        raise HTTPException(404)
+    users = (await db.execute(select(User).order_by(User.email))).scalars().all()
+    return templates.TemplateResponse(
+        request,
+        "admin/alias_form.html",
+        {"user": user, "users": users, "alias": alias, "errors": {}},
+    )
+
+
+@router.post("/aliases/{alias_id}", response_model=None)
+async def alias_update(
+    request: Request,
+    alias_id: uuid.UUID,
+    user: User = Depends(require_admin),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+    local_part: str = Form(...),
+    user_id: uuid.UUID = Form(...),  # noqa: B008
+) -> Response:
+    alias = await db.get(ForwardingAlias, alias_id)
+    if alias is None:
+        raise HTTPException(404)
+    normalized = local_part.lower().strip()
+    if not _LOCAL_PART_RE.match(normalized) or len(normalized) > 64:
+        users = (await db.execute(select(User).order_by(User.email))).scalars().all()
+        return templates.TemplateResponse(
+            request,
+            "admin/alias_form.html",
+            {
+                "user": user,
+                "users": users,
+                "alias": alias,
+                "errors": {"_form": "invalid local part"},
+            },
+            status_code=200,
+        )
+    alias.local_part = normalized
+    alias.user_id = user_id
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        users = (await db.execute(select(User).order_by(User.email))).scalars().all()
+        return templates.TemplateResponse(
+            request,
+            "admin/alias_form.html",
+            {
+                "user": user,
+                "users": users,
+                "alias": alias,
+                "errors": {"_form": f"alias {normalized!r} already exists"},
+            },
+            status_code=200,
+        )
+    return RedirectResponse("/admin/aliases", status_code=303)
+
+
 @router.post("/aliases/{alias_id}/delete", response_model=None)
 async def alias_delete(
     alias_id: uuid.UUID,

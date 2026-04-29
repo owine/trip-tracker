@@ -15,7 +15,8 @@
           <td class="py-2 font-mono">{{ alias.local_part }}</td>
           <td>{{ owner.email }}</td>
           <td class="text-zinc-500">{{ alias.created_at.date() }}</td>
-          <td>
+          <td class="space-x-2">
+            <a class="underline" href="/admin/aliases/{{ alias.id }}/edit">Edit</a>
             <form method="post" action="/admin/aliases/{{ alias.id }}/delete"
                   onsubmit="return confirm('Delete?')" class="inline">
               <button class="text-red-600 underline">Delete</button>
