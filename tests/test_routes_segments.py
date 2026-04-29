@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 import httpx
 import pytest
@@ -190,3 +190,200 @@ async def test_create_segment_existing_trip_widens_dates(
     await db_session.refresh(trip)
     assert trip.start_date == date(2026, 6, 1)  # widened
     assert trip.end_date == date(2026, 6, 7)  # unchanged
+
+
+async def _seed_flight(db: AsyncSession, owner: User, trip: Trip) -> Segment:
+    seg = Segment(
+        trip_id=trip.id,
+        owner_user_id=owner.id,
+        type="flight",
+        status="confirmed",
+        provider="Delta",
+        confirmation_number="ABC123",
+        start_at=datetime(2026, 6, 1, 13, 0, tzinfo=UTC),  # 09:00 EDT
+        start_tz="America/New_York",
+        end_at=datetime(2026, 6, 2, 2, 0, tzinfo=UTC),  # 22:00 CEST
+        end_tz="Europe/Paris",
+        start_location={"iata": "JFK", "city": "New York"},
+        end_location={"iata": "CDG", "city": "Paris"},
+        details={"flight_number": "DL44", "seat": "12A"},
+        parse_source="manual",
+        parse_confidence=1.0,
+    )
+    db.add(seg)
+    await db.commit()
+    return seg
+
+
+@pytest.mark.asyncio
+async def test_edit_segment_renders_prefilled_form(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user = await _user(db_session)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+    seg = await _seed_flight(db_session, user, trip)
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            cookies=_cookie(user, settings),
+        ) as c,
+    ):
+        r = await c.get(f"/trips/{trip.id}/segments/{seg.id}/edit")
+
+    assert r.status_code == 200
+    # Prefilled values from the segment:
+    assert "Delta" in r.text
+    assert "ABC123" in r.text
+    assert "DL44" in r.text
+    assert "JFK" in r.text
+    assert "CDG" in r.text
+    # The local datetime display (note: 13:00 UTC → 09:00 in America/New_York):
+    assert "2026-06-01T09:00" in r.text
+
+
+@pytest.mark.asyncio
+async def test_edit_segment_round_trip_updates_db(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user = await _user(db_session)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+    seg = await _seed_flight(db_session, user, trip)
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            cookies=_cookie(user, settings),
+        ) as c,
+    ):
+        r = await c.post(
+            f"/trips/{trip.id}/segments/{seg.id}",
+            data={
+                "type": "flight",
+                "trip_selector_existing_trip_id": str(trip.id),
+                "status": "confirmed",
+                "provider": "Delta",
+                "confirmation_number": "ABC123",
+                "flight_number": "DL44",
+                "origin_iata": "JFK",
+                "origin_city": "New York",
+                "destination_iata": "ORY",  # changed
+                "destination_city": "Paris",
+                "start_local": "2026-06-01T09:00",
+                "start_tz": "America/New_York",
+                "end_local": "2026-06-01T22:00",
+                "end_tz": "Europe/Paris",
+                "seat": "1A",  # changed
+            },
+            follow_redirects=False,
+        )
+    assert r.status_code == 303
+
+    await db_session.refresh(seg)
+    assert seg.end_location["iata"] == "ORY"
+    assert seg.details["seat"] == "1A"
+    # confirmation/provider/flight_number unchanged:
+    assert seg.confirmation_number == "ABC123"
+
+
+@pytest.mark.asyncio
+async def test_delete_segment_removes_row(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user = await _user(db_session)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+    seg = await _seed_flight(db_session, user, trip)
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            cookies=_cookie(user, settings),
+        ) as c,
+    ):
+        r = await c.post(
+            f"/trips/{trip.id}/segments/{seg.id}/delete",
+            follow_redirects=False,
+        )
+    assert r.status_code == 303
+    assert r.headers["location"] == f"/trips/{trip.id}"
+
+    rows = (await db_session.execute(select(Segment))).scalars().all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_edit_segment_404_for_non_traveler(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    creator = await _user(db_session)
+    other = User(oidc_subject="other", email="other@x.com", display_name="O")
+    db_session.add(other)
+    await db_session.flush()
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=creator.id
+    )
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=creator.id, role="owner"))
+    seg = await _seed_flight(db_session, creator, trip)
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            cookies=_cookie(other, settings),
+        ) as c,
+    ):
+        r_edit = await c.get(f"/trips/{trip.id}/segments/{seg.id}/edit")
+        r_post = await c.post(
+            f"/trips/{trip.id}/segments/{seg.id}",
+            data={"type": "flight"},
+            follow_redirects=False,
+        )
+        r_del = await c.post(
+            f"/trips/{trip.id}/segments/{seg.id}/delete",
+            follow_redirects=False,
+        )
+
+    # All three must 404 — non-member can't see the trip exists.
+    assert r_edit.status_code == 404
+    assert r_post.status_code == 404
+    assert r_del.status_code == 404

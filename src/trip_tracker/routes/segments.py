@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -264,3 +264,209 @@ def _derive_destination(
     primary_side = end_loc if seg_type in DESTINATION_FROM_END else start_loc
     fallback_side = start_loc if seg_type in DESTINATION_FROM_END else end_loc
     return (primary_side or {}).get("city") or (fallback_side or {}).get("city") or None
+
+
+@router.get("/trips/{trip_id}/segments/{segment_id}/edit", response_class=HTMLResponse)
+async def edit_segment_form(
+    request: Request,
+    trip_id: uuid.UUID,
+    segment_id: uuid.UUID,
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> HTMLResponse:
+    seg = await _load_segment_for_user(db, trip_id, segment_id, user.id)
+    trips = (await db.execute(_user_trips(db, user.id))).scalars().all()
+    return templates.TemplateResponse(
+        request,
+        f"segments/{seg.type}_form.html",
+        {
+            "user": user,
+            "trips": trips,
+            "timezones": TIMEZONES,
+            "values": _segment_to_form_values(seg),
+            "errors": {},
+            "type": seg.type,
+            "edit_segment_id": str(seg.id),
+        },
+    )
+
+
+@router.post("/trips/{trip_id}/segments/{segment_id}", response_model=None)
+async def update_segment(
+    request: Request,
+    trip_id: uuid.UUID,
+    segment_id: uuid.UUID,
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> Response:
+    """Update an existing segment in place.
+
+    Phase 2 scope: type and trip CANNOT change. The form re-uses the per-type
+    template, so the `type` field is hidden and immutable; the `trip_selector`
+    is forced to the current trip (we ignore any new-trip submission). This
+    keeps the diff small — moving a segment between trips can land later.
+
+    Auto-widening of trip dates DOES re-run on update (the new datetime may
+    extend or shrink the range).
+    """
+    seg = await _load_segment_for_user(db, trip_id, segment_id, user.id)
+    # Re-load the trip so we can widen its dates after recomputing.
+    trip = (await db.execute(select(Trip).where(Trip.id == trip_id))).scalar_one()
+
+    form_data = await request.form()
+    seg_type = form_data.get("type")
+    if not isinstance(seg_type, str) or seg_type != seg.type:
+        # Defensive: form posts the hidden `type` field; mismatch is tampering.
+        raise HTTPException(400, detail="segment type immutable")
+    form_cls = FORM_BY_TYPE[seg_type]
+
+    raw: dict[str, Any] = dict(form_data)
+    # Force the trip selector to the current trip — edits never re-route trips.
+    raw["trip_selector"] = TripSelector(existing_trip_id=trip.id, new_trip_title=None).model_dump()
+    raw.pop("trip_selector_existing_trip_id", None)
+    raw.pop("trip_selector_new_trip_title", None)
+
+    try:
+        form = form_cls.model_validate(raw)
+    except ValidationError as e:
+        return templates.TemplateResponse(
+            request,
+            f"segments/{seg_type}_form.html",
+            {
+                "user": user,
+                "trips": [trip],
+                "timezones": TIMEZONES,
+                "values": raw,
+                "errors": {"_form": str(e)},
+                "type": seg_type,
+                "edit_segment_id": str(seg.id),
+            },
+            status_code=200,
+        )
+
+    start_at = _to_utc(form.start_local, form.start_tz)
+    end_at = _to_utc(form.end_local, form.end_tz) if form.end_local and form.end_tz else None
+    start_loc, end_loc, details = _shape_payload(form)
+
+    seg.status = form.status
+    seg.confirmation_number = form.confirmation_number
+    seg.provider = form.provider
+    seg.start_at = start_at
+    seg.start_tz = form.start_tz
+    seg.end_at = end_at
+    seg.end_tz = form.end_tz
+    seg.start_location = start_loc
+    seg.end_location = end_loc
+    seg.details = details
+
+    # Re-widen trip dates against the new segment timing.
+    seg_start_date: date = start_at.date()
+    seg_end_date: date = (end_at or start_at).date()
+    new_start = min(trip.start_date, seg_start_date)
+    new_end = max(trip.end_date, seg_end_date)
+    if (new_start, new_end) != (trip.start_date, trip.end_date):
+        trip.start_date = new_start
+        trip.end_date = new_end
+
+    await db.commit()
+    return RedirectResponse(f"/trips/{trip_id}", status_code=303)
+
+
+@router.post("/trips/{trip_id}/segments/{segment_id}/delete", response_model=None)
+async def delete_segment(
+    trip_id: uuid.UUID,
+    segment_id: uuid.UUID,
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> RedirectResponse:
+    seg = await _load_segment_for_user(db, trip_id, segment_id, user.id)
+    await db.delete(seg)
+    await db.commit()
+    return RedirectResponse(f"/trips/{trip_id}", status_code=303)
+
+
+async def _load_segment_for_user(
+    db: AsyncSession, trip_id: uuid.UUID, segment_id: uuid.UUID, user_id: uuid.UUID
+) -> Segment:
+    stmt = (
+        select(Segment)
+        .join(Trip, Trip.id == Segment.trip_id)
+        .join(TripTraveler, TripTraveler.trip_id == Trip.id)
+        .where(
+            Trip.id == trip_id,
+            Segment.id == segment_id,
+            TripTraveler.user_id == user_id,
+        )
+    )
+    seg = (await db.execute(stmt)).scalar_one_or_none()
+    if seg is None:
+        raise HTTPException(404)
+    return seg
+
+
+def _segment_to_form_values(seg: Segment) -> dict[str, Any]:
+    """Flatten a Segment row into the dict shape templates expect."""
+    sl = seg.start_location or {}
+    el = seg.end_location or {}
+    d = seg.details or {}
+    base: dict[str, Any] = {
+        "trip_selector_existing_trip_id": str(seg.trip_id),
+        "status": seg.status,
+        "provider": seg.provider or "",
+        "confirmation_number": seg.confirmation_number or "",
+        "start_local": seg.start_at.astimezone(zoneinfo.ZoneInfo(seg.start_tz)).strftime(
+            "%Y-%m-%dT%H:%M"
+        ),
+        "start_tz": seg.start_tz,
+        "end_local": (
+            seg.end_at.astimezone(zoneinfo.ZoneInfo(seg.end_tz)).strftime("%Y-%m-%dT%H:%M")
+            if seg.end_at and seg.end_tz
+            else ""
+        ),
+        "end_tz": seg.end_tz or "",
+        "notes": d.get("notes", ""),
+    }
+    if seg.type == "flight":
+        base.update(
+            flight_number=d.get("flight_number", ""),
+            seat=d.get("seat", ""),
+            origin_iata=sl.get("iata", ""),
+            origin_city=sl.get("city", ""),
+            destination_iata=el.get("iata", ""),
+            destination_city=el.get("city", ""),
+        )
+    elif seg.type == "lodging":
+        base.update(
+            hotel_name=sl.get("name", ""),
+            address=sl.get("address", ""),
+            city=sl.get("city", ""),
+            country=sl.get("country", ""),
+            room_type=d.get("room_type", ""),
+        )
+    elif seg.type == "car":
+        base.update(
+            pickup_location=sl.get("name", ""),
+            pickup_city=sl.get("city", ""),
+            dropoff_location=el.get("name", ""),
+            dropoff_city=el.get("city", ""),
+            car_class=d.get("car_class", ""),
+        )
+    elif seg.type == "train":
+        base.update(
+            origin_station=sl.get("name", ""),
+            destination_station=el.get("name", ""),
+            train_number=d.get("train_number", ""),
+            seat=d.get("seat", ""),
+        )
+    elif seg.type == "transfer":
+        base.update(
+            pickup_location=sl.get("name", ""),
+            dropoff_location=el.get("name", ""),
+        )
+    elif seg.type == "activity":
+        base.update(
+            venue_name=sl.get("name", ""),
+            address=sl.get("address", ""),
+            city=sl.get("city", ""),
+        )
+    return base
