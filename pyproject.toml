@@ -92,10 +92,17 @@ disallow_untyped_decorators = false
 module = ["authlib.*", "pytest_postgresql.*", "extruct"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["anthropic", "anthropic.*"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-ra --strict-markers --strict-config"
+addopts = "-ra --strict-markers --strict-config -m 'not live_llm'"
+markers = [
+    "live_llm: requires real ANTHROPIC_API_KEY; not run in CI",
+]
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning:passlib.*",
