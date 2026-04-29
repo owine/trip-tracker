@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ trip.title }} · trip-tracker{% endblock %}
+{% block content %}
+  <div class="flex items-baseline justify-between">
+    <div>
+      <h1 class="text-3xl font-semibold">{{ trip.title }}</h1>
+      <p class="text-sm text-zinc-500">
+        {{ trip.start_date }} – {{ trip.end_date }}
+        {% if trip.primary_destination %}· {{ trip.primary_destination }}{% endif %}
+      </p>
+    </div>
+    <div class="space-x-2 text-sm">
+      <a class="underline" href="/trips/{{ trip.id }}/edit">Edit</a>
+      <form method="post"
+            action="/trips/{{ trip.id }}/delete"
+            class="inline"
+            onsubmit="return confirm('Delete this trip?')">
+        <button class="text-red-600 underline">Delete</button>
+      </form>
+    </div>
+  </div>
+  <ul class="mt-6 divide-y divide-zinc-200 dark:divide-zinc-800">
+    {% for s in segments %}
+      {% include "segments/_row.html" %}
+    {% else %}
+      <li class="py-6 text-zinc-500">
+        No segments yet.
+        <a class="underline" href="/segments/new">Add one.</a>
+      </li>
+    {% endfor %}
+  </ul>
+{% endblock %}

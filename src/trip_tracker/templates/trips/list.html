@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Trips · trip-tracker{% endblock %}
+{% block content %}
+  <div class="flex items-baseline justify-between">
+    <h1 class="text-3xl font-semibold">Trips</h1>
+    <a class="rounded bg-zinc-900 px-3 py-1.5 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900"
+       href="/segments/new">+ Add segment</a>
+  </div>
+  <ul class="mt-6 divide-y divide-zinc-200 dark:divide-zinc-800">
+    {% for t in trips %}
+      {% include "trips/_row.html" %}
+    {% else %}
+      <li class="py-6 text-zinc-500">
+        No trips yet. <a class="underline" href="/segments/new">Add your first segment.</a>
+      </li>
+    {% endfor %}
+  </ul>
+{% endblock %}

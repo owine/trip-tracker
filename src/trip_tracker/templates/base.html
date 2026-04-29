@@ -9,6 +9,18 @@
     <link rel="stylesheet" href="/static/tailwind.css" />
   </head>
   <body class="h-full bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
+    {% if user %}
+      <nav class="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+        <div class="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
+          <a class="font-semibold" href="/">trip-tracker</a>
+          <div class="space-x-4 text-sm">
+            <a href="/trips" class="hover:underline">Trips</a>
+            {% if user.is_admin %}<a href="/admin/aliases" class="hover:underline">Admin</a>{% endif %}
+            <a href="/auth/logout" class="hover:underline">Sign out</a>
+          </div>
+        </div>
+      </nav>
+    {% endif %}
     <main class="mx-auto max-w-2xl px-4 py-12">
       {% block content %}{% endblock %}
     </main>

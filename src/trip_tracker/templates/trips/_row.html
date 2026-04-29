@@ -1,0 +1,9 @@
+<li class="py-3">
+  <a href="/trips/{{ t.id }}" class="block hover:underline">
+    <div class="flex items-baseline justify-between">
+      <span class="text-lg font-medium">{{ t.title }}</span>
+      <span class="text-sm text-zinc-500">{{ t.start_date }} – {{ t.end_date }}</span>
+    </div>
+    {% if t.primary_destination %}<div class="text-sm text-zinc-500">{{ t.primary_destination }}</div>{% endif %}
+  </a>
+</li>

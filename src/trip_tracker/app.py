@@ -17,6 +17,7 @@ from trip_tracker.ingest.webhook import router as ingest_router
 from trip_tracker.logging_setup import configure_logging
 from trip_tracker.routes.health import router as health_router
 from trip_tracker.routes.home import router as home_router
+from trip_tracker.routes.trips import router as trips_router
 
 
 @asynccontextmanager
@@ -52,5 +53,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(ingest_router)
     app.include_router(home_router)
+    app.include_router(trips_router)
 
     return app
