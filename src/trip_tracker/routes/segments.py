@@ -159,7 +159,7 @@ async def create_segment(
             trip.start_date = new_start
             trip.end_date = new_end
     else:
-        assert form.trip_selector.new_trip_title  # validated by Pydantic
+        assert form.trip_selector.new_trip_title, "validated by Pydantic"  # nosec B101
         seg_end_date = (end_at or start_at).date()
         primary = _derive_destination(seg_type, start_loc, end_loc)
         trip = Trip(

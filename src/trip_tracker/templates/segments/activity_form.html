@@ -5,16 +5,23 @@
   {% if errors %}<p class="mt-2 text-red-600">{{ errors._form }}</p>{% endif %}
   <form method="post" action="/segments" class="mt-6 space-y-4">
     {% include "segments/_common_fields.html" %}
-    <label class="block text-sm">Venue name
-      <input class="mt-1 w-full rounded border p-2" name="venue_name" required
+    <label class="block text-sm">
+      Venue name
+      <input class="mt-1 w-full rounded border p-2"
+             name="venue_name"
+             required
              value="{{ values.get('venue_name', '') }}">
     </label>
-    <label class="block text-sm">Address
-      <input class="mt-1 w-full rounded border p-2" name="address"
+    <label class="block text-sm">
+      Address
+      <input class="mt-1 w-full rounded border p-2"
+             name="address"
              value="{{ values.get('address', '') }}">
     </label>
-    <label class="block text-sm">City
-      <input class="mt-1 w-full rounded border p-2" name="city"
+    <label class="block text-sm">
+      City
+      <input class="mt-1 w-full rounded border p-2"
+             name="city"
              value="{{ values.get('city', '') }}">
     </label>
     <button class="rounded bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">Create</button>

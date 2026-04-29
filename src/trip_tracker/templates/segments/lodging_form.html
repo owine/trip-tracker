@@ -5,26 +5,37 @@
   {% if errors %}<p class="mt-2 text-red-600">{{ errors._form }}</p>{% endif %}
   <form method="post" action="/segments" class="mt-6 space-y-4">
     {% include "segments/_common_fields.html" %}
-    <label class="block text-sm">Hotel name
-      <input class="mt-1 w-full rounded border p-2" name="hotel_name" required
+    <label class="block text-sm">
+      Hotel name
+      <input class="mt-1 w-full rounded border p-2"
+             name="hotel_name"
+             required
              value="{{ values.get('hotel_name', '') }}">
     </label>
-    <label class="block text-sm">Address
-      <input class="mt-1 w-full rounded border p-2" name="address"
+    <label class="block text-sm">
+      Address
+      <input class="mt-1 w-full rounded border p-2"
+             name="address"
              value="{{ values.get('address', '') }}">
     </label>
     <div class="grid grid-cols-2 gap-3">
-      <label class="block text-sm">City
-        <input class="mt-1 w-full rounded border p-2" name="city"
+      <label class="block text-sm">
+        City
+        <input class="mt-1 w-full rounded border p-2"
+               name="city"
                value="{{ values.get('city', '') }}">
       </label>
-      <label class="block text-sm">Country
-        <input class="mt-1 w-full rounded border p-2" name="country"
+      <label class="block text-sm">
+        Country
+        <input class="mt-1 w-full rounded border p-2"
+               name="country"
                value="{{ values.get('country', '') }}">
       </label>
     </div>
-    <label class="block text-sm">Room type
-      <input class="mt-1 w-full rounded border p-2" name="room_type"
+    <label class="block text-sm">
+      Room type
+      <input class="mt-1 w-full rounded border p-2"
+             name="room_type"
              value="{{ values.get('room_type', '') }}">
     </label>
     <button class="rounded bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">Create</button>

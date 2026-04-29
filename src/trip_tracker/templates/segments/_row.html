@@ -5,13 +5,16 @@
     {% if s.confirmation_number %}<span class="ml-2 text-zinc-500">{{ s.confirmation_number }}</span>{% endif %}
     <div class="text-sm text-zinc-500">
       {{ s.start_at | localize_dt(s.start_tz) }} {{ s.start_tz }}
-      {% if s.start_location %} · {{ s.start_location.get("name") or s.start_location.get("city") }}{% endif %}
-      {% if s.end_location %} → {{ s.end_location.get("name") or s.end_location.get("city") }}{% endif %}
+      {% if s.start_location %}· {{ s.start_location.get("name") or s.start_location.get("city") }}{% endif %}
+      {% if s.end_location %}→ {{ s.end_location.get("name") or s.end_location.get("city") }}{% endif %}
     </div>
   </div>
   <div class="space-x-2 text-sm">
-    <a class="underline" href="/trips/{{ s.trip_id }}/segments/{{ s.id }}/edit">Edit</a>
-    <form method="post" action="/trips/{{ s.trip_id }}/segments/{{ s.id }}/delete" class="inline"
+    <a class="underline"
+       href="/trips/{{ s.trip_id }}/segments/{{ s.id }}/edit">Edit</a>
+    <form method="post"
+          action="/trips/{{ s.trip_id }}/segments/{{ s.id }}/delete"
+          class="inline"
           onsubmit="return confirm('Delete?')">
       <button class="text-red-600 underline">Delete</button>
     </form>

@@ -3,11 +3,17 @@
 {% block content %}
   <div class="flex items-baseline justify-between">
     <h1 class="text-3xl font-semibold">Forwarding aliases</h1>
-    <a href="/admin/aliases/new" class="rounded bg-zinc-900 px-3 py-1.5 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">+ New</a>
+    <a href="/admin/aliases/new"
+       class="rounded bg-zinc-900 px-3 py-1.5 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">+ New</a>
   </div>
   <table class="mt-6 w-full text-sm">
     <thead class="text-left text-zinc-500">
-      <tr><th class="py-2">Local part</th><th>Owner</th><th>Created</th><th></th></tr>
+      <tr>
+        <th class="py-2">Local part</th>
+        <th>Owner</th>
+        <th>Created</th>
+        <th></th>
+      </tr>
     </thead>
     <tbody class="divide-y divide-zinc-200 dark:divide-zinc-800">
       {% for alias, owner in rows %}
@@ -17,8 +23,10 @@
           <td class="text-zinc-500">{{ alias.created_at.date() }}</td>
           <td class="space-x-2">
             <a class="underline" href="/admin/aliases/{{ alias.id }}/edit">Edit</a>
-            <form method="post" action="/admin/aliases/{{ alias.id }}/delete"
-                  onsubmit="return confirm('Delete?')" class="inline">
+            <form method="post"
+                  action="/admin/aliases/{{ alias.id }}/delete"
+                  onsubmit="return confirm('Delete?')"
+                  class="inline">
               <button class="text-red-600 underline">Delete</button>
             </form>
           </td>

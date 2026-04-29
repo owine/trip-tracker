@@ -6,12 +6,18 @@
   <form method="post" action="/segments" class="mt-6 space-y-4">
     {% include "segments/_common_fields.html" %}
     <div class="grid grid-cols-2 gap-3">
-      <label class="block text-sm">Pickup location
-        <input class="mt-1 w-full rounded border p-2" name="pickup_location" required
+      <label class="block text-sm">
+        Pickup location
+        <input class="mt-1 w-full rounded border p-2"
+               name="pickup_location"
+               required
                value="{{ values.get('pickup_location', '') }}">
       </label>
-      <label class="block text-sm">Dropoff location
-        <input class="mt-1 w-full rounded border p-2" name="dropoff_location" required
+      <label class="block text-sm">
+        Dropoff location
+        <input class="mt-1 w-full rounded border p-2"
+               name="dropoff_location"
+               required
                value="{{ values.get('dropoff_location', '') }}">
       </label>
     </div>
