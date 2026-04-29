@@ -34,7 +34,7 @@ This phase is the third of sixteen per spec §12. It is shippable on its own: pa
 - **Trip clustering** — geo-distance via `airports.csv` (200km threshold) when both endpoints have coords, normalized city-name match otherwise; ±1 day adjacency window; <20% score-gap tiebreak routes to `/inbox`; auto-title `"{primary_destination} {month year}"` for new trips.
 - **Inbox UI** at `/inbox` — three buckets (low-confidence parses, no-segments emails, possible duplicates) with five actions (Confirm / Edit / Re-ask Claude with hint / Split / Discard).
 - **Segments form prefill path** — `/segments/new?from_raw_email=<id>` and `/segments/<id>/edit` accept parser output, render ✨ AI-suggested indicators next to AI-set fields, drop indicators on user save, write `change_reason='inbox_confirm'` on confirmation.
-- **Daily LLM budget cap** — soft $1/day Haiku spend cap tracked in a new `llm_budget` table; over-budget RawEmails skip Haiku (JSON-LD + vendor rules still try) and route to `needs_review`.
+- **Daily LLM budget cap** — soft $1/day Haiku spend cap tracked in a new `llm_budget` table; over-budget RawEmails skip Haiku (JSON-LD + vendor rules still try) and route to `review`.
 - **Tests:** ≥85% coverage; parameterized vendor-fixture regression suite; mocked Anthropic SDK in CI; one `@pytest.mark.live_llm` smoke test gated on `ANTHROPIC_API_KEY`.
 
 ### Out of scope (deferred — phase noted)
@@ -43,7 +43,7 @@ This phase is the third of sixteen per spec §12. It is shippable on its own: pa
 |---|---|
 | Meilisearch + post-commit search sync | 4 (was Phase 3 in master spec; explicitly deferred) |
 | Nominatim hotel-address geocoding | 4 |
-| Vendor parsers beyond v0.3.0's eight | 4+ (added incrementally via plugin architecture) |
+| Vendor parsers beyond v0.3.0's ten | 4+ (added incrementally via plugin architecture) |
 | Document vault, OCR, PDF text extraction | 5 |
 | Expense tracking, FX freezing | 6 |
 | Public share links | 7 |
@@ -68,7 +68,7 @@ forwardemail webhook ──► /api/ingest/email
                   │                 │
                   │  parsers/       │
                   │  ├─ jsonld.py   │ strategy 1 (extruct)
-                  │  ├─ vendors/*   │ strategy 2 (8 packs, plugin-discovered)
+                  │  ├─ vendors/*   │ strategy 2 (10 packs, plugin-discovered)
                   │  └─ llm.py      │ strategy 3 (Haiku 4.5, prompt-cached)
                   └───────┬─────────┘
                           │ writes Segment(s) + Trip clustering
@@ -81,7 +81,7 @@ forwardemail webhook ──► /api/ingest/email
 
 **Touched Phase 2 surfaces:**
 
-- `RawEmail.parse_status` enum values gain meaningful population: `'parsed'`, `'needs_review'`, `'no_segments'`. (Column already exists.)
+- `RawEmail.parse_status` enum values gain meaningful population: `'parsed'`, `'review'`, `'no_segments'`. (Column already exists.)
 - `Segment.parse_source` populated as `'json-ld'` / `'rules:<vendor_name>'` / `'llm:haiku-4-5'`. (Currently always `'manual'`.)
 - `Segment.parse_confidence` actually used. (Currently always `1.0`.)
 - `/segments/new` form **stays** — it's the canonical structured-segment entry UI, reused by Inbox edit/confirm/split flows and by future "no email source" segment creation.
@@ -176,14 +176,14 @@ For each `RawEmail`:
 
 1. **JSON-LD via `extruct`** — looks for `FlightReservation`, `LodgingReservation`, `RentalCarReservation`, `EventReservation`. Confidence ~0.95 on hit. If `segments=[]` returned (no JSON-LD found), continue.
 2. **Matched vendor rule pack** — registry filters parsers by `from_address` match; first matching parser runs (deduplicated post-sort by specificity). If parser returns `confidence < confidence_floor`, fall through. Confidence on a successful match: ~0.9.
-3. **Anthropic Haiku 4.5** — only if both prior strategies missed AND `LlmBudget.cost_cents` for today is below `LLM_DAILY_BUDGET_CENTS`. Tool-use schema mirrors `SegmentDraft`. Self-rated confidence clamped to ≤0.85.
+3. **Anthropic Haiku 4.5** — only if both prior strategies missed AND `LlmBudget.cost_cents` for today is below `LLM_DAILY_BUDGET_CENTS`. Tool-use schema mirrors `SegmentDraft`. Self-rated confidence clamped to ≤0.85 *intentionally* — this preserves a "high-confidence overrides Haiku" signal so a future re-parse with new vendor coverage (~0.9) wins over a stored Haiku result. Without the clamp, an old Haiku parse at 0.95 would beat a fresher rules-based parse and never surface for upgrade.
 
 ### Confidence thresholds
 
 | Confidence | parse_status | UI behavior |
 |---|---|---|
 | `≥ 0.7` | `'parsed'` | Segment auto-attached; not surfaced in inbox |
-| `< 0.7` (any strategy) | `'needs_review'` | Inbox bucket 1; segment is written but flagged for confirmation |
+| `< 0.7` (any strategy) | `'review'` | Inbox bucket 1; segment is written but flagged for confirmation |
 | `segments=[]` from all strategies (high confidence "nothing here") | `'no_segments'` | Inbox bucket 2 |
 
 ### Trip clustering rule
@@ -204,8 +204,8 @@ For each `SegmentDraft` produced:
 |---|---|
 | `extruct` raises | Log + skip JSON-LD, continue to next strategy |
 | Vendor parser raises | Log (with vendor `name` for triage) + continue to next strategy |
-| Anthropic 429/5xx/network timeout | ARQ exponential backoff, max 5 retries over ~30 min. Final failure → `parse_status='needs_review'` |
-| Daily budget exhausted | LLM step skipped; if no other strategy produced segments → `parse_status='needs_review'` (NOT `error_llm` — single bucket per Q5 design decision) |
+| Anthropic 429/5xx/network timeout | ARQ exponential backoff, max 5 retries over ~30 min. Final failure → `parse_status='review'` |
+| Daily budget exhausted | LLM step skipped; if no other strategy produced segments → `parse_status='review'` (NOT `error_llm` — single bucket per Q5 design decision) |
 | All strategies return empty | `parse_status='no_segments'` → Inbox bucket 2 |
 | Possible duplicate detected (same `confirmation_number` on existing segment, or near-identical fields) | Inbox bucket 3 |
 
@@ -228,7 +228,7 @@ Each Haiku call is preceded by a `SELECT cost_cents FROM llm_budget WHERE day = 
 
 `/inbox` is admin-protected (any authenticated user with at least one `TripTraveler` row, OR per-user filtering scoped to the user's RawEmails — see §6.3 below). Three buckets shown as collapsible sections at the top of the page.
 
-### 6.1 Bucket 1 — Low-confidence parses (`parse_status='needs_review'`)
+### 6.1 Bucket 1 — Low-confidence parses (`parse_status='review'`)
 
 Each row shows:
 - The RawEmail's `subject` + `from_address` + `received_at`.
@@ -257,7 +257,7 @@ Detected by: same `confirmation_number` (case-insensitive) on an existing `Segme
 
 ### 6.4 Auth scoping
 
-Inbox shows RawEmails the current user owns (via `forwarding_aliases.user_id` matching `current_user.id` based on `RawEmail.to_address`'s local part), plus admin sees all. Same case-insensitive lowering pattern as the Phase 2 admin raw-emails join.
+Inbox shows RawEmails the current user owns. Mapping: extract the local-part of `RawEmail.to_address` via `split_part(to_address, '@', 1)`, lower-case it (since aliases are stored lowercase but headers preserve case — see Phase 2 v0.2.0 fix `233b8f3` rebased to `574b505`), join to `forwarding_aliases.local_part`, filter where `forwarding_aliases.user_id = current_user.id`. Admins (`is_admin=True`) bypass the filter and see all. This is the same join shape as the Phase 2 admin raw-emails list.
 
 ---
 
@@ -286,7 +286,7 @@ trip-tracker-redis:
 - `redis_settings = RedisSettings.from_dsn(settings.redis_url)`
 - `keep_result = 0` (results aren't read; logs carry diagnostics)
 
-**Webhook integration:** after `await db.commit()` in the existing `/api/ingest/email` handler, a single `await ctx.enqueue_job("parse_raw_email", raw_email.id)` line is added. Webhook still returns 2xx within ~50ms (no parser work blocks the response).
+**Webhook integration:** after the `async with db.begin():` block exits (committing the RawEmail) in the existing `/api/ingest/email` handler, a single `await ctx.enqueue_job("parse_raw_email", raw_email.id)` line is added. Enqueue happens *outside* the DB transaction so a Redis-availability blip doesn't block the webhook ack — but we'd lose the parse trigger; the `parse_pending` admin command is the recovery path. Webhook still returns 2xx within ~50ms (no parser work blocks the response).
 
 **`parse_pending` admin command:**
 
@@ -310,7 +310,7 @@ REDIS_URL=redis://trip-tracker-redis:6379/0
 # --- Optional ---
 LLM_DAILY_BUDGET_CENTS=100             # $1.00 USD/day soft cap
 LLM_MODEL=claude-haiku-4-5-20251001    # pinned per master spec
-LLM_CONFIDENCE_FLOOR=0.7               # below = needs_review
+LLM_CONFIDENCE_FLOOR=0.7               # below = review
 ```
 
 `Settings` (Pydantic) gains corresponding fields, mostly with defaults so only `ANTHROPIC_API_KEY` and `REDIS_URL` are strictly required to add to `.env`.
@@ -349,13 +349,13 @@ LLM_CONFIDENCE_FLOOR=0.7               # below = needs_review
 
 - All ~19 plan tasks merged to `main` (estimated; `writing-plans` will finalize).
 - CI green (lint + typecheck + test + security + docker + djlint).
-- Coverage ≥85%; all 10 vendor parsers ship with ≥1 fixture each.
+- Coverage ≥85%; all 10 vendor parsers — Air France, American, United, Fairmont, Avis, National, Amtrak, SNCF, Uber, Blacklane — ship with ≥1 fixture each.
 - `python -m trip_tracker parse_pending` successfully reprocesses any Phase 2 leftover RawEmails.
 - One real Air France confirmation (the upcoming-travel email) round-trips: webhook → ARQ → segment auto-created → trip auto-clustered → visible at `/trips`.
 - One unknown-sender email round-trips through Haiku → lands in `/inbox` bucket 1 with confidence in [0.7, 0.85] → ✨ prefilled edit form works → Confirm dismisses correctly.
 - One direct-from-host vacation rental email round-trips through Haiku → produces `type='lodging'` segment with the host's name as the property name → auto-clusters or routes to `/inbox` per confidence.
 - A same-day Uber receipt during an existing trip auto-attaches as a `type='transfer'` segment (capture-everything rule, no filtering).
-- Daily-budget cap demonstrated: temporarily set `LLM_DAILY_BUDGET_CENTS=1`, send 5 emails, confirm 4 of them route to `needs_review` after budget consumption.
+- Daily-budget cap demonstrated: temporarily set `LLM_DAILY_BUDGET_CENTS=1`, send 5 emails, confirm 4 of them route to `review` after budget consumption.
 - `v0.3.0` tag pushed; release workflow produces signed multi-arch GHCR image; release-verification scheduled agent confirms tag landed cleanly (same pattern as v0.2.0).
 
 After this lands, return to brainstorming/writing-plans for **Phase 4 — Search & geocoding** (Meilisearch index + post-commit sync, Nominatim hotel geocoding, expanded vendor pack catalog).
