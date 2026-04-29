@@ -12,3 +12,4 @@ def test_create_app_returns_app() -> None:
     assert "/auth/login" in routes
     assert "/auth/callback" in routes
     assert "/auth/logout" in routes
+    assert "/api/ingest/email" in routes
