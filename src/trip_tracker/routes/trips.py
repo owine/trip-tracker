@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
+import zoneinfo
+from datetime import date, datetime
 from pathlib import Path
 
 import pydantic
@@ -23,6 +24,14 @@ router = APIRouter(prefix="/trips", tags=["trips"])
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+
+def _localize_dt(dt: datetime, tz: str, fmt: str = "%Y-%m-%d %H:%M") -> str:
+    """Render a UTC-stored datetime in the given IANA timezone."""
+    return dt.astimezone(zoneinfo.ZoneInfo(tz)).strftime(fmt)
+
+
+templates.env.filters["localize_dt"] = _localize_dt
 
 
 @router.get("", response_class=HTMLResponse)
