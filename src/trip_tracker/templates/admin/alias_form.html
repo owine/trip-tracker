@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}New alias{% endblock %}
+{% block content %}
+  <h1 class="text-3xl font-semibold">New forwarding alias</h1>
+  <form method="post" action="/admin/aliases" class="mt-6 space-y-4">
+    <label class="block text-sm">Local part
+      <input class="mt-1 w-full rounded border p-2" name="local_part"
+             pattern="[a-z0-9._%+-]+" required>
+    </label>
+    <label class="block text-sm">Owner
+      <select class="mt-1 w-full rounded border p-2" name="user_id" required>
+        {% for u in users %}<option value="{{ u.id }}">{{ u.email }}</option>{% endfor %}
+      </select>
+    </label>
+    <button class="rounded bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">Create</button>
+  </form>
+{% endblock %}
