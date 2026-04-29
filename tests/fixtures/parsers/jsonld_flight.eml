@@ -1,0 +1,24 @@
+Subject: Your AirExample flight confirmation
+From: confirmations@airexample.com
+To: oliver@trips.example.com
+Content-Type: text/html
+
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FlightReservation",
+  "reservationNumber": "ABC123",
+  "reservationStatus": "https://schema.org/ReservationConfirmed",
+  "reservationFor": {
+    "@type": "Flight",
+    "flightNumber": "EX42",
+    "airline": {"@type": "Airline", "iataCode": "EX"},
+    "departureAirport": {"@type": "Airport", "iataCode": "JFK", "name": "JFK"},
+    "arrivalAirport":   {"@type": "Airport", "iataCode": "CDG", "name": "CDG"},
+    "departureTime": "2026-06-01T09:00:00-04:00",
+    "arrivalTime":   "2026-06-01T22:00:00+02:00"
+  }
+}
+</script>
+</head><body>Boring marketing HTML.</body></html>

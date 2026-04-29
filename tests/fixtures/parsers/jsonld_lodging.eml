@@ -1,0 +1,21 @@
+Subject: Your Hotel Example confirmation
+From: reservations@hotelexample.com
+To: oliver@trips.example.com
+Content-Type: text/html
+
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "LodgingReservation",
+  "reservationNumber": "HOT9",
+  "reservationFor": {
+    "@type": "LodgingBusiness",
+    "name": "Hotel Example",
+    "address": {"@type": "PostalAddress", "addressLocality": "Paris", "addressCountry": "FR"}
+  },
+  "checkinTime":  "2026-06-01T15:00:00+02:00",
+  "checkoutTime": "2026-06-05T11:00:00+02:00"
+}
+</script>
+</head><body>Welcome!</body></html>
