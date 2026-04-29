@@ -28,7 +28,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # Copy source + build Tailwind.
 COPY src ./src
 COPY README.md ./
-COPY tailwind.config.js ./
 COPY scripts/build-tailwind.sh ./scripts/build-tailwind.sh
 RUN bash scripts/build-tailwind.sh
 

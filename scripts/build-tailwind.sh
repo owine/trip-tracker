@@ -3,7 +3,7 @@
 # Downloads the platform-appropriate binary if not present.
 set -euo pipefail
 
-VERSION="v3.4.19"
+VERSION="v4.2.4"
 BIN_DIR=".tailwind"
 BIN="$BIN_DIR/tailwindcss"
 

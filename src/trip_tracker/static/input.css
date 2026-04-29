@@ -1,3 +1,13 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* Tailwind CSS v4 entry point.
+ *
+ * v4 replaces v3's three @tailwind directives with a single @import. Our
+ * templates live one directory up from this file, so we add an explicit
+ * @source so the JIT scan is deterministic regardless of the v4 default
+ * content discovery rules.
+ *
+ * Dark mode defaults to `prefers-color-scheme: dark` in v4, matching what we
+ * had in v3 via `darkMode: 'media'`, so no extra config is needed. */
+
+@import "tailwindcss";
+
+@source "../templates";
