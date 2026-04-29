@@ -200,7 +200,8 @@ async def raw_email_list(
         select(RawEmail, User)
         .outerjoin(
             ForwardingAlias,
-            ForwardingAlias.local_part == sa.func.split_part(RawEmail.to_address, "@", 1),
+            ForwardingAlias.local_part
+            == sa.func.lower(sa.func.split_part(RawEmail.to_address, "@", 1)),
         )
         .outerjoin(User, User.id == ForwardingAlias.user_id)
         .order_by(RawEmail.received_at.desc())

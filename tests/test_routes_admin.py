@@ -387,6 +387,33 @@ async def test_raw_email_eml_download(
 
 
 @pytest.mark.asyncio
+async def test_raw_email_list_owner_match_is_case_insensitive(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    """Email To-headers preserve mixed case; aliases are lowercase. The join
+    must lowercase the to_address local-part, otherwise legitimate owned
+    emails render as orphans."""
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    admin = User(oidc_subject="a", email="a@x.com", display_name="A", is_admin=True)
+    db_session.add(admin)
+    await db_session.flush()
+    db_session.add(ForwardingAlias(local_part="oliver", user_id=admin.id))
+    raw = _make_raw_email(to_address="Oliver@inbound.example.com")
+    db_session.add(raw)
+    await db_session.commit()
+
+    app = create_app(settings=settings)
+    async with (
+        app.router.lifespan_context(app),
+        await _admin_client(app, admin, settings) as c,
+    ):
+        r = await c.get("/admin/raw-emails")
+    assert r.status_code == 200
+    assert "a@x.com" in r.text  # owner email rendered, not "—"
+
+
+@pytest.mark.asyncio
 async def test_raw_email_404_for_missing(
     db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
 ) -> None:
