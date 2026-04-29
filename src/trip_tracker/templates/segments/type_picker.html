@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}New segment · trip-tracker{% endblock %}
+{% block content %}
+  <h1 class="text-3xl font-semibold">What kind of segment?</h1>
+  <div class="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">
+    {% for t in ["flight", "lodging", "car", "train", "transfer", "activity"] %}
+      <a class="rounded border border-zinc-200 p-4 text-center hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+         href="/segments/new?type={{ t }}">{{ t.capitalize() }}</a>
+    {% endfor %}
+  </div>
+{% endblock %}

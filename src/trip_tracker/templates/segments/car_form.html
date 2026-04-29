@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}New car rental · trip-tracker{% endblock %}
+{% block content %}
+  <h1 class="text-3xl font-semibold">New car rental</h1>
+  {% if errors %}<p class="mt-2 text-red-600">{{ errors._form }}</p>{% endif %}
+  <form method="post" action="/segments" class="mt-6 space-y-4">
+    {% include "segments/_common_fields.html" %}
+    <div class="grid grid-cols-2 gap-3">
+      <label class="block text-sm">Pickup location
+        <input class="mt-1 w-full rounded border p-2" name="pickup_location" required
+               value="{{ values.get('pickup_location', '') }}">
+      </label>
+      <label class="block text-sm">Pickup city
+        <input class="mt-1 w-full rounded border p-2" name="pickup_city"
+               value="{{ values.get('pickup_city', '') }}">
+      </label>
+      <label class="block text-sm">Dropoff location
+        <input class="mt-1 w-full rounded border p-2" name="dropoff_location" required
+               value="{{ values.get('dropoff_location', '') }}">
+      </label>
+      <label class="block text-sm">Dropoff city
+        <input class="mt-1 w-full rounded border p-2" name="dropoff_city"
+               value="{{ values.get('dropoff_city', '') }}">
+      </label>
+    </div>
+    <label class="block text-sm">Car class
+      <input class="mt-1 w-full rounded border p-2" name="car_class"
+             value="{{ values.get('car_class', '') }}">
+    </label>
+    <button class="rounded bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">Create</button>
+  </form>
+{% endblock %}

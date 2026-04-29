@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}New flight · trip-tracker{% endblock %}
+{% block content %}
+  <h1 class="text-3xl font-semibold">New flight</h1>
+  {% if errors %}<p class="mt-2 text-red-600">{{ errors._form }}</p>{% endif %}
+  <form method="post" action="/segments" class="mt-6 space-y-4">
+    {% include "segments/_common_fields.html" %}
+    <div class="grid grid-cols-2 gap-3">
+      <label class="block text-sm">Flight number
+        <input class="mt-1 w-full rounded border p-2" name="flight_number" value="{{ values.get('flight_number', '') }}"></label>
+      <label class="block text-sm">Seat
+        <input class="mt-1 w-full rounded border p-2" name="seat" value="{{ values.get('seat', '') }}"></label>
+      <label class="block text-sm">Origin (IATA)
+        <input class="mt-1 w-full rounded border p-2" name="origin_iata" maxlength="4" value="{{ values.get('origin_iata', '') }}"></label>
+      <label class="block text-sm">Origin city
+        <input class="mt-1 w-full rounded border p-2" name="origin_city" value="{{ values.get('origin_city', '') }}"></label>
+      <label class="block text-sm">Destination (IATA)
+        <input class="mt-1 w-full rounded border p-2" name="destination_iata" maxlength="4" value="{{ values.get('destination_iata', '') }}"></label>
+      <label class="block text-sm">Destination city
+        <input class="mt-1 w-full rounded border p-2" name="destination_city" value="{{ values.get('destination_city', '') }}"></label>
+    </div>
+    <button class="rounded bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">Create</button>
+  </form>
+{% endblock %}

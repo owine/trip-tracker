@@ -1,0 +1,92 @@
+{# Reused inside every per-type form. Renders trip selector + datetime + tz + status. #}
+<input type="hidden" name="type" value="{{ type }}">
+
+<fieldset class="rounded border border-zinc-200 p-3 dark:border-zinc-800">
+  <legend class="px-1 text-sm">Trip</legend>
+  <label class="block text-sm">
+    <input type="radio" name="_trip_mode" value="existing"
+           onclick="document.getElementById('new-trip-row').hidden=true; document.getElementById('existing-trip-row').hidden=false"
+           {% if values.get("trip_selector_existing_trip_id") or trips %}checked{% endif %}>
+    Existing trip
+  </label>
+  <div id="existing-trip-row" {% if not (values.get("trip_selector_existing_trip_id") or trips) %}hidden{% endif %}>
+    <select name="trip_selector_existing_trip_id" class="mt-1 w-full rounded border p-2">
+      <option value="">— pick a trip —</option>
+      {% for t in trips %}
+        <option value="{{ t.id }}"
+          {% if values.get("trip_selector_existing_trip_id") == t.id|string %}selected{% endif %}>
+          {{ t.title }} ({{ t.start_date }})
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <label class="mt-2 block text-sm">
+    <input type="radio" name="_trip_mode" value="new"
+           onclick="document.getElementById('new-trip-row').hidden=false; document.getElementById('existing-trip-row').hidden=true"
+           {% if values.get("trip_selector_new_trip_title") %}checked{% endif %}>
+    New trip
+  </label>
+  <div id="new-trip-row" {% if not values.get("trip_selector_new_trip_title") %}hidden{% endif %}>
+    <input class="mt-1 w-full rounded border p-2" name="trip_selector_new_trip_title"
+           placeholder="Trip title (e.g. Paris May 2026)"
+           value="{{ values.get('trip_selector_new_trip_title', '') }}">
+  </div>
+</fieldset>
+
+<div class="grid grid-cols-2 gap-3">
+  <label class="block text-sm">Start (local)
+    <input class="mt-1 w-full rounded border p-2" type="datetime-local"
+           name="start_local" value="{{ values.get('start_local', '') }}" required>
+  </label>
+  <label class="block text-sm">Start tz
+    <select class="mt-1 w-full rounded border p-2" name="start_tz" required id="start-tz-select">
+      {% for tz in timezones %}<option value="{{ tz }}"
+        {% if values.get('start_tz') == tz %}selected{% endif %}>{{ tz }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="block text-sm">End (local)
+    <input class="mt-1 w-full rounded border p-2" type="datetime-local"
+           name="end_local" value="{{ values.get('end_local', '') }}">
+  </label>
+  <label class="block text-sm">End tz
+    <select class="mt-1 w-full rounded border p-2" name="end_tz" id="end-tz-select">
+      <option value="">—</option>
+      {% for tz in timezones %}<option value="{{ tz }}"
+        {% if values.get('end_tz') == tz %}selected{% endif %}>{{ tz }}</option>{% endfor %}
+    </select>
+  </label>
+</div>
+
+<label class="block text-sm">Status
+  <select class="mt-1 w-full rounded border p-2" name="status">
+    {% for s in ["confirmed", "tentative", "cancelled"] %}
+      <option value="{{ s }}"
+        {% if values.get('status', 'confirmed') == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+</label>
+
+<label class="block text-sm">Confirmation #
+  <input class="mt-1 w-full rounded border p-2" name="confirmation_number"
+         value="{{ values.get('confirmation_number', '') }}">
+</label>
+
+<label class="block text-sm">Provider
+  <input class="mt-1 w-full rounded border p-2" name="provider"
+         value="{{ values.get('provider', '') }}">
+</label>
+
+<label class="block text-sm">Notes
+  <textarea class="mt-1 w-full rounded border p-2" name="notes" rows="2">{{ values.get('notes', '') }}</textarea>
+</label>
+
+<script>
+  // Pre-select browser tz on first render only (when no existing value).
+  (function() {
+    const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    for (const id of ['start-tz-select', 'end-tz-select']) {
+      const sel = document.getElementById(id);
+      if (sel && !sel.value) sel.value = browserTz;
+    }
+  })();
+</script>
