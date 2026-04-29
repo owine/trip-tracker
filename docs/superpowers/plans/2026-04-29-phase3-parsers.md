@@ -242,13 +242,18 @@ git commit -m "feat(config): Phase 3 settings — Anthropic + Redis + LLM budget
 
 ---
 
-## Task 2 — Alembic Migration + LlmBudget ORM Model
+## Task 2 — Alembic Migration + LlmBudget ORM Model + Segment.raw_email_id
 
-**Spec ref:** §5 (daily budget cap), §11 (Done definition: schema unchanged except `llm_budget`).
+**Spec ref:** §5 (daily budget cap), §6.1 (Discard action: "segment row deleted (if any was written)" — needs an FK to find the segment), §11 (Done definition).
+
+This task does two schema things in one migration:
+1. New `llm_budget` table for the daily Haiku spend cap.
+2. New `segments.raw_email_id UUID NULL` column with FK to `raw_emails.id` ON DELETE SET NULL. Required so the Inbox `discard` action (Task 17) can locate and remove auto-created segments per spec §6.1. Existing rows get NULL (nothing to backfill — Phase 2 segments were all manual).
 
 **Files:**
 - Create: `src/trip_tracker/models/llm_budget.py`
 - Create: `migrations/versions/YYYY_MM_DD_HHMM_<rev>_phase3_llm_budget.py`
+- Modify: `src/trip_tracker/models/segment.py` (add `raw_email_id` column)
 - Modify: `tests/conftest.py` (register the new model)
 - Create: `tests/test_models_llm_budget.py`
 
@@ -300,9 +305,26 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
         ),
     )
+    # Add raw_email_id FK to segments — lets Inbox `discard` find auto-created
+    # segments per spec §6.1. ON DELETE SET NULL so deleting a RawEmail
+    # doesn't cascade-delete segments (the user may have edited and confirmed).
+    op.add_column(
+        "segments",
+        sa.Column(
+            "raw_email_id",
+            sa.dialects.postgresql.UUID(as_uuid=True),
+            sa.ForeignKey("raw_emails.id", ondelete="SET NULL"),
+            nullable=True,
+        ),
+    )
+    op.create_index(
+        "ix_segments_raw_email_id", "segments", ["raw_email_id"]
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("ix_segments_raw_email_id", table_name="segments")
+    op.drop_column("segments", "raw_email_id")
     op.drop_table("llm_budget")
 ```
 
@@ -380,6 +402,26 @@ class LlmBudget(Base):
         onupdate=func.now(),
     )
 ```
+
+- [ ] **Step 2.4b — Add `raw_email_id` to Segment ORM**
+
+In `src/trip_tracker/models/segment.py`, add (alongside the other columns):
+
+```python
+import uuid as uuid_pkg
+from sqlalchemy import ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
+
+# ... in the Segment class:
+raw_email_id: Mapped[uuid_pkg.UUID | None] = mapped_column(
+    UUID(as_uuid=True),
+    ForeignKey("raw_emails.id", ondelete="SET NULL"),
+    nullable=True,
+    index=True,
+)
+```
+
+(Add a quick test in `tests/test_models_segment.py` — or the equivalent existing file — that creates a Segment with `raw_email_id=raw.id` and asserts the relationship persists. The existing Phase 2 test file likely already exists; just add one test case.)
 
 - [ ] **Step 2.5 — Register with conftest**
 
@@ -1900,13 +1942,24 @@ def _msg_to_text(msg: EmailMessage) -> str:
     return "\n".join(parts)
 
 
+@dataclass
+class LLMOutcome:
+    """ParseResult plus the token counts so callers can record exact LLM cost."""
+    result: ParseResult
+    input_tokens: int
+    output_tokens: int
+
+
 async def parse_with_llm(
     client: LLMClient, msg: EmailMessage, *, hint: str | None
-) -> ParseResult:
-    """Run Haiku once, decode the tool-use response, return ParseResult.
+) -> LLMOutcome:
+    """Run Haiku once, decode the tool-use response, return LLMOutcome.
 
     `hint` (optional): short user-supplied note appended to the user message
     (the "Re-ask Claude with hint" inbox action).
+
+    Returns LLMOutcome — the worker uses input/output_tokens to call
+    `cost_cents_for_usage` and `record_usage` (Task 16).
     """
     user_text = _msg_to_text(msg)
     if hint:
@@ -1914,25 +1967,42 @@ async def parse_with_llm(
 
     response = await client.call(user_content=user_text)
 
+    in_tok = int(getattr(response.usage, "input_tokens", 0) or 0)
+    out_tok = int(getattr(response.usage, "output_tokens", 0) or 0)
+
     tool_input: dict[str, Any] | None = None
     for block in response.content:
         if getattr(block, "type", None) == "tool_use" and block.name == "extract_segments":
             tool_input = block.input
             break
     if tool_input is None:
-        return ParseResult(segments=[], confidence=0.0, source="llm:haiku-4-5",
-                           warnings=["model did not invoke extract_segments tool"])
+        return LLMOutcome(
+            result=ParseResult(
+                segments=[], confidence=0.0, source="llm:haiku-4-5",
+                warnings=["model did not invoke extract_segments tool"],
+            ),
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+        )
 
     raw_conf = float(tool_input.get("confidence", 0.0))
     confidence = min(raw_conf, HAIKU_CONFIDENCE_CEILING)
     segments = [SegmentDraft.model_validate(s) for s in tool_input.get("segments", [])]
 
-    return ParseResult(
-        segments=segments,
-        confidence=confidence,
-        source="llm:haiku-4-5",
+    return LLMOutcome(
+        result=ParseResult(
+            segments=segments,
+            confidence=confidence,
+            source="llm:haiku-4-5",
+        ),
+        input_tokens=in_tok,
+        output_tokens=out_tok,
     )
 ```
+
+(Add `from dataclasses import dataclass` to the imports at the top of `llm.py`.)
+
+**Note for Task 10 (dispatcher):** the dispatcher calls `parse_with_llm` and now receives `LLMOutcome`. Update `dispatch.py` to read `.result` from the outcome — this is a 1-line change inside `dispatch_parse`. The dispatcher still returns `ParseOutcome` to its caller; LLM-specific token counts surface only when the worker calls `parse_with_llm` directly OR when the dispatcher exposes them via a new field on `ParseOutcome`. Simplest: have `ParseOutcome` carry an optional `llm_outcome: LLMOutcome | None = None` field that's populated when strategy 3 ran.
 
 - [ ] **Step 9.4 — Live-LLM smoke test (skipped in CI)**
 
@@ -2155,6 +2225,8 @@ logger = logging.getLogger(__name__)
 class ParseOutcome:
     result: ParseResult
     budget_skipped: bool = False  # True when LLM was needed but budget exhausted
+    llm_input_tokens: int = 0     # populated when strategy 3 actually ran
+    llm_output_tokens: int = 0    # populated when strategy 3 actually ran
 
 
 async def dispatch_parse(
@@ -2204,14 +2276,19 @@ async def dispatch_parse(
         return ParseOutcome(result=best, budget_skipped=True)
 
     try:
-        r3 = await parse_with_llm(llm_client, msg, hint=hint)
+        outcome = await parse_with_llm(llm_client, msg, hint=hint)
     except Exception as exc:  # noqa: BLE001 — Anthropic SDK can raise broadly
         logger.warning("llm dispatch error: %s", exc)
         return ParseOutcome(result=best)
 
+    r3 = outcome.result
     if r3.confidence > best.confidence:
         best = r3
-    return ParseOutcome(result=best)
+    return ParseOutcome(
+        result=best,
+        llm_input_tokens=outcome.input_tokens,
+        llm_output_tokens=outcome.output_tokens,
+    )
 ```
 
 - [ ] **Step 10.3 — Run + commit**
@@ -3310,6 +3387,13 @@ async def parse_raw_email(ctx: dict[str, Any], raw_email_id: str) -> None:
     """Parse one RawEmail and persist the result.
 
     Idempotent: re-running on an already-parsed RawEmail is a no-op.
+
+    TODO (Phase 3.5): the Inbox `reask` route stores a hint in
+    raw.headers['X-Tt-Hint']. Pass it through to dispatch_parse here so the
+    LLM picks up the user's correction. v0.3.0 ships without this propagation
+    — re-parse runs but the hint is unused. Adding it is one line:
+        hint = (raw.headers or {}).get("X-Tt-Hint")
+    plus passing hint=hint into dispatch_parse.
     """
     settings: Settings = ctx["settings"]
     engine = ctx.get("engine") or create_async_engine(str(settings.database_url))
@@ -3345,10 +3429,16 @@ async def parse_raw_email(ctx: dict[str, Any], raw_email_id: str) -> None:
         )
 
         if outcome.result.source == "llm:haiku-4-5":
-            # Best-effort cost record (we don't have token counts here in this minimal slice;
-            # parse_with_llm could be enhanced to return them — Task 9 leaves that for later
-            # if budget telemetry needs to be exact). For now: assume one Haiku call ≈ 1 cent.
-            await record_usage(db, cost_cents=cost_cents_for_usage(input_tokens=2000, output_tokens=300))
+            # Real token counts come from the dispatcher (Task 10 wires them
+            # through ParseOutcome.llm_input_tokens / llm_output_tokens, fed
+            # by parse_with_llm's LLMOutcome — Task 9).
+            await record_usage(
+                db,
+                cost_cents=cost_cents_for_usage(
+                    input_tokens=outcome.llm_input_tokens,
+                    output_tokens=outcome.llm_output_tokens,
+                ),
+            )
 
         if not outcome.result.segments:
             raw.parse_status = "no_segments"
@@ -3391,6 +3481,7 @@ async def parse_raw_email(ctx: dict[str, Any], raw_email_id: str) -> None:
                 details=draft.details,
                 parse_source=outcome.result.source,
                 parse_confidence=outcome.result.confidence,
+                raw_email_id=raw.id,  # FK so Inbox.discard can locate this segment (Task 17)
             )
             db.add(seg)
 
@@ -3402,29 +3493,31 @@ async def parse_raw_email(ctx: dict[str, Any], raw_email_id: str) -> None:
         await db.commit()
 
 
+# Read settings once at module import. Worker fails fast if env is incomplete.
+_SETTINGS = Settings()
+
+
 class WorkerSettings:
-    """ARQ entry point. `command: ["arq", "trip_tracker.worker.WorkerSettings"]`."""
+    """ARQ entry point. `command: ["arq", "trip_tracker.worker.WorkerSettings"]`.
+
+    The `arq` CLI imports this module, reads the class attributes (functions,
+    redis_settings, max_tries), then runs the worker loop. By the time `arq` is
+    invoked, env vars are loaded (via the container's environment), so the
+    module-level Settings() call is safe.
+    """
 
     functions = [parse_raw_email]
     max_tries = 5
     keep_result_seconds = 0
+    redis_settings = RedisSettings.from_dsn(_SETTINGS.redis_url)
 
     @staticmethod
     async def startup(ctx: dict[str, Any]) -> None:
-        ctx["settings"] = Settings()
+        ctx["settings"] = _SETTINGS
 
     @staticmethod
     async def shutdown(ctx: dict[str, Any]) -> None:
         pass
-
-    redis_settings = RedisSettings.from_dsn(Settings().redis_url) if False else None  # populated dynamically
-
-    def __init_subclass__(cls, **kwargs: Any) -> None:
-        super().__init_subclass__(**kwargs)
-
-
-# arq picks this up via the class attribute at runtime:
-WorkerSettings.redis_settings = RedisSettings.from_dsn(Settings().redis_url) if Settings().redis_url else None
 ```
 
 (Note: the `WorkerSettings.redis_settings` lazy assignment dance is ARQ's idiom; ARQ reads the class attribute when the worker starts. If this gets messy, replace with a `make_worker_settings()` factory.)
@@ -3564,7 +3657,7 @@ git commit -m "feat(worker): ARQ worker + Redis container + parse_pending comman
 ```
 
 **Quality bar:**
-- The `WorkerSettings.redis_settings = ...` line at module import time means the worker fails fast at startup if `REDIS_URL` is missing or malformed. Acceptable for the worker process; the `app` process should not import `worker.py`.
+- The module-level `_SETTINGS = Settings()` reads env at import time, so the worker fails fast on missing/malformed `REDIS_URL` or `ANTHROPIC_API_KEY`. The `app` process should NOT import `worker.py` (it runs in a separate container with the same env, but the `arq` CLI is the only entry point that loads this module).
 - `enqueue_parse` swallows Redis errors. The webhook returns 202 even if Redis is down. Recovery: `python -m trip_tracker parse_pending`.
 - `parse_raw_email` is idempotent (`if parse_status != "pending": return`). Re-runs are safe.
 
@@ -3699,9 +3792,34 @@ async def test_inbox_confirm_action(
 async def test_inbox_discard_action(
     db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
 ) -> None:
+    """Discard marks the email as 'no_segments' AND deletes auto-created segments
+    (per spec §6.1: 'segment row deleted (if any was written)')."""
+    from datetime import UTC, datetime
+
+    from trip_tracker.models.segment import Segment
+    from trip_tracker.models.trip import Trip
+    from trip_tracker.models.trip_traveler import TripTraveler
+
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
     user, raw = await _setup_user_with_raw(db_session, parse_status="review")
+
+    # Seed an auto-created segment linked to the RawEmail.
+    trip = Trip(
+        title="Auto", start_date=datetime(2026, 6, 1).date(),
+        end_date=datetime(2026, 6, 5).date(), created_by=user.id,
+    )
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+    seg = Segment(
+        trip_id=trip.id, owner_user_id=user.id, type="flight", status="confirmed",
+        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC), start_tz="UTC",
+        parse_source="llm:haiku-4-5", parse_confidence=0.7,
+        raw_email_id=raw.id,
+    )
+    db_session.add(seg)
+    await db_session.commit()
 
     app = create_app(settings=settings)
     transport = httpx.ASGITransport(app=app)
@@ -3713,6 +3831,9 @@ async def test_inbox_discard_action(
     assert r.status_code == 303
     await db_session.refresh(raw)
     assert raw.parse_status == "no_segments"
+
+    rows = (await db_session.execute(select(Segment).where(Segment.raw_email_id == raw.id))).scalars().all()
+    assert rows == []  # auto-created segment deleted
 
 
 @pytest.mark.asyncio
@@ -3874,12 +3995,24 @@ async def discard(
     user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> Response:
+    """Spec §6.1: discard sets parse_status='no_segments' AND deletes any
+    segment(s) the parser auto-created from this email.
+
+    Implementation: delete every Segment with raw_email_id = raw_id. If the
+    user wanted to keep an auto-created segment, they'd click Confirm or
+    Edit instead. (Task 18 prefill flow does NOT mutate raw_email_id on
+    save, so user-confirmed segments still link to the RawEmail; discard
+    treats this as the user saying "actually scrap everything from this
+    email" — matching the spec's literal "segment row deleted" language.)
+    """
     raw = await _load_owned(db, user, raw_id)
     raw.parse_status = "no_segments"
-    # Delete any segments tied to this RawEmail (only if they were the LLM's draft).
-    # Phase 3 keeps this conservative: we don't have a foreign key from Segment to RawEmail,
-    # so 'discard' just marks the email and leaves any auto-created segments alone.
-    # Future: add raw_email_id FK to Segment, then cascade.
+
+    from sqlalchemy import delete
+
+    from trip_tracker.models.segment import Segment
+
+    await db.execute(delete(Segment).where(Segment.raw_email_id == raw_id))
     await db.commit()
     return RedirectResponse("/inbox", status_code=303)
 
