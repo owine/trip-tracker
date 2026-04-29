@@ -206,10 +206,8 @@ def _shape_payload(
     t = form.type
 
     if t == "flight":
-        start = _drop_none(name=form.origin_iata, iata=form.origin_iata, city=form.origin_city)
-        end = _drop_none(
-            name=form.destination_iata, iata=form.destination_iata, city=form.destination_city
-        )
+        start = _drop_none(iata=form.origin_iata, city=form.origin_city)
+        end = _drop_none(iata=form.destination_iata, city=form.destination_city)
         if form.flight_number:
             details["flight_number"] = form.flight_number
         if form.seat:
