@@ -14,8 +14,10 @@ class LlmBudget(Base):
     __tablename__ = "llm_budget"
 
     day: Mapped[date] = mapped_column(Date, primary_key=True)
-    cost_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    request_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_cents: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    request_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
         nullable=False,
