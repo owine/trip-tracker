@@ -2924,7 +2924,7 @@ Configure forwardemail.net webhook → `/api/ingest/email` (Phase 2).
 ```markdown
 ## Summary
 
-- 
+-
 
 ## Context
 
