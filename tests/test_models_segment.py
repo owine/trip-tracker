@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
 from trip_tracker.models.user import User
@@ -117,3 +118,34 @@ async def test_confidence_range(db_session: AsyncSession) -> None:
     db_session.add(seg)
     with pytest.raises(IntegrityError):
         await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_raw_email_id_roundtrip(db_session: AsyncSession) -> None:
+    trip, user = await _trip_with_user(db_session)
+    raw = RawEmail(
+        to_address="trips@example.com",
+        from_address="test@example.com",
+        message_id="msg@example.com",
+        mime_blob=b"test mime",
+        headers={"Content-Type": "text/plain"},
+    )
+    db_session.add(raw)
+    await db_session.flush()
+
+    seg = Segment(
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="flight",
+        status="confirmed",
+        start_at=datetime(2026, 6, 1, tzinfo=UTC),
+        start_tz="UTC",
+        parse_source="email",
+        parse_confidence=0.85,
+        raw_email_id=raw.id,
+    )
+    db_session.add(seg)
+    await db_session.commit()
+    await db_session.refresh(seg)
+
+    assert seg.raw_email_id == raw.id
