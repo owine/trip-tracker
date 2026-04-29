@@ -36,7 +36,9 @@ repos:
   - repo: https://github.com/Riverside-Healthcare/djLint
     rev: v1.36.4
     hooks:
-      - id: djlint-jinja
+      - id: djlint-reformat
+        args: [--profile=jinja]
+        files: ^src/trip_tracker/templates/
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2
