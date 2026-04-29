@@ -1,0 +1,19 @@
+From: Delta Air Lines <confirmations@delta.com>
+To: oliver@trips.example.com
+Subject: Your Trip Confirmation - DL44
+Date: Mon, 27 Apr 2026 14:30:00 -0400
+Message-ID: <abc123-confirm@delta.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="boundary42"
+
+--boundary42
+Content-Type: text/plain; charset="utf-8"
+
+Your flight DL44 from JFK to CDG is confirmed.
+
+--boundary42
+Content-Type: text/html; charset="utf-8"
+
+<html><body><p>Your flight <b>DL44</b> from JFK to CDG is confirmed.</p></body></html>
+
+--boundary42--
