@@ -42,3 +42,10 @@ repos:
     rev: v8.21.2
     hooks:
       - id: gitleaks
+
+  - repo: https://github.com/gitguardian/ggshield
+    rev: v1.50.2
+    hooks:
+      - id: ggshield
+        language_version: python3
+        stages: [pre-commit]

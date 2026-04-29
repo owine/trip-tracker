@@ -33,6 +33,9 @@
   "docker-compose": {
     "enabled": false
   },
+  "pre-commit": {
+    "enabled": true
+  },
   "packageRules": [
     {
       "description": "Hard-disable docker-compose manager: compose files use floating tags by design",
