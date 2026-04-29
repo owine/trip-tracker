@@ -1,11 +1,14 @@
-"""Admin routes: forwarding-alias CRUD."""
+"""Admin routes: forwarding-alias CRUD + raw-email viewer."""
 
 from __future__ import annotations
 
 import re
 import uuid
+from email.parser import BytesParser
+from email.policy import default as email_policy_default
 from pathlib import Path
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
@@ -16,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from trip_tracker.auth.deps import require_admin
 from trip_tracker.db import get_session
 from trip_tracker.models.forwarding_alias import ForwardingAlias
+from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.user import User
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -181,3 +185,76 @@ async def alias_delete(
     await db.delete(alias)
     await db.commit()
     return RedirectResponse("/admin/aliases", status_code=303)
+
+
+@router.get("/raw-emails", response_class=HTMLResponse)
+async def raw_email_list(
+    request: Request,
+    user: User = Depends(require_admin),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+    page: int = 1,
+) -> HTMLResponse:
+    page_size = 50
+    offset = max(0, (page - 1) * page_size)
+    stmt = (
+        select(RawEmail, User)
+        .outerjoin(
+            ForwardingAlias,
+            ForwardingAlias.local_part == sa.func.split_part(RawEmail.to_address, "@", 1),
+        )
+        .outerjoin(User, User.id == ForwardingAlias.user_id)
+        .order_by(RawEmail.received_at.desc())
+        .limit(page_size)
+        .offset(offset)
+    )
+    rows = (await db.execute(stmt)).all()
+    return templates.TemplateResponse(
+        request,
+        "admin/raw_email_list.html",
+        {"user": user, "rows": rows, "page": page},
+    )
+
+
+@router.get("/raw-emails/{raw_email_id}", response_class=HTMLResponse)
+async def raw_email_detail(
+    request: Request,
+    raw_email_id: uuid.UUID,
+    user: User = Depends(require_admin),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> HTMLResponse:
+    email_row = await db.get(RawEmail, raw_email_id)
+    if email_row is None:
+        raise HTTPException(404)
+    msg = BytesParser(policy=email_policy_default).parsebytes(email_row.mime_blob)
+    text_body = ""
+    if msg.is_multipart():
+        for part in msg.walk():
+            if part.get_content_type() == "text/plain":
+                raw_payload = part.get_payload(decode=True)
+                text_body = raw_payload.decode() if isinstance(raw_payload, bytes) else ""
+                break
+    else:
+        if msg.get_content_type() == "text/plain":
+            raw_payload = msg.get_payload(decode=True)
+            text_body = raw_payload.decode() if isinstance(raw_payload, bytes) else ""
+    return templates.TemplateResponse(
+        request,
+        "admin/raw_email_detail.html",
+        {"user": user, "re": email_row, "text_body": text_body},
+    )
+
+
+@router.get("/raw-emails/{raw_email_id}/eml", response_model=None)
+async def raw_email_download(
+    raw_email_id: uuid.UUID,
+    _user: User = Depends(require_admin),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> Response:
+    email_row = await db.get(RawEmail, raw_email_id)
+    if email_row is None:
+        raise HTTPException(404)
+    return Response(
+        content=email_row.mime_blob,
+        media_type="message/rfc822",
+        headers={"Content-Disposition": f'attachment; filename="{email_row.id}.eml"'},
+    )

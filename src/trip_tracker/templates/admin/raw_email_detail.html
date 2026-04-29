@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ re.subject or "Email" }} · Admin{% endblock %}
+{% block content %}
+  <h1 class="text-2xl font-semibold">{{ re.subject or "(no subject)" }}</h1>
+  <table class="mt-4 text-sm">
+    <tr><th class="pr-3 text-left text-zinc-500">From</th><td>{{ re.from_address }}</td></tr>
+    <tr><th class="pr-3 text-left text-zinc-500">To</th><td>{{ re.to_address }}</td></tr>
+    <tr><th class="pr-3 text-left text-zinc-500">Received</th><td>{{ re.received_at }}</td></tr>
+    <tr><th class="pr-3 text-left text-zinc-500">Message-ID</th><td class="font-mono">{{ re.message_id }}</td></tr>
+    <tr><th class="pr-3 text-left text-zinc-500">Status</th><td>{{ re.parse_status }}</td></tr>
+  </table>
+  <a class="mt-4 inline-block underline" href="/admin/raw-emails/{{ re.id }}/eml">Download .eml</a>
+  <pre class="mt-4 whitespace-pre-wrap rounded bg-zinc-100 p-3 text-sm dark:bg-zinc-900">{{ text_body }}</pre>
+{% endblock %}
