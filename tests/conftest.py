@@ -58,3 +58,6 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BASE_URL", "https://trips.example.com")
     monkeypatch.setenv("LOG_FORMAT", "console")
     monkeypatch.setenv("WEBHOOK_SECRET", "x" * 32)
+    # Phase 3 — parser pipeline
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")

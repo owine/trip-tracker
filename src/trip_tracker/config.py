@@ -79,3 +79,17 @@ class Settings(BaseSettings):
         if not 0 < v <= 100 * 1024 * 1024:
             raise ValueError("must be in (0, 100 MiB]")
         return v
+
+    # Phase 3 — parser pipeline
+    anthropic_api_key: SecretStr
+    redis_url: str
+    llm_daily_budget_cents: int = 100  # $1.00 USD/day soft cap
+    llm_model: str = "claude-haiku-4-5-20251001"
+    llm_confidence_floor: float = 0.7
+
+    @field_validator("llm_confidence_floor")
+    @classmethod
+    def _floor_in_unit_interval(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError("llm_confidence_floor must be in [0, 1]")
+        return v
