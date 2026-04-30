@@ -184,6 +184,7 @@ For each attachment:
 2. Compute sha256 of the attachment payload.
 3. UPSERT into `documents` with `segment_id = NULL`, `trip_id = NULL` (auto-link runs later — see "Phase 2 ↔ Phase 5 interaction note" below):
    ```python
+   from sqlalchemy import column, func
    from sqlalchemy.dialects.postgresql import insert as pg_insert
 
    stmt = (
@@ -301,7 +302,7 @@ New function in `src/trip_tracker/search/sync.py`:
 
 `traveler_ids` derived the same way as `trip_to_doc` / `segment_to_doc` — query `TripTraveler` for the doc's trip. If `trip_id` is NULL (unlikely after the parser auto-links, but possible for an orphan upload), `traveler_ids = [str(doc.owner_user_id)]`.
 
-### 9.3 `enqueue_meili_sync("documents", id)` — wiring sites
+### 9.3 `enqueue_meili_sync(settings, entity="document", ...)` — wiring sites
 
 Two new write sites only:
 
