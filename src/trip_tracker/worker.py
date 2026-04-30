@@ -32,7 +32,7 @@ from trip_tracker.parsers.cluster import cluster_for_user, derive_destination
 from trip_tracker.parsers.dispatch import dispatch_parse
 from trip_tracker.parsers.llm import LLMClient
 from trip_tracker.search.client import MeiliClientProtocol, build_client
-from trip_tracker.search.sync import segment_to_doc, trip_to_doc
+from trip_tracker.search.sync import enqueue_meili_sync, segment_to_doc, trip_to_doc
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +108,9 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
             await db.commit()
             return
 
+        created_segments: list[Segment] = []
+        trips_to_sync: set[uuid.UUID] = set()
+
         for draft in outcome.result.segments:
             decision = await cluster_for_user(db, owner.user_id, draft)
             trip_id: uuid.UUID | None
@@ -123,6 +126,7 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
                 await db.flush()
                 db.add(TripTraveler(trip_id=trip.id, user_id=owner.user_id, role="owner"))
                 trip_id = trip.id
+                trips_to_sync.add(trip.id)
             elif decision.kind == "attach":
                 trip_id = decision.trip_id
             else:
@@ -147,12 +151,18 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
                 raw_email_id=raw.id,
             )
             db.add(seg)
+            created_segments.append(seg)
 
         if outcome.result.confidence < settings.llm_confidence_floor:
             raw.parse_status = "review"
         else:
             raw.parse_status = "parsed"
         await db.commit()
+
+        for s in created_segments:
+            await enqueue_meili_sync(settings, entity="segment", entity_id=s.id)
+        for tid in trips_to_sync:
+            await enqueue_meili_sync(settings, entity="trip", entity_id=tid)
 
 
 async def sync_meili(ctx: dict[str, Any], *, entity: str, entity_id: str) -> None:

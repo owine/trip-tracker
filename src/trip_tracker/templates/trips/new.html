@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}New trip{% endblock %}
+{% block content %}
+  <h1 class="text-3xl font-semibold">Create a new trip</h1>
+  {% if errors %}<p class="text-red-600">{{ errors._form }}</p>{% endif %}
+  <form method="post" action="/trips" class="mt-6 space-y-4">
+    <label class="block">
+      Title
+      <input class="mt-1 w-full rounded border p-2" name="title" required>
+    </label>
+    <div class="grid grid-cols-2 gap-4">
+      <label class="block">
+        Start date
+        <input class="mt-1 w-full rounded border p-2"
+               type="date"
+               name="start_date"
+               required>
+      </label>
+      <label class="block">
+        End date
+        <input class="mt-1 w-full rounded border p-2"
+               type="date"
+               name="end_date"
+               required>
+      </label>
+    </div>
+    <label class="block">
+      Primary destination
+      <input class="mt-1 w-full rounded border p-2" name="primary_destination">
+    </label>
+    <label class="block">
+      Notes
+      <textarea class="mt-1 w-full rounded border p-2" name="notes" rows="3"></textarea>
+    </label>
+    <button class="rounded bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">Create</button>
+  </form>
+{% endblock %}

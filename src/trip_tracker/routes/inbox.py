@@ -25,6 +25,7 @@ from trip_tracker.models.forwarding_alias import ForwardingAlias
 from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.user import User
+from trip_tracker.search.sync import enqueue_meili_sync
 
 router = APIRouter(prefix="/inbox", tags=["inbox"])
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
@@ -109,6 +110,7 @@ async def confirm(
 
 @router.post("/{raw_id}/discard", response_model=None)
 async def discard(
+    request: Request,
     raw_id: uuid.UUID,
     user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
@@ -118,8 +120,14 @@ async def discard(
     """
     raw = await _load_owned(db, user, raw_id)
     raw.parse_status = "no_segments"
+    deleted_segment_ids = (
+        (await db.execute(select(Segment.id).where(Segment.raw_email_id == raw_id))).scalars().all()
+    )
     await db.execute(delete(Segment).where(Segment.raw_email_id == raw_id))
     await db.commit()
+    settings: Settings = request.app.state.settings
+    for sid in deleted_segment_ids:
+        await enqueue_meili_sync(settings, entity="segment", entity_id=sid)
     return RedirectResponse("/inbox", status_code=303)
 
 

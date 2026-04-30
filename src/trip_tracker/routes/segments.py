@@ -32,6 +32,7 @@ from trip_tracker.schemas.segment_forms import (
     TripSelector,
     _SegmentBase,
 )
+from trip_tracker.search.sync import enqueue_meili_sync
 
 router = APIRouter(tags=["segments"])
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
@@ -192,6 +193,8 @@ async def create_segment(
     )
     db.add(seg)
     await db.commit()
+    await enqueue_meili_sync(request.app.state.settings, entity="trip", entity_id=trip.id)
+    await enqueue_meili_sync(request.app.state.settings, entity="segment", entity_id=seg.id)
 
     return RedirectResponse(f"/trips/{trip.id}", status_code=303)
 
@@ -373,11 +376,14 @@ async def update_segment(
         trip.end_date = new_end
 
     await db.commit()
+    await enqueue_meili_sync(request.app.state.settings, entity="trip", entity_id=trip.id)
+    await enqueue_meili_sync(request.app.state.settings, entity="segment", entity_id=seg.id)
     return RedirectResponse(f"/trips/{trip_id}", status_code=303)
 
 
 @router.post("/trips/{trip_id}/segments/{segment_id}/delete", response_model=None)
 async def delete_segment(
+    request: Request,
     trip_id: uuid.UUID,
     segment_id: uuid.UUID,
     user: User = Depends(require_user),  # noqa: B008
@@ -386,6 +392,7 @@ async def delete_segment(
     seg = await _load_segment_for_user(db, trip_id, segment_id, user.id)
     await db.delete(seg)
     await db.commit()
+    await enqueue_meili_sync(request.app.state.settings, entity="segment", entity_id=seg.id)
     return RedirectResponse(f"/trips/{trip_id}", status_code=303)
 
 

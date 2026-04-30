@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
@@ -64,3 +65,12 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # Phase 4 — search
     monkeypatch.setenv("MEILI_URL", "http://localhost:7700")
     monkeypatch.setenv("MEILI_MASTER_KEY", "x" * 32)
+
+
+@pytest.fixture(autouse=True)
+def _mock_meili_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock the saq Queue used by enqueue_meili_sync to avoid Redis connection."""
+    mock_queue = MagicMock()
+    mock_queue.enqueue = AsyncMock()
+    mock_queue.disconnect = AsyncMock()
+    monkeypatch.setattr("trip_tracker.search.sync._build_queue", lambda s: mock_queue)
