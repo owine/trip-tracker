@@ -14,41 +14,45 @@ from trip_tracker.parsers.base import (
 )
 
 
-class _FakeAA(VendorParser):
-    name: ClassVar[str] = "fake_aa"
-    sender_patterns: ClassVar[list[re.Pattern[str]]] = [re.compile(r"@aa\.com$")]
+class _FakeBroad(VendorParser):
+    """Fake parser for testing the registry. Uses a fake-only domain
+    so it doesn't collide with real vendor parsers (e.g. American @aa.com).
+    """
+
+    name: ClassVar[str] = "fake_broad"
+    sender_patterns: ClassVar[list[re.Pattern[str]]] = [re.compile(r"@fake-vendor\.test$")]
 
     def parse(self, msg: EmailMessage) -> ParseResult:
-        return ParseResult(segments=[], confidence=0.0, source="rules:fake_aa")
+        return ParseResult(segments=[], confidence=0.0, source="rules:fake_broad")
 
 
-class _FakeAASpecific(VendorParser):
-    name: ClassVar[str] = "fake_aa_aadvantage"
-    sender_patterns: ClassVar[list[re.Pattern[str]]] = [re.compile(r"^aadvantage@aa\.com$")]
+class _FakeSpecific(VendorParser):
+    name: ClassVar[str] = "fake_specific"
+    sender_patterns: ClassVar[list[re.Pattern[str]]] = [re.compile(r"^special@fake-vendor\.test$")]
 
     def parse(self, msg: EmailMessage) -> ParseResult:
-        return ParseResult(segments=[], confidence=0.0, source="rules:fake_aa_aadv")
+        return ParseResult(segments=[], confidence=0.0, source="rules:fake_specific")
 
 
 def test_subclass_auto_registers() -> None:
     reg = get_registry()
     names = {p.name for p in reg}
-    assert "fake_aa" in names
-    assert "fake_aa_aadvantage" in names
+    assert "fake_broad" in names
+    assert "fake_specific" in names
 
 
 def test_match_predicate() -> None:
-    assert _FakeAA.matches("noreply@aa.com")
-    assert not _FakeAA.matches("notifications@united.com")
+    assert _FakeBroad.matches("noreply@fake-vendor.test")
+    assert not _FakeBroad.matches("notifications@united.com")
 
 
 def test_dispatch_specific_first() -> None:
     """Longer sender patterns sort first so a narrower regex shadows a broader one."""
     from trip_tracker.parsers.base import select_parsers
 
-    matched = select_parsers("aadvantage@aa.com")
-    assert matched[0].name == "fake_aa_aadvantage"
-    assert matched[1].name == "fake_aa"
+    matched = select_parsers("special@fake-vendor.test")
+    assert matched[0].name == "fake_specific"
+    assert matched[1].name == "fake_broad"
 
 
 def test_segment_draft_minimal() -> None:

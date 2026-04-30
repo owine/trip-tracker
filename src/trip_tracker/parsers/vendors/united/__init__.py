@@ -20,7 +20,7 @@ _CONFIRMATION = re.compile(r"(?:confirmation|conf #?)[:\s]+([A-Z0-9]{6})", re.I)
 class UnitedParser(VendorParser):
     name: ClassVar[str] = "united"
     sender_patterns: ClassVar[list[re.Pattern[str]]] = [
-        re.compile(r"^noreply@united\.com$", re.I),
+        re.compile(r"@united\.com$", re.I),
         re.compile(r"@unitedairlines\.com$", re.I),
     ]
 

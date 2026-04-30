@@ -20,7 +20,7 @@ _CONFIRMATION = re.compile(r"(?:record locator|confirmation|conf #?)[:\s]+([A-Z0
 class AmericanParser(VendorParser):
     name: ClassVar[str] = "american"
     sender_patterns: ClassVar[list[re.Pattern[str]]] = [
-        re.compile(r"^(noreply|notify)@aa\.com$", re.I),
+        re.compile(r"@(notify\.)?aa\.com$", re.I),
         re.compile(r"@email\.aa\.com$", re.I),
     ]
 
