@@ -6,7 +6,7 @@
 
 **Architecture:** New Meilisearch container (internal-network only) holds two derived indexes (`trips`, `segments`) populated by a saq `sync_meili` task. Every Trip/Segment write commit explicitly enqueues a sync. A FastAPI `/api/search/<index>` proxy authenticates via the existing Authelia session, injects a server-side `traveler_ids = <user.id>` filter, and forwards to Meili. The browser never sees the Meili master key. ⌘K palette is an Alpine.js component included in `base.html`, search-as-you-type from char 1, deep-links to `/trips/<id>` or `/trips/<tid>#segment-<sid>`.
 
-**Tech Stack:** Python 3.14 (target=py313), saq (replaces arq), Redis 7 (replaces 5), Meilisearch 1.13, `meilisearch-python-async` client, Alpine.js 3 (CDN-loaded), Tailwind, FastAPI, SQLAlchemy 2.0 async, Postgres 18, Pydantic v2, pytest + pytest-asyncio + pytest-postgresql.
+**Tech Stack:** Python 3.14 (target=py313), saq (replaces arq), Redis 7 (replaces 5), Meilisearch 1.13, `meilisearch-python-sdk` client, Alpine.js 3 (CDN-loaded), Tailwind, FastAPI, SQLAlchemy 2.0 async, Postgres 18, Pydantic v2, pytest + pytest-asyncio + pytest-postgresql.
 
 **Spec reference:** [`docs/superpowers/specs/2026-04-30-phase4-search-design.md`](../specs/2026-04-30-phase4-search-design.md). Section numbers (e.g. §6) below refer to this spec.
 
@@ -133,10 +133,10 @@ git commit -m "refactor(worker): migrate arq → saq; bump redis to 7"
 - [ ] **Step 2.1 — Add Meili client dependency**
 
 ```bash
-uv add 'meilisearch-python-async>=1.13,<2'
+uv add 'meilisearch-python-sdk>=7,<8'
 ```
 
-`meilisearch-python-async` is the maintained async fork. Confirm it lands in `pyproject.toml` `[project] dependencies`.
+`meilisearch-python-sdk` is the maintained async fork. Confirm it lands in `pyproject.toml` `[project] dependencies`.
 
 - [ ] **Step 2.2 — Failing test for new settings fields**
 
@@ -336,13 +336,13 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from fastapi import Request
-from meilisearch_python_async import Client
+from meilisearch_python_sdk import AsyncClient
 
 from trip_tracker.config import Settings
 
 
 class MeiliIndexProtocol(Protocol):
-    """The subset of meilisearch_python_async.Index methods we use."""
+    """The subset of meilisearch_python_sdk.Index methods we use."""
 
     async def update_documents(self, documents: list[dict[str, Any]]) -> Any: ...
     async def delete_document(self, document_id: str) -> Any: ...
@@ -350,7 +350,7 @@ class MeiliIndexProtocol(Protocol):
 
 
 class MeiliClientProtocol(Protocol):
-    """The subset of meilisearch_python_async.Client we use."""
+    """The subset of meilisearch_python_sdk.AsyncClient we use."""
 
     def index(self, uid: str) -> MeiliIndexProtocol: ...
     async def create_index(
@@ -361,7 +361,7 @@ class MeiliClientProtocol(Protocol):
 
 def build_client(settings: Settings) -> MeiliClientProtocol:
     """Construct a Meili client from settings. One per process."""
-    return Client(
+    return AsyncClient(
         url=settings.meili_url,
         api_key=settings.meili_master_key.get_secret_value(),
     )
@@ -382,7 +382,7 @@ from trip_tracker.search.client import build_client
 # in lifespan:
 app.state.meili = build_client(settings)
 yield
-# on shutdown — meilisearch-python-async manages its own pool; nothing extra needed
+# on shutdown — meilisearch-python-sdk manages its own pool; nothing extra needed
 ```
 
 - [ ] **Step 3.5 — Run + commit**
@@ -399,7 +399,7 @@ git commit -m "feat(search): Meili client + Protocol + FastAPI dependency"
 **Quality bar:**
 - `MeiliClientProtocol` is a `typing.Protocol`, not an ABC. Tests inject a `MagicMock(spec=MeiliClientProtocol)` and don't subclass the real `Client`.
 - `app.state.meili` is FastAPI's recommended pattern for request-scoped singletons.
-- `meilisearch-python-async` may not have type stubs. If mypy complains, add to the existing `[[tool.mypy.overrides]]` block: `module = ["meilisearch_python_async", "meilisearch_python_async.*"]`, `ignore_missing_imports = true`.
+- `meilisearch-python-sdk` may not have type stubs. If mypy complains, add to the existing `[[tool.mypy.overrides]]` block: `module = ["meilisearch_python_sdk", "meilisearch_python_sdk.*"]`, `ignore_missing_imports = true`.
 
 ---
 
