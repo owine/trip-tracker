@@ -1,0 +1,85 @@
+"""Doc rendering + enqueue helper for the Meili sync subsystem.
+
+Pure functions live here. The saq task that calls them lives in worker.py.
+"""
+
+from __future__ import annotations
+
+import uuid
+from datetime import date
+from typing import Any, Literal
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from trip_tracker.models.segment import Segment
+from trip_tracker.models.trip import Trip
+from trip_tracker.models.trip_traveler import TripTraveler
+
+_EPOCH = date(1970, 1, 1)
+
+
+async def _trip_traveler_ids(db: AsyncSession, trip_id: uuid.UUID) -> list[str]:
+    rows = (
+        (await db.execute(select(TripTraveler.user_id).where(TripTraveler.trip_id == trip_id)))
+        .scalars()
+        .all()
+    )
+    return [str(uid) for uid in rows]
+
+
+async def trip_to_doc(trip: Trip, *, db: AsyncSession) -> dict[str, Any]:
+    """Render a Trip ORM row to its Meili index doc."""
+    return {
+        "id": str(trip.id),
+        "title": trip.title,
+        "primary_destination": trip.primary_destination,
+        "start_date": (trip.start_date - _EPOCH).days,
+        "end_date": (trip.end_date - _EPOCH).days,
+        "traveler_ids": await _trip_traveler_ids(db, trip.id),
+    }
+
+
+def _vehicle_number(seg: Segment) -> str | None:
+    """Flatten flight_number or train_number from JSONB details, or None."""
+    details = seg.details or {}
+    if seg.type == "flight":
+        return details.get("flight_number")
+    if seg.type == "train":
+        return details.get("train_number")
+    return None
+
+
+def _city_from_location(loc: dict[str, Any] | None) -> str | None:
+    if not loc:
+        return None
+    return loc.get("city")
+
+
+async def segment_to_doc(seg: Segment, *, db: AsyncSession) -> dict[str, Any]:
+    """Render a Segment ORM row to its Meili index doc."""
+    details = seg.details or {}
+    return {
+        "id": str(seg.id),
+        "trip_id": str(seg.trip_id) if seg.trip_id else None,
+        "traveler_ids": (await _trip_traveler_ids(db, seg.trip_id) if seg.trip_id else []),
+        "type": seg.type,
+        "provider": seg.provider,
+        "confirmation_number": seg.confirmation_number,
+        "start_at_unix": int(seg.start_at.timestamp()),
+        "start_city": _city_from_location(seg.start_location),
+        "end_city": _city_from_location(seg.end_location),
+        "vehicle_number": _vehicle_number(seg),
+        "notes": details.get("notes"),
+    }
+
+
+# Placeholder to be filled by Task 5; declared here so callers compile.
+async def enqueue_meili_sync(
+    settings: Any,  # Settings; quoted to avoid circular import at this stage
+    *,
+    entity: Literal["trip", "segment"],
+    entity_id: uuid.UUID,
+) -> None:
+    """Enqueue a sync_meili saq job. Filled in Task 5."""
+    raise NotImplementedError("filled in Task 5")
