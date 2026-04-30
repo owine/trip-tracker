@@ -64,9 +64,9 @@ def test_vendor_fixture(name: str, eml_path: Path, expected_path: Path) -> None:
     for actual_seg, expected_seg in zip(result.segments, expected["segments"], strict=True):
         for key, expected_val in expected_seg.items():
             actual_val = getattr(actual_seg, key)
-            assert (
-                actual_val == expected_val
-            ), f"{name}: {key} mismatch — got {actual_val!r}, expected {expected_val!r}"
+            assert actual_val == expected_val, (
+                f"{name}: {key} mismatch — got {actual_val!r}, expected {expected_val!r}"
+            )
 
 
 def test_at_least_one_fixture_pair_exists() -> None:
