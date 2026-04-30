@@ -18,7 +18,7 @@ dependencies = [
     "itsdangerous>=2.2.0",
     "structlog>=25.5.0",
     "python-multipart>=0.0.27",
-    "anthropic>=0.40,<0.41",
+    "anthropic>=0.97,<0.98",
     "arq>=0.26,<0.27",
     "redis>=5,<6",
     "extruct>=0.18,<0.19",
@@ -90,10 +90,6 @@ disallow_untyped_decorators = false
 
 [[tool.mypy.overrides]]
 module = ["authlib.*", "pytest_postgresql.*", "extruct"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = ["anthropic", "anthropic.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

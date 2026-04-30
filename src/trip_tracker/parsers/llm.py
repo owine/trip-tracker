@@ -35,11 +35,15 @@ class LLMClient:
         self._client = AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value())
 
     async def call(self, *, user_content: str) -> Any:
-        """One Haiku call with prompt-caching enabled on the system prompt."""
-        # Anthropic SDK 0.40 stubs flag this as call-overload because they
-        # don't yet enumerate Haiku 4.5's model literal AND the cache_control
-        # block dict shape. unused-ignore handles env-version differences.
-        return await self._client.messages.create(  # type: ignore[call-overload, unused-ignore]
+        """One Haiku call with prompt-caching enabled on the system prompt.
+
+        The dict literals for `system`, `tools`, `tool_choice`, and `messages`
+        are structurally what the SDK accepts, but mypy can't narrow the dict
+        types into the SDK's TypedDicts (TextBlockParam, ToolChoiceToolParam,
+        etc.). Constructing TypedDict instances at every call site would just
+        be ceremony for the same wire shape. Suppress narrowly.
+        """
+        return await self._client.messages.create(  # type: ignore[call-overload]
             model=self._settings.llm_model,
             max_tokens=2048,
             system=[
