@@ -1,0 +1,14 @@
+{
+  "source": "rules:united",
+  "confidence": 0.9,
+  "segments": [
+    {
+      "type": "flight",
+      "confirmation_number": "XYZ789",
+      "provider": "United Airlines",
+      "start_location": {"iata": "SFO"},
+      "end_location": {"iata": "EWR"},
+      "details": {"flight_number": "UA1234"}
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "source": "rules:american",
+  "confidence": 0.9,
+  "segments": [
+    {
+      "type": "flight",
+      "confirmation_number": "ABC123",
+      "provider": "American Airlines",
+      "start_location": {"iata": "JFK"},
+      "end_location": {"iata": "LAX"},
+      "details": {"flight_number": "AA42"}
+    }
+  ]
+}
