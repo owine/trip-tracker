@@ -31,6 +31,8 @@ from trip_tracker.parsers.budget import cost_cents_for_usage, record_usage
 from trip_tracker.parsers.cluster import cluster_for_user, derive_destination
 from trip_tracker.parsers.dispatch import dispatch_parse
 from trip_tracker.parsers.llm import LLMClient
+from trip_tracker.search.client import MeiliClientProtocol, build_client
+from trip_tracker.search.sync import segment_to_doc, trip_to_doc
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +155,33 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
         await db.commit()
 
 
+async def sync_meili(ctx: dict[str, Any], *, entity: str, entity_id: str) -> None:
+    """Upsert one Trip or Segment to Meili. On delete from Postgres, the
+    entity is gone — issue a Meili delete instead."""
+    engine = ctx["engine"]
+    meili: MeiliClientProtocol = ctx["meili"]
+    SessionMaker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+
+    rid = uuid.UUID(entity_id)
+    async with SessionMaker() as db:
+        if entity == "trip":
+            trip_row: Trip | None = await db.get(Trip, rid)
+            if trip_row is None:
+                await meili.index("trips").delete_document(str(rid))
+            else:
+                doc = await trip_to_doc(trip_row, db=db)
+                await meili.index("trips").update_documents([doc])
+        elif entity == "segment":
+            seg_row: Segment | None = await db.get(Segment, rid)
+            if seg_row is None:
+                await meili.index("segments").delete_document(str(rid))
+            else:
+                doc = await segment_to_doc(seg_row, db=db)
+                await meili.index("segments").update_documents([doc])
+        else:
+            raise ValueError(f"unknown entity: {entity}")
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     """Build worker-process singletons. saq calls this once when the worker boots."""
     s = Settings()
@@ -160,6 +189,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     # Build one engine per worker process (not per task) so the connection
     # pool is reused across thousands of jobs. Disposed in shutdown().
     ctx["engine"] = create_async_engine(str(s.database_url))
+    ctx["meili"] = build_client(s)
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
@@ -176,7 +206,7 @@ queue = Queue.from_url(_SETTINGS.redis_url)
 # saq picks up `settings` (a dict) when invoked via `saq trip_tracker.worker.settings`.
 settings = {
     "queue": queue,
-    "functions": [parse_raw_email],
+    "functions": [parse_raw_email, sync_meili],
     "startup": startup,
     "shutdown": shutdown,
     "concurrency": 1,  # one task at a time per worker; matches arq's effective default

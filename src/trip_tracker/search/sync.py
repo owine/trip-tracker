@@ -9,9 +9,11 @@ import uuid
 from datetime import date
 from typing import Any, Literal
 
+from saq import Queue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from trip_tracker.config import Settings
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
 from trip_tracker.models.trip_traveler import TripTraveler
@@ -74,12 +76,27 @@ async def segment_to_doc(seg: Segment, *, db: AsyncSession) -> dict[str, Any]:
     }
 
 
-# Placeholder to be filled by Task 5; declared here so callers compile.
+def _build_queue(settings: Settings) -> Queue:
+    """Factory for the saq Queue. Indirected so tests can monkeypatch it."""
+    return Queue.from_url(settings.redis_url)
+
+
 async def enqueue_meili_sync(
-    settings: Any,  # Settings; quoted to avoid circular import at this stage
+    settings: Settings,
     *,
     entity: Literal["trip", "segment"],
     entity_id: uuid.UUID,
 ) -> None:
-    """Enqueue a sync_meili saq job. Filled in Task 5."""
-    raise NotImplementedError("filled in Task 5")
+    """Enqueue a sync_meili saq job, deduping in-flight duplicates."""
+    q = _build_queue(settings)
+    try:
+        await q.enqueue(
+            "sync_meili",
+            entity=entity,
+            entity_id=str(entity_id),
+            unique=True,
+            key=f"meili_sync:{entity}:{entity_id}",
+            retries=5,
+        )
+    finally:
+        await q.disconnect()
