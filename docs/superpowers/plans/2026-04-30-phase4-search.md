@@ -1341,13 +1341,13 @@ In `src/trip_tracker/templates/base.html`, before the closing `</body>`:
 {% if user %}
   {% include "_search_palette.html" %}
 {% endif %}
-<script defer src="https://unpkg.com/alpinejs@3.5.11/dist/cdn.min.js"
+<script defer src="https://unpkg.com/alpinejs@3.15.11/dist/cdn.min.js"
         integrity="sha384-..."
         crossorigin="anonymous"></script>
 </body>
 ```
 
-(The implementer should generate the actual SRI hash with `curl https://unpkg.com/alpinejs@3.5.11/dist/cdn.min.js | shasum -a 384 -b | xxd -r -p | base64`, OR pull the hash from <https://www.srihash.org/>. Pin Alpine to `3.5.11` exactly — Renovate will handle bumps.)
+(The implementer should generate the actual SRI hash with `curl https://unpkg.com/alpinejs@3.15.11/dist/cdn.min.js | shasum -a 384 -b | xxd -r -p | base64`, OR pull the hash from <https://www.srihash.org/>. Pin Alpine to `3.15.11` exactly — Renovate will handle bumps.)
 
 - [ ] **Step 8.2 — Create `_search_palette.html`**
 
@@ -1540,7 +1540,7 @@ git commit -m "feat(search): ⌘K palette + segment anchors"
 ```
 
 **Quality bar:**
-- Alpine.js is pinned to `3.5.11` exactly with SRI hash. Renovate manages bumps.
+- Alpine.js is pinned to `3.15.11` exactly with SRI hash. Renovate manages bumps.
 - `x-cloak` + the `[x-cloak]` style hides the modal until Alpine initializes (avoids flash-of-unstyled-modal).
 - The two `fetch` calls are concurrent via `Promise.all`. Keeps the perceived latency at max(trips_query, segments_query).
 - Hover over a result moves the keyboard highlight there too — single source of truth for "active result".
