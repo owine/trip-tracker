@@ -21,12 +21,14 @@ from trip_tracker.routes.home import router as home_router
 from trip_tracker.routes.inbox import router as inbox_router
 from trip_tracker.routes.segments import router as segments_router
 from trip_tracker.routes.trips import router as trips_router
+from trip_tracker.search.client import build_client
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     init_db(settings)
+    app.state.meili = build_client(settings)
     try:
         yield
     finally:
