@@ -1,0 +1,12 @@
+{
+  "source": "rules:blacklane",
+  "confidence": 0.9,
+  "segments": [
+    {
+      "type": "transfer",
+      "provider": "Blacklane",
+      "start_location": {"name": "Hotel Plaza Athénée"},
+      "end_location": {"name": "Charles de Gaulle Airport"}
+    }
+  ]
+}

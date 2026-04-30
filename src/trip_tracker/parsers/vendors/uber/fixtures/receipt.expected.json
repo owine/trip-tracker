@@ -1,0 +1,12 @@
+{
+  "source": "rules:uber",
+  "confidence": 0.9,
+  "segments": [
+    {
+      "type": "transfer",
+      "provider": "Uber",
+      "start_location": {"name": "JFK Airport"},
+      "end_location": {"name": "Manhattan Hotel"}
+    }
+  ]
+}

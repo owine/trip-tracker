@@ -12,4 +12,15 @@ Adding a new vendor:
 from __future__ import annotations
 
 # Each import triggers __init_subclass__ in parsers.base, registering the parser.
-from . import air_france, american, amtrak, avis, fairmont, national, sncf, united  # noqa: F401
+from . import (  # noqa: F401
+    air_france,
+    american,
+    amtrak,
+    avis,
+    blacklane,
+    fairmont,
+    national,
+    sncf,
+    uber,
+    united,
+)
