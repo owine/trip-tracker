@@ -271,11 +271,13 @@ async def edit_segment_form(
     request: Request,
     trip_id: uuid.UUID,
     segment_id: uuid.UUID,
+    from_raw_email: uuid.UUID | None = Query(default=None),  # noqa: B008
     user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> HTMLResponse:
     seg = await _load_segment_for_user(db, trip_id, segment_id, user.id)
     trips = (await db.execute(_user_trips(db, user.id))).scalars().all()
+    ai_suggested = seg.parse_source != "manual"
     return templates.TemplateResponse(
         request,
         f"segments/{seg.type}_form.html",
@@ -287,6 +289,8 @@ async def edit_segment_form(
             "errors": {},
             "type": seg.type,
             "edit_segment_id": str(seg.id),
+            "ai_suggested": ai_suggested,
+            "from_raw_email": from_raw_email,
         },
     )
 

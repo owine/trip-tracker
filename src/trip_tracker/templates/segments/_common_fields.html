@@ -1,5 +1,10 @@
 {# Reused inside every per-type form. Renders trip selector + datetime + tz + status. #}
 <input type="hidden" name="type" value="{{ type }}">
+{% if ai_suggested %}
+  <p class="rounded bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">
+    ✨ AI-suggested values — review and confirm
+  </p>
+{% endif %}
 <fieldset class="rounded border border-zinc-200 p-3 dark:border-zinc-800">
   <legend class="px-1 text-sm">Trip</legend>
   <label class="block text-sm">
