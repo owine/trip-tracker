@@ -1,0 +1,27 @@
+{
+  "source": "rules:chase_travel",
+  "confidence": 0.9,
+  "segments": [
+    {
+      "type": "flight",
+      "confirmation_number": "CHASE12345",
+      "provider": "Chase Travel",
+      "start_location": {"iata": "JFK"},
+      "end_location": {"iata": "LAX"},
+      "details": {"flight_number": "AA42"}
+    },
+    {
+      "type": "lodging",
+      "confirmation_number": "CHASE12345",
+      "provider": "Chase Travel",
+      "start_location": {"name": "The Beverly Hilton"}
+    },
+    {
+      "type": "car",
+      "confirmation_number": "CHASE12345",
+      "provider": "Chase Travel",
+      "start_location": {"name": "LAX Airport"},
+      "end_location": {"name": "LAX Airport"}
+    }
+  ]
+}

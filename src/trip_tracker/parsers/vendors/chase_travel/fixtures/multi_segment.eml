@@ -1,0 +1,21 @@
+Subject: Your Chase Travel itinerary
+From: noreply@chasetravel.com
+To: oliver@trips.example.com
+Content-Type: text/plain
+
+Confirmation: CHASE12345
+
+Flight: AA42, JFK -> LAX
+2026-09-15 08:30
+
+Hotel: The Beverly Hilton
+Check-in: 2026-09-15
+Check-out: 2026-09-18
+
+Car rental:
+Pickup: LAX Airport
+Dropoff: LAX Airport
+2026-09-15 14:00
+2026-09-18 10:00
+
+Thank you for booking through Chase Travel.

@@ -18,6 +18,7 @@ from . import (  # noqa: F401
     amtrak,
     avis,
     blacklane,
+    chase_travel,
     fairmont,
     national,
     sncf,
