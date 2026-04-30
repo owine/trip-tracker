@@ -23,6 +23,7 @@ dependencies = [
     "extruct>=0.18,<0.19",
     "saq[hiredis]>=0.26,<0.27",
     "meilisearch-python-sdk>=7,<8",
+    "pdfplumber>=0.11,<0.12",
 ]
 
 [dependency-groups]

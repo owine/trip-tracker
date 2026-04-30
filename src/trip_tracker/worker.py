@@ -14,6 +14,7 @@ import uuid
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import default as email_policy_default
+from pathlib import Path
 from typing import Any
 
 from saq import Queue
@@ -22,7 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import trip_tracker.parsers.vendors  # noqa: F401  # register all packs
 from trip_tracker.config import Settings
+from trip_tracker.documents.extract import extract_document
 from trip_tracker.documents.persist import persist_pdf_attachments
+from trip_tracker.documents.storage import LocalFsStorage
 from trip_tracker.models.forwarding_alias import ForwardingAlias
 from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.segment import Segment
@@ -251,6 +254,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     # pool is reused across thousands of jobs. Disposed in shutdown().
     ctx["engine"] = create_async_engine(str(s.database_url))
     ctx["meili"] = build_client(s)
+    ctx["storage"] = LocalFsStorage(Path(s.documents_dir))
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
@@ -267,7 +271,7 @@ queue = Queue.from_url(_SETTINGS.redis_url)
 # saq picks up `settings` (a dict) when invoked via `saq trip_tracker.worker.settings`.
 settings = {
     "queue": queue,
-    "functions": [parse_raw_email, sync_meili],
+    "functions": [parse_raw_email, sync_meili, extract_document],
     "startup": startup,
     "shutdown": shutdown,
     "concurrency": 1,  # one task at a time per worker; matches arq's effective default
