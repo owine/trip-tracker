@@ -69,6 +69,31 @@ async def test_reindex_walks_all_rows(db_url: str, db_session: AsyncSession) -> 
 
 @pytest.mark.asyncio
 async def test_reindex_dry_run_skips_meili(db_url: str, db_session: AsyncSession) -> None:
+    # Seed at least one trip+segment so the walk has rows to traverse —
+    # otherwise the dry-run early-return would mask any actual write attempt.
+    user = User(oidc_subject="dr1", email="dr1@x.com", display_name="DR1")
+    db_session.add(user)
+    await db_session.flush()
+    trip = Trip(
+        title="DR", start_date=date(2026, 7, 1), end_date=date(2026, 7, 2), created_by=user.id
+    )
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+    db_session.add(
+        Segment(
+            trip_id=trip.id,
+            owner_user_id=user.id,
+            type="flight",
+            status="confirmed",
+            start_at=datetime(2026, 7, 1, 9, tzinfo=UTC),
+            start_tz="UTC",
+            parse_source="manual",
+            parse_confidence=1.0,
+        )
+    )
+    await db_session.commit()
+
     fake_meili = MagicMock()
     fake_meili.delete_index = AsyncMock()
     fake_meili.create_index = AsyncMock()
@@ -82,5 +107,7 @@ async def test_reindex_dry_run_skips_meili(db_url: str, db_session: AsyncSession
     counts = await reindex_all(engine, fake_meili, batch_size=100, dry_run=True)
     await engine.dispose()
 
+    # Spec §8.1: dry-run reports zero "indexed" since nothing was sent.
     assert counts == {"trips": 0, "segments": 0}
     fake_idx.update_documents.assert_not_called()
+    fake_meili.delete_index.assert_not_called()
