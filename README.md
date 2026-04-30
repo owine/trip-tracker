@@ -3,8 +3,8 @@
 Self-hosted itinerary aggregator. Forwarded confirmation emails (flights, hotels,
 rentals, trains, transfers, activities) → unified day-by-day timeline.
 
-> **Status:** Phase 3 — automated parsing of forwarded emails into structured segments.
-> Phase 4 (search + geocoding) is next.
+> **Status:** Phase 4 — typo-tolerant search via ⌘K command palette.
+> Phase 5 (documents + OCR) is next.
 > See [`docs/superpowers/specs/2026-04-26-trip-tracker-design.md`](docs/superpowers/specs/2026-04-26-trip-tracker-design.md) for the full spec.
 
 ## Quick start (local dev)
@@ -29,6 +29,35 @@ uv run ruff check .      # lint
 uv run mypy              # types
 uv run pre-commit run --all-files  # all hooks
 ```
+
+## Search (Phase 4)
+
+Press **⌘K** (Mac) or **Ctrl+K** (anywhere else) to open the search palette.
+Type to find trips and segments by title, destination, provider, confirmation
+number, city, flight/train number, or notes.
+
+### How search works
+
+Meilisearch stores a **derived index** of trips and segments. Postgres remains
+the source of truth. After every Trip or Segment write, the saq worker
+syncs the row to Meili (typically <1s end-to-end).
+
+### Recovering after deploy
+
+Existing Trip and Segment rows from before v0.4.0 aren't yet in Meili.
+After deploy, run once:
+
+    docker compose exec trip-tracker-app python -m trip_tracker reindex
+
+Idempotent. Safe to re-run after a Meili upgrade or any time the index
+drifts from Postgres. Use `--dry-run` to preview without writing.
+
+### Known limitation
+
+Cascaded segment deletes from deleting a parent Trip don't trigger per-segment
+Meili deletes. If you delete a Trip with many segments, run `reindex` to
+reconcile (the residual segment docs will be filtered out at query time
+because their parent trip is gone, but they take up index space until then).
 
 ## Production deploy
 
