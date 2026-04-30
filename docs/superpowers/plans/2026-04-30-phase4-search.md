@@ -527,6 +527,33 @@ async def test_segment_to_doc_lodging_no_vehicle_number(
 
 
 @pytest.mark.asyncio
+async def test_segment_to_doc_car_no_vehicle_number(
+    db_session: AsyncSession,
+) -> None:
+    """Car rental segments don't have a vehicle number — should be None even if
+    car_class is set in details (do NOT invent a vehicle_number from car_class)."""
+    user = User(oidc_subject="u_car", email="ucar@x.com", display_name="UCAR")
+    db_session.add(user)
+    await db_session.flush()
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
+                created_by=user.id)
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+    seg = Segment(
+        trip_id=trip.id, owner_user_id=user.id, type="car", status="confirmed",
+        start_at=datetime(2026, 6, 1, 14, tzinfo=UTC), start_tz="UTC",
+        details={"car_class": "Compact"},
+        parse_source="manual", parse_confidence=1.0,
+    )
+    db_session.add(seg)
+    await db_session.commit()
+
+    doc = await segment_to_doc(seg, db=db_session)
+    assert doc["vehicle_number"] is None  # do not invent from car_class
+
+
+@pytest.mark.asyncio
 async def test_segment_to_doc_train_uses_train_number(
     db_session: AsyncSession,
 ) -> None:
@@ -1021,7 +1048,7 @@ await db.commit()
 await enqueue_meili_sync(settings, entity="trip", entity_id=trip.id)
 ```
 
-(For `delete_trip`, also enqueue sync for any cascaded segments — but the segment FK is `ON DELETE CASCADE`; Postgres deletes them, and we'd need to know their IDs at commit time. For v0.4.0, accept that cascaded-segment deletes don't trigger Meili deletes. The next reindex catches the drift. Document this as a known limitation in §5 of the spec → already noted in Task 19's done definition.)
+(For `delete_trip`, also enqueue sync for any cascaded segments — but the segment FK is `ON DELETE CASCADE`; Postgres deletes them, and we'd need to know their IDs at commit time. For v0.4.0, accept that cascaded-segment deletes don't trigger Meili deletes. The next reindex catches the drift. This is a known v0.4.0 limitation — call it out in the README's Phase 4 section as part of Task 11.)
 
 - [ ] **Step 6.4 — Wire `routes/segments.py`**
 
@@ -1976,8 +2003,10 @@ Same pattern as v0.2.0 / v0.3.0: schedule a one-time remote agent ~20 min after 
 - Meilisearch container running, internal-network only, master key never exposed externally.
 - `python -m trip_tracker reindex` rebuilds both indexes from Postgres; subsequent searches return correct results.
 - Pressing ⌘K opens the palette; typing "Paris" returns matches; clicking a segment result navigates to `/trips/<tid>#segment-<sid>` and the page scrolls to that segment.
+- Playwright smoke test of ⌘K passes (open modal, type query, click result, verify navigation).
 - `/api/search/segments` returns 401 without a session cookie; with a session cookie, returns only the authenticated user's matches (verified by injecting a second user and confirming their data doesn't surface).
 - Daily-budget cap from Phase 3 still works (saq retry semantics didn't break it).
+- Known v0.4.0 limitation documented in README: cascaded-segment deletes from `delete_trip` don't trigger per-segment Meili deletes; recovery via `reindex`.
 - `v0.4.0` tag pushed; release workflow produces signed multi-arch GHCR image; release-verification scheduled agent confirms tag landed cleanly.
 
 After this lands, return to brainstorming/writing-plans for **Phase 5 — Documents + OCR** (vault, PDF text extraction via pdfplumber, Tesseract worker, document index as Meili's 3rd index, presigned download URLs).
