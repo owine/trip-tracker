@@ -144,7 +144,9 @@ async def trip_detail(
     )
     documents_by_segment: dict[uuid.UUID, list[Document]] = defaultdict(list)
     for d in docs:
-        assert d.segment_id is not None  # query filter guarantees this
+        # SQL `is_not(None)` filter above guarantees segment_id is set; the
+        # assert narrows Optional[UUID] for mypy at the dict-build step.
+        assert d.segment_id is not None  # nosec B101
         documents_by_segment[d.segment_id].append(d)
 
     return templates.TemplateResponse(

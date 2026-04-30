@@ -3,8 +3,8 @@
 Self-hosted itinerary aggregator. Forwarded confirmation emails (flights, hotels,
 rentals, trains, transfers, activities) → unified day-by-day timeline.
 
-> **Status:** Phase 4 — typo-tolerant search via ⌘K command palette.
-> Phase 5 (documents + OCR) is next.
+> **Status:** Phase 5 — document upload + email-attachment ingestion + ⌘K search of extracted text.
+> Phase 6 (TBD — candidates: ICS feed, world map, expenses, OCR) is next.
 > See [`docs/superpowers/specs/2026-04-26-trip-tracker-design.md`](docs/superpowers/specs/2026-04-26-trip-tracker-design.md) for the full spec.
 
 ## Quick start (local dev)
@@ -58,6 +58,72 @@ Cascaded segment deletes from deleting a parent Trip don't trigger per-segment
 Meili deletes. If you delete a Trip with many segments, run `reindex` to
 reconcile (the residual segment docs will be filtered out at query time
 because their parent trip is gone, but they take up index space until then).
+
+## Documents (Phase 5)
+
+Upload boarding passes, hotel confirmations, vouchers, and other PDFs — either
+manually from a trip / segment page, or by forwarding an email with a PDF
+attached. Documents are auto-linked to a matching segment when the filename
+contains a confirmation number, flight/train number, or unique date.
+
+### Search
+
+Documents land in Meilisearch's third index (`documents`) after async text
+extraction (typically <2s for boarding-pass-sized PDFs). Press **⌘K** to
+search filenames AND extracted text. Click a document hit to jump to its
+linked segment (if any) or download it directly.
+
+### Storage
+
+Files live under `${DOCUMENTS_DIR}` (default `/data/documents`),
+content-addressed as `<sha256[:2]>/<sha256>`. Same content uploaded twice =
+one file on disk, one row in the database (UNIQUE constraint on
+`owner_user_id + sha256`). v0.5.0 ships local storage only; S3/MinIO is a
+Phase 5.x candidate.
+
+### Reverse-proxy serving (recommended)
+
+By default, the FastAPI app streams downloads via `FileResponse`. For better
+performance, set `DOCUMENTS_X_ACCEL_PREFIX` (e.g., `/internal-documents`) and
+configure your reverse proxy to serve `/data/documents` from that path **as
+an internal-only location**:
+
+```nginx
+# Inside your trip-tracker server block:
+location /internal-documents/ {
+    internal;                                  # CRITICAL — never reachable from outside
+    alias /data/documents/;
+    add_header Content-Disposition $upstream_http_content_disposition;
+}
+```
+
+The `internal;` directive ensures URL-guessing a `storage_key` from outside
+returns 404 — auth always goes through the FastAPI handler first.
+
+### Settings
+
+| Env var                      | Default                  | Notes                                  |
+|------------------------------|--------------------------|----------------------------------------|
+| `DOCUMENTS_DIR`              | `/data/documents`        | Filesystem root for content-addressed PDFs |
+| `MAX_UPLOAD_BYTES`           | `26214400` (25 MiB)      | Per-file size cap; 413 on exceed       |
+| `DOCUMENTS_X_ACCEL_PREFIX`   | unset                    | If set, emits `X-Accel-Redirect` for proxy serving |
+
+### Recovery
+
+If Meili drifts from Postgres (after a restore, schema upgrade, etc.), run:
+
+    docker compose exec trip-tracker-app python -m trip_tracker reindex
+
+Walks all three indexes (`trips`, `segments`, `documents`).
+
+### Out of scope (Phase 5.x roadmap)
+
+- OCR for scanned PDFs and image attachments (Tesseract — Phase 5.1)
+- S3 / MinIO storage backend (Phase 5.2)
+- Document categories (Phase 5.3)
+- Drag-and-drop UI + thumbnails (Phase 5.4)
+- Per-user storage quota
+- Re-extraction admin action (currently requires manually setting `extract_status='pending'`)
 
 ## Production deploy
 
