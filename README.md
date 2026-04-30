@@ -48,7 +48,7 @@ Configure forwardemail.net webhook → `/api/ingest/email` (Phase 2).
 
 ## How parsers work (Phase 3)
 
-When a forwarding email arrives at `/api/ingest/email`, an ARQ worker runs three
+When a forwarding email arrives at `/api/ingest/email`, a saq worker runs three
 strategies in priority order:
 
 1. **JSON-LD via extruct** — for emails that embed schema.org `FlightReservation`,

@@ -1,7 +1,7 @@
-"""ARQ worker: parses RawEmail rows in the background.
+"""saq worker: parses RawEmail rows in the background.
 
 Runs in a separate container from the FastAPI app, sharing the same image:
-    command: ["arq", "trip_tracker.worker.WorkerSettings"]
+    command: ["saq", "trip_tracker.worker.settings"]
 
 Single task `parse_raw_email(raw_email_id)` is enqueued by the webhook
 handler after RawEmail is committed.
@@ -14,9 +14,9 @@ import uuid
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import default as email_policy_default
-from typing import Any, ClassVar
+from typing import Any
 
-from arq.connections import RedisSettings
+from saq import Queue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -35,19 +35,21 @@ from trip_tracker.parsers.llm import LLMClient
 logger = logging.getLogger(__name__)
 
 
-async def parse_raw_email(ctx: dict[str, Any], raw_email_id: str) -> None:
+async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
     """Parse one RawEmail and persist the result.
 
     Idempotent: re-running on an already-parsed RawEmail is a no-op.
+    saq passes kwargs through `ctx` for the function's keyword args (note
+    the kw-only signature). Engine and settings live in the worker context.
 
     TODO (Phase 3.5): the Inbox `reask` route stores a hint in
     raw.headers['X-Tt-Hint']. Pass it through to dispatch_parse here so the
     LLM picks up the user's correction. v0.3.0 ships without this propagation.
     """
     settings: Settings = ctx["settings"]
-    # Use the engine populated by WorkerSettings.startup() in production. Tests
-    # may inject their own engine via ctx["engine"]. Either way, the engine is
-    # owned by the caller — don't dispose it here.
+    # Use the engine populated by startup() in production. Tests may inject
+    # their own engine via ctx["engine"]. Either way, the engine is owned by
+    # the caller — don't dispose it here.
     engine = ctx["engine"]
     SessionMaker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
@@ -151,27 +153,32 @@ async def parse_raw_email(ctx: dict[str, Any], raw_email_id: str) -> None:
         await db.commit()
 
 
+async def startup(ctx: dict[str, Any]) -> None:
+    """Build worker-process singletons. saq calls this once when the worker boots."""
+    s = Settings()
+    ctx["settings"] = s
+    # Build one engine per worker process (not per task) so the connection
+    # pool is reused across thousands of jobs. Disposed in shutdown().
+    ctx["engine"] = create_async_engine(str(s.database_url))
+
+
+async def shutdown(ctx: dict[str, Any]) -> None:
+    """Dispose the engine on graceful shutdown."""
+    engine = ctx.get("engine")
+    if engine is not None:
+        await engine.dispose()
+
+
 # Read settings once at module import. Worker fails fast if env is incomplete.
 _SETTINGS = Settings()
+queue = Queue.from_url(_SETTINGS.redis_url)
 
-
-class WorkerSettings:
-    """ARQ entry point. `command: ["arq", "trip_tracker.worker.WorkerSettings"]`."""
-
-    functions: ClassVar[list[Any]] = [parse_raw_email]
-    max_tries = 5
-    keep_result = 0  # ARQ attribute name (was `keep_result_seconds` typo)
-    redis_settings = RedisSettings.from_dsn(_SETTINGS.redis_url)
-
-    @staticmethod
-    async def startup(ctx: dict[str, Any]) -> None:
-        ctx["settings"] = _SETTINGS
-        # Build one engine per worker process (not per task) so the connection
-        # pool is reused across thousands of jobs. Disposed in shutdown().
-        ctx["engine"] = create_async_engine(str(_SETTINGS.database_url))
-
-    @staticmethod
-    async def shutdown(ctx: dict[str, Any]) -> None:
-        engine = ctx.get("engine")
-        if engine is not None:
-            await engine.dispose()
+# saq picks up `settings` (a dict) when invoked via `saq trip_tracker.worker.settings`.
+settings = {
+    "queue": queue,
+    "functions": [parse_raw_email],
+    "startup": startup,
+    "shutdown": shutdown,
+    "concurrency": 1,  # one task at a time per worker; matches arq's effective default
+    # Retries: per-task `retries=5` set at enqueue time — see webhook.py.
+}

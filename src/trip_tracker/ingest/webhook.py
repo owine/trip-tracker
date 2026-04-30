@@ -7,10 +7,9 @@ import time
 import uuid
 
 import structlog
-from arq import create_pool
-from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse, Response
+from saq import Queue
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,9 +35,13 @@ async def enqueue_parse(settings: Settings, raw_email_id: uuid.UUID) -> None:
     """Enqueue parse_raw_email task. Failure is logged but not propagated —
     the parse_pending admin command is the recovery path."""
     try:
-        redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
-        await redis.enqueue_job("parse_raw_email", str(raw_email_id))
-        await redis.aclose()
+        q = Queue.from_url(settings.redis_url)
+        await q.enqueue(
+            "parse_raw_email",
+            raw_email_id=str(raw_email_id),
+            retries=5,  # max attempts including initial — saq does exponential backoff
+        )
+        await q.disconnect()
     except Exception as exc:  # Redis blip shouldn't fail the webhook
         _logger.warning("enqueue_parse failed for %s: %s", raw_email_id, exc)
 

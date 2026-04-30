@@ -134,7 +134,7 @@ async def test_parse_raw_email_writes_segment(
     with patch("trip_tracker.worker.dispatch_parse", new=fake_dispatch):
         await parse_raw_email(
             {"settings": Settings(), "engine": engine},
-            str(raw.id),
+            raw_email_id=str(raw.id),
         )
 
     await engine.dispose()
@@ -156,7 +156,7 @@ async def test_parse_raw_email_missing_id_is_noop(
     engine = create_async_engine(db_url)
     await parse_raw_email(
         {"settings": Settings(), "engine": engine},
-        str(uuid.uuid4()),
+        raw_email_id=str(uuid.uuid4()),
     )
     await engine.dispose()
 
@@ -190,7 +190,7 @@ async def test_parse_raw_email_already_parsed_skipped(
     with patch("trip_tracker.worker.dispatch_parse", new=fake_dispatch):
         await parse_raw_email(
             {"settings": Settings(), "engine": engine},
-            str(raw.id),
+            raw_email_id=str(raw.id),
         )
     await engine.dispose()
     fake_dispatch.assert_not_called()
@@ -223,7 +223,7 @@ async def test_parse_raw_email_no_alias_marks_no_segments(
     engine = create_async_engine(db_url)
     await parse_raw_email(
         {"settings": Settings(), "engine": engine},
-        str(raw.id),
+        raw_email_id=str(raw.id),
     )
     await engine.dispose()
     await db_session.refresh(raw)
@@ -267,7 +267,7 @@ async def test_parse_raw_email_empty_segments_marks_no_segments(
     with patch("trip_tracker.worker.dispatch_parse", new=fake_dispatch):
         await parse_raw_email(
             {"settings": Settings(), "engine": engine},
-            str(raw.id),
+            raw_email_id=str(raw.id),
         )
     await engine.dispose()
     await db_session.refresh(raw)
@@ -323,7 +323,7 @@ async def test_parse_raw_email_low_confidence_marks_review(
     with patch("trip_tracker.worker.dispatch_parse", new=fake_dispatch):
         await parse_raw_email(
             {"settings": Settings(), "engine": engine},
-            str(raw.id),
+            raw_email_id=str(raw.id),
         )
     await engine.dispose()
     await db_session.refresh(raw)
@@ -397,7 +397,7 @@ async def test_parse_raw_email_attaches_to_existing_trip(
     with patch("trip_tracker.worker.dispatch_parse", new=fake_dispatch):
         await parse_raw_email(
             {"settings": Settings(), "engine": engine},
-            str(raw.id),
+            raw_email_id=str(raw.id),
         )
     await engine.dispose()
 
@@ -411,23 +411,21 @@ async def test_parse_raw_email_attaches_to_existing_trip(
 
 
 @pytest.mark.asyncio
-async def test_worker_settings_startup_creates_engine(
-    db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """WorkerSettings.startup() populates ctx['engine']; shutdown() disposes it."""
+async def test_worker_startup_creates_engine(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """startup() populates ctx['engine'] and ctx['settings']."""
     monkeypatch.setenv("DATABASE_URL", db_url)
-    from trip_tracker.worker import WorkerSettings
+    from trip_tracker.worker import shutdown, startup
 
     ctx: dict = {}
-    await WorkerSettings.startup(ctx)
+    await startup(ctx)
     assert "engine" in ctx
     assert "settings" in ctx
-    await WorkerSettings.shutdown(ctx)
+    await shutdown(ctx)
 
 
 @pytest.mark.asyncio
-async def test_worker_settings_shutdown_no_engine_is_safe() -> None:
+async def test_worker_shutdown_no_engine_is_safe() -> None:
     """shutdown() doesn't raise when no engine was created."""
-    from trip_tracker.worker import WorkerSettings
+    from trip_tracker.worker import shutdown
 
-    await WorkerSettings.shutdown({})  # empty ctx
+    await shutdown({})  # empty ctx

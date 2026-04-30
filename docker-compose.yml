@@ -53,7 +53,7 @@ services:
   trip-tracker-worker:
     image: ${TRIP_TRACKER_IMAGE:-ghcr.io/REPLACE_OWNER/trip-tracker:latest}
     restart: unless-stopped
-    command: ["arq", "trip_tracker.worker.WorkerSettings"]
+    command: ["saq", "trip_tracker.worker.settings"]
     depends_on:
       trip-tracker-db:
         condition: service_healthy
