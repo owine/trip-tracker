@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Inbox · trip-tracker{% endblock %}
+{% block content %}
+  <h1 class="text-3xl font-semibold">Inbox</h1>
+  <p class="mt-1 text-sm text-zinc-500">{{ review_rows|length }} need review · {{ no_seg_rows|length }} no segments</p>
+  {% if review_rows %}
+    <details open class="mt-6">
+      <summary class="cursor-pointer text-lg font-medium">Needs review ({{ review_rows|length }})</summary>
+      {% include "inbox/_bucket_review.html" %}
+    </details>
+  {% endif %}
+  {% if no_seg_rows %}
+    <details class="mt-6">
+      <summary class="cursor-pointer text-lg font-medium">No segments detected ({{ no_seg_rows|length }})</summary>
+      {% include "inbox/_bucket_no_segments.html" %}
+    </details>
+  {% endif %}
+  {% if not review_rows and not no_seg_rows %}
+    <p class="mt-6 text-zinc-500">Inbox empty — parsers caught everything.</p>
+  {% endif %}
+{% endblock %}

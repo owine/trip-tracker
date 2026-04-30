@@ -1,0 +1,17 @@
+<ul class="mt-4 divide-y divide-zinc-200 dark:divide-zinc-800">
+  {% for raw in no_seg_rows %}
+    <li class="flex items-baseline justify-between py-3">
+      <div>
+        <div>{{ raw.subject or "(no subject)" }}</div>
+        <div class="text-sm text-zinc-500">{{ raw.from_address }}</div>
+      </div>
+      <div class="space-x-2 text-sm">
+        <a class="underline" href="/admin/raw-emails/{{ raw.id }}">View raw</a>
+        <form method="post" action="/inbox/{{ raw.id }}/reparse" class="inline">
+          <button class="underline">Re-parse</button>
+        </form>
+        <a class="underline" href="/segments/new?from_raw_email={{ raw.id }}">Add manually</a>
+      </div>
+    </li>
+  {% endfor %}
+</ul>

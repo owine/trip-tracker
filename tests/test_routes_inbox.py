@@ -1,0 +1,221 @@
+"""Inbox routes: list (3 buckets) + 5 actions per bucket 1."""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
+
+import httpx
+import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from trip_tracker.app import create_app
+from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.config import Settings
+from trip_tracker.models.forwarding_alias import ForwardingAlias
+from trip_tracker.models.raw_email import RawEmail
+from trip_tracker.models.segment import Segment
+from trip_tracker.models.trip import Trip
+from trip_tracker.models.trip_traveler import TripTraveler
+from trip_tracker.models.user import User
+
+
+def _cookie(user: User, settings: Settings) -> dict[str, str]:
+    return {
+        "tt_session": encode_session(
+            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
+            secret=settings.session_secret.get_secret_value(),
+            max_age=3600,
+        )
+    }
+
+
+_MIME = (
+    b"Subject: Test\r\nFrom: x@y.com\r\nTo: oliver@trips.example.com\r\n"
+    b"Content-Type: text/plain\r\n\r\nbody\r\n"
+)
+
+
+async def _setup_user_with_raw(
+    db_session: AsyncSession, *, parse_status: str
+) -> tuple[User, RawEmail]:
+    user = User(oidc_subject="i", email="i@x.com", display_name="I")
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
+    raw = RawEmail(
+        id=uuid.uuid4(),
+        received_at=datetime.now(tz=UTC),
+        to_address="oliver@trips.example.com",
+        from_address="x@y.com",
+        subject="Test",
+        message_id=f"<{uuid.uuid4()}@x>",
+        mime_blob=_MIME,
+        headers={},
+        parse_status=parse_status,
+    )
+    db_session.add(raw)
+    await db_session.commit()
+    return user, raw
+
+
+@pytest.mark.asyncio
+async def test_inbox_list_shows_three_buckets(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user, _ = await _setup_user_with_raw(db_session, parse_status="review")
+    # Add a second raw email (no_segments) owned by the same user via existing alias.
+    raw2 = RawEmail(
+        id=uuid.uuid4(),
+        received_at=datetime.now(tz=UTC),
+        to_address="oliver@trips.example.com",
+        from_address="x@y.com",
+        subject="Test2",
+        message_id=f"<{uuid.uuid4()}@x>",
+        mime_blob=_MIME,
+        headers={},
+        parse_status="no_segments",
+    )
+    db_session.add(raw2)
+    await db_session.commit()
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+        ) as c,
+    ):
+        r = await c.get("/inbox")
+    assert r.status_code == 200
+    assert "review" in r.text.lower()
+    assert "no segments" in r.text.lower() or "no_segments" in r.text
+
+
+@pytest.mark.asyncio
+async def test_inbox_confirm_action(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user, raw = await _setup_user_with_raw(db_session, parse_status="review")
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+        ) as c,
+    ):
+        r = await c.post(f"/inbox/{raw.id}/confirm", follow_redirects=False)
+    assert r.status_code == 303
+    await db_session.refresh(raw)
+    assert raw.parse_status == "parsed"
+
+
+@pytest.mark.asyncio
+async def test_inbox_discard_action(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    """Discard marks the email as 'no_segments' AND deletes auto-created segments
+    (per spec §6.1)."""
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user, raw = await _setup_user_with_raw(db_session, parse_status="review")
+
+    trip = Trip(
+        title="Auto",
+        start_date=datetime(2026, 6, 1).date(),
+        end_date=datetime(2026, 6, 5).date(),
+        created_by=user.id,
+    )
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+    seg = Segment(
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="flight",
+        status="confirmed",
+        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC),
+        start_tz="UTC",
+        parse_source="llm:haiku-4-5",
+        parse_confidence=0.7,
+        raw_email_id=raw.id,
+    )
+    db_session.add(seg)
+    await db_session.commit()
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+        ) as c,
+    ):
+        r = await c.post(f"/inbox/{raw.id}/discard", follow_redirects=False)
+    assert r.status_code == 303
+    await db_session.refresh(raw)
+    assert raw.parse_status == "no_segments"
+
+    rows = (
+        (await db_session.execute(select(Segment).where(Segment.raw_email_id == raw.id)))
+        .scalars()
+        .all()
+    )
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_inbox_reparse_action(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user, raw = await _setup_user_with_raw(db_session, parse_status="no_segments")
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    with patch("trip_tracker.routes.inbox.enqueue_parse", new=AsyncMock()) as mock_enqueue:
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+            ) as c,
+        ):
+            r = await c.post(f"/inbox/{raw.id}/reparse", follow_redirects=False)
+    assert r.status_code == 303
+    await db_session.refresh(raw)
+    assert raw.parse_status == "pending"
+    mock_enqueue.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_inbox_404_for_other_users_raw(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    """A user can't act on a RawEmail they don't own (via alias)."""
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    _user_a, raw = await _setup_user_with_raw(db_session, parse_status="review")
+    user_b = User(oidc_subject="b", email="b@x.com", display_name="B")
+    db_session.add(user_b)
+    await db_session.commit()
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user_b, settings)
+        ) as c,
+    ):
+        r = await c.post(f"/inbox/{raw.id}/confirm", follow_redirects=False)
+    assert r.status_code == 404

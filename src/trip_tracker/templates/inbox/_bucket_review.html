@@ -1,0 +1,39 @@
+<ul class="mt-4 divide-y divide-zinc-200 dark:divide-zinc-800">
+  {% for raw in review_rows %}
+    <li class="py-3">
+      <div class="flex items-baseline justify-between">
+        <div>
+          <div class="font-medium">{{ raw.subject or "(no subject)" }}</div>
+          <div class="text-sm text-zinc-500">{{ raw.from_address }} · {{ raw.received_at.strftime("%Y-%m-%d %H:%M") }}</div>
+        </div>
+        <div class="space-x-2 text-sm">
+          <form method="post" action="/inbox/{{ raw.id }}/confirm" class="inline">
+            <button class="underline">Confirm</button>
+          </form>
+          <a class="underline" href="/admin/raw-emails/{{ raw.id }}">View raw</a>
+          <form method="post" action="/inbox/{{ raw.id }}/reparse" class="inline">
+            <button class="underline">Re-parse</button>
+          </form>
+          <form method="post"
+                action="/inbox/{{ raw.id }}/discard"
+                class="inline"
+                onsubmit="return confirm('Discard?')">
+            <button class="text-red-600 underline">Discard</button>
+          </form>
+        </div>
+      </div>
+      <details class="mt-2">
+        <summary class="cursor-pointer text-sm text-zinc-500">Re-ask with hint</summary>
+        <form method="post"
+              action="/inbox/{{ raw.id }}/reask"
+              class="mt-2 flex gap-2">
+          <input class="flex-1 rounded border p-2 text-sm"
+                 name="hint"
+                 placeholder="e.g. This is a return flight, not outbound"
+                 required />
+          <button class="rounded bg-zinc-900 px-3 py-1.5 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">Re-ask</button>
+        </form>
+      </details>
+    </li>
+  {% endfor %}
+</ul>

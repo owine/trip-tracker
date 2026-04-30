@@ -18,6 +18,7 @@ from trip_tracker.logging_setup import configure_logging
 from trip_tracker.routes.admin import router as admin_router
 from trip_tracker.routes.health import router as health_router
 from trip_tracker.routes.home import router as home_router
+from trip_tracker.routes.inbox import router as inbox_router
 from trip_tracker.routes.segments import router as segments_router
 from trip_tracker.routes.trips import router as trips_router
 
@@ -57,6 +58,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(home_router)
     app.include_router(trips_router)
     app.include_router(segments_router)
+    app.include_router(inbox_router)
     app.include_router(admin_router)
 
     return app
