@@ -48,7 +48,7 @@ repos:
       - id: gitleaks
 
   - repo: https://github.com/gitguardian/ggshield
-    rev: v1.50.2
+    rev: v1.50.3
     hooks:
       - id: ggshield
         language_version: python3
