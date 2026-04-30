@@ -94,6 +94,10 @@ disallow_untyped_decorators = false
 module = ["authlib.*", "pytest_postgresql.*", "extruct"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["trip_tracker.documents.storage"]
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
