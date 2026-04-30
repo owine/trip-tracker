@@ -64,6 +64,73 @@ because their parent trip is gone, but they take up index space until then).
 See `docker-compose.yml` — drop into your existing Traefik + Authelia Docker stack.
 Configure forwardemail.net webhook → `/api/ingest/email` (Phase 2).
 
+### Authelia OIDC client
+
+The app is a confidential OIDC client with PKCE S256. It reads claims directly
+from the ID token (no `/userinfo` call), so `email` and `groups` must be
+embedded in the ID token — not just exposed via userinfo, which is Authelia's
+default since 4.38.
+
+**1. Generate the client secret:**
+
+```bash
+authelia crypto hash generate pbkdf2 --variant sha512 \
+  --random --random.length 72 --random.charset rfc3986
+```
+
+Save both outputs — the random plaintext goes in trip-tracker's `.env` as
+`OIDC_CLIENT_SECRET`; the `$pbkdf2-sha512$…` digest goes in Authelia.
+
+**2. Add to Authelia `configuration.yml`:**
+
+```yaml
+identity_providers:
+  oidc:
+    claims_policies:
+      trip_tracker_policy:
+        id_token:
+          - email
+          - email_verified
+          - preferred_username
+          - groups
+
+    clients:
+      - client_id: trip-tracker
+        client_name: Trip Tracker
+        client_secret: '$pbkdf2-sha512$310000$...'   # digest from step 1
+        public: false
+        authorization_policy: two_factor             # or one_factor
+        require_pkce: true
+        pkce_challenge_method: S256
+        claims_policy: trip_tracker_policy
+        redirect_uris:
+          - https://trips.example.com/auth/callback
+        scopes: [openid, profile, email, groups]
+        grant_types: [authorization_code]
+        response_types: [code]
+        token_endpoint_auth_method: client_secret_post
+        consent_mode: implicit
+```
+
+**3. Set trip-tracker `.env`:**
+
+```bash
+OIDC_ISSUER=https://auth.example.com           # must match `iss` in ID token exactly (no trailing slash)
+OIDC_CLIENT_ID=trip-tracker
+OIDC_CLIENT_SECRET=<plaintext from step 1>
+OIDC_REDIRECT_URI=https://trips.example.com/auth/callback
+ADMIN_GROUP=trip-tracker:admin                 # users in this Authelia group get admin
+```
+
+**4. Remove forward-auth middleware:**
+
+Drop `traefik.http.routers.trip.middlewares=authelia@docker` from the app
+service labels — the app authenticates itself via OIDC and the forward-auth
+middleware will intercept `/auth/*` and break the flow.
+
+The first user to log in is auto-promoted to admin. Subsequent users get admin
+only via membership in `ADMIN_GROUP`.
+
 ## Email forwarding setup (Phase 2)
 
 1. Generate a webhook secret: `python -c 'import secrets; print(secrets.token_hex(32))'` and put it in `.env` as `WEBHOOK_SECRET=…`.
