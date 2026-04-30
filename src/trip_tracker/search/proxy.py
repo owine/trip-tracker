@@ -36,12 +36,20 @@ async def search(
     meili: MeiliClientProtocol = Depends(get_meili),  # noqa: B008
 ) -> SearchResponse:
     # Server-side filter injection — never trust client filters.
-    opt_params = {
-        "filter": f"traveler_ids = '{user.id!s}'",
-        "limit": body.limit,
-    }
-    results = await meili.index(index).search(query=body.q, opt_params=opt_params)
-    return SearchResponse(
-        hits=results.get("hits", []),
-        total=results.get("estimatedTotalHits", 0),
+    # AsyncIndex.search() accepts filter/limit as direct kwargs (not
+    # opt_params) and returns a SearchResults Pydantic model with
+    # `.hits` (list[dict]) and `.estimated_total_hits` attributes.
+    results = await meili.index(index).search(
+        query=body.q,
+        filter=f"traveler_ids = '{user.id!s}'",
+        limit=body.limit,
     )
+    # Tests mock the call site and may return a plain dict; production returns
+    # SearchResults. Handle both for transparency.
+    if hasattr(results, "hits"):
+        hits = results.hits
+        total = results.estimated_total_hits or 0
+    else:
+        hits = results.get("hits", [])
+        total = results.get("estimatedTotalHits", 0)
+    return SearchResponse(hits=hits, total=total)

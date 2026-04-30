@@ -60,8 +60,8 @@ async def test_search_segments_filters_by_user(
     assert "hits" in body
     fake_index.search.assert_awaited_once()
     call_kwargs = fake_index.search.call_args.kwargs
-    opt_params = call_kwargs.get("opt_params") or {}
-    assert f"traveler_ids = '{user.id}'" in opt_params["filter"]
+    assert f"traveler_ids = '{user.id}'" in call_kwargs["filter"]
+    assert call_kwargs["limit"] == 10
 
 
 @pytest.mark.asyncio
