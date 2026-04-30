@@ -1,7 +1,8 @@
 """End-to-end worker test: webhook → enqueue → worker → DB write.
 
-Uses ARQ's testing helpers (no real Redis) — the in-memory queue runs the
-task synchronously inside the test.
+Tests call `parse_raw_email` directly with a hand-built ctx dict (no real
+Redis or saq queue runtime); the webhook test patches `enqueue_parse` to
+verify the post-commit handoff.
 """
 
 from __future__ import annotations
