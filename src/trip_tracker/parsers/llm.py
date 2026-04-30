@@ -36,7 +36,10 @@ class LLMClient:
 
     async def call(self, *, user_content: str) -> Any:
         """One Haiku call with prompt-caching enabled on the system prompt."""
-        return await self._client.messages.create(
+        # Anthropic SDK 0.40 stubs flag this as call-overload because they
+        # don't yet enumerate Haiku 4.5's model literal AND the cache_control
+        # block dict shape. unused-ignore handles env-version differences.
+        return await self._client.messages.create(  # type: ignore[call-overload, unused-ignore]
             model=self._settings.llm_model,
             max_tokens=2048,
             system=[
