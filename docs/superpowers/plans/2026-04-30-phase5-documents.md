@@ -915,8 +915,11 @@ async def test_upload_requires_traveler_membership(
 # Place at the top of tests/test_routes_documents_upload.py
 # AND tests/test_routes_documents_link.py
 # AND tests/test_routes_documents_download.py
+from contextlib import asynccontextmanager
+
 import httpx
 import pytest
+
 from trip_tracker.app import create_app
 from trip_tracker.auth.session import SessionPayload, encode_session
 from trip_tracker.config import Settings
@@ -928,6 +931,19 @@ def _cookie(user, settings):
         secret=settings.session_secret.get_secret_value(),
         max_age=3600,
     )}
+
+
+@asynccontextmanager
+async def _ctx(app, settings, user):
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test",
+            cookies=_cookie(user, settings),
+        ) as client,
+    ):
+        yield client
 
 
 @pytest.fixture
@@ -943,21 +959,6 @@ def authenticated_client_factory(db_url, monkeypatch):
     def _make(user):
         return _ctx(app, settings, user)
     return _make
-
-
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def _ctx(app, settings, user):
-    transport = httpx.ASGITransport(app=app)
-    async with (
-        app.router.lifespan_context(app),
-        httpx.AsyncClient(
-            transport=transport, base_url="http://test",
-            cookies=_cookie(user, settings),
-        ) as client,
-    ):
-        yield client
 ```
 
 With that fixture defined locally in each route-test file, the failing-test code blocks above (which use `async with authenticated_client_factory(u) as client:`) work unchanged. Don't promote this to `conftest.py` — keeping it local matches the project's "each test file builds what it needs" convention.
@@ -1563,13 +1564,11 @@ async def test_pdf_attachment_creates_document_with_owner(
     settings = Settings(documents_dir=tmp_path)
     body = _email_with(("bp.pdf", PDF))
 
-    with patch("trip_tracker.documents.persist.Queue") as q_cls:
-        q = MagicMock(); q.enqueue = AsyncMock(); q.disconnect = AsyncMock()
-        q_cls.from_url = MagicMock(return_value=q)
-        await persist_pdf_attachments(
-            db_session, settings,
-            raw_email_id=re_.id, owner_user_id=u.id, body=body,
-        )
+    new_ids = await persist_pdf_attachments(
+        db_session, settings,
+        raw_email_id=re_.id, owner_user_id=u.id, body=body,
+    )
+    await db_session.commit()  # caller commits; helper does not
 
     docs = (await db_session.execute(select(Document))).scalars().all()
     assert len(docs) == 1
@@ -1578,9 +1577,9 @@ async def test_pdf_attachment_creates_document_with_owner(
     assert docs[0].raw_email_id == re_.id
     assert docs[0].extract_status == "pending"
     assert docs[0].segment_id is None and docs[0].trip_id is None
+    assert new_ids == [docs[0].id]  # caller will enqueue these IDs after commit
     file_path = tmp_path / docs[0].storage_key
     assert file_path.exists() and file_path.read_bytes() == PDF
-    q.enqueue.assert_awaited_with("extract_document", document_id=str(docs[0].id))
 
 
 @pytest.mark.asyncio
@@ -1597,17 +1596,19 @@ async def test_idempotent_on_duplicate_sha256(
     settings = Settings(documents_dir=tmp_path)
     body = _email_with(("bp.pdf", PDF))
 
-    with patch("trip_tracker.documents.persist.Queue") as q_cls:
-        q = MagicMock(); q.enqueue = AsyncMock(); q.disconnect = AsyncMock()
-        q_cls.from_url = MagicMock(return_value=q)
-        await persist_pdf_attachments(db_session, settings,
-            raw_email_id=re_.id, owner_user_id=u.id, body=body)
-        await persist_pdf_attachments(db_session, settings,
-            raw_email_id=re_.id, owner_user_id=u.id, body=body)  # second call
+    first_ids = await persist_pdf_attachments(
+        db_session, settings, raw_email_id=re_.id, owner_user_id=u.id, body=body,
+    )
+    await db_session.commit()
+    second_ids = await persist_pdf_attachments(
+        db_session, settings, raw_email_id=re_.id, owner_user_id=u.id, body=body,
+    )
+    await db_session.commit()
 
     docs = (await db_session.execute(select(Document))).scalars().all()
     assert len(docs) == 1
-    assert q.enqueue.await_count == 1  # only enqueued the new doc once
+    assert len(first_ids) == 1
+    assert second_ids == []  # second call: existing row, no new id returned
 
 
 @pytest.mark.asyncio
@@ -1624,16 +1625,17 @@ async def test_non_pdf_attachment_dropped(
     settings = Settings(documents_dir=tmp_path)
     body = _email_with(non_pdf=b"\x89PNG\r\n")  # no PDFs, only an image
 
-    with patch("trip_tracker.documents.persist.Queue") as q_cls:
-        q = MagicMock(); q.enqueue = AsyncMock(); q.disconnect = AsyncMock()
-        q_cls.from_url = MagicMock(return_value=q)
-        await persist_pdf_attachments(db_session, settings,
-            raw_email_id=re_.id, owner_user_id=u.id, body=body)
+    new_ids = await persist_pdf_attachments(
+        db_session, settings, raw_email_id=re_.id, owner_user_id=u.id, body=body,
+    )
+    await db_session.commit()
 
     docs = (await db_session.execute(select(Document))).scalars().all()
     assert docs == []
-    q.enqueue.assert_not_awaited()
+    assert new_ids == []
 ```
+
+Drop the unused `from unittest.mock import AsyncMock, MagicMock, patch` import at the top of this test file — the helper no longer involves Queue, so no mocking is needed.
 
 - [ ] **Step 6.2 — Implement attachment extractor**
 
