@@ -909,10 +909,14 @@ async def test_upload_requires_traveler_membership(
     assert r.status_code in (403, 404)
 ```
 
-**Fixture note — `authenticated_client_factory` does NOT exist.** Phase 4's `tests/test_routes_search.py` builds its authed client inline with a small `_cookie(user, settings)` helper:
+**Fixture note — `authenticated_client_factory` does NOT exist project-wide.** Phase 4's `tests/test_routes_search.py` uses an inline `_cookie(user, settings)` helper. Rather than rewriting the test bodies above, **add this small fixture at the top of every new route-test file** that uses the `authenticated_client_factory(user)` form:
 
 ```python
+# Place at the top of tests/test_routes_documents_upload.py
+# AND tests/test_routes_documents_link.py
+# AND tests/test_routes_documents_download.py
 import httpx
+import pytest
 from trip_tracker.app import create_app
 from trip_tracker.auth.session import SessionPayload, encode_session
 from trip_tracker.config import Settings
@@ -926,19 +930,37 @@ def _cookie(user, settings):
     )}
 
 
-# In each test:
-monkeypatch.setenv("DATABASE_URL", db_url)
-settings = Settings()
-app = create_app(settings=settings)
-async with (
-    app.router.lifespan_context(app),
-    httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
-                      cookies=_cookie(user, settings)) as client,
-):
-    r = await client.post(...)
+@pytest.fixture
+def authenticated_client_factory(db_url, monkeypatch):
+    """Returns a callable: factory(user) -> async-context-manager-yielding-AsyncClient.
+
+    Local to this test file; the project does not ship a shared version.
+    """
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    app = create_app(settings=settings)
+
+    def _make(user):
+        return _ctx(app, settings, user)
+    return _make
+
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def _ctx(app, settings, user):
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test",
+            cookies=_cookie(user, settings),
+        ) as client,
+    ):
+        yield client
 ```
 
-**Adapt the failing-test code blocks above** by replacing every `async with authenticated_client_factory(u) as client:` with the inline pattern. Keep `_cookie` as a top-level helper inside the test file (or copy-paste into both new test files). Don't add a shared fixture — the inline pattern is the project's existing convention.
+With that fixture defined locally in each route-test file, the failing-test code blocks above (which use `async with authenticated_client_factory(u) as client:`) work unchanged. Don't promote this to `conftest.py` — keeping it local matches the project's "each test file builds what it needs" convention.
 
 - [ ] **Step 4.2 — Failing tests for link/unlink/delete**
 
@@ -1690,14 +1712,22 @@ _logger = logging.getLogger(__name__)
 async def persist_pdf_attachments(
     db: AsyncSession, settings: Settings, *,
     raw_email_id: uuid.UUID, owner_user_id: uuid.UUID, body: bytes,
-) -> None:
-    """For each PDF attachment in `body`: UPSERT a Document row, write the file,
-    enqueue extract_document. Idempotent on (owner_user_id, sha256).
+) -> list[uuid.UUID]:
+    """For each PDF attachment in `body`: UPSERT a Document row + write the file.
+    Returns the IDs of newly-INSERTED documents (not UPSERTed-existing ones).
+    Idempotent on (owner_user_id, sha256).
+
+    NOTE: does NOT commit. The caller (parse_raw_email) commits the session
+    once after segment dispatch finishes, so a parser failure rolls back
+    documents along with everything else. The caller is also responsible for
+    enqueuing extract_document for each returned id AFTER the commit — see
+    Step 6.4 below.
     """
     attachments = extract_attachments(body)
     if not attachments:
-        return
+        return []
     storage = LocalFsStorage(settings.documents_dir)
+    new_ids: list[uuid.UUID] = []
 
     for att in attachments:
         if not is_pdf(att.payload):
@@ -1727,25 +1757,29 @@ async def persist_pdf_attachments(
         )
         row = (await db.execute(stmt)).one()
         if row.inserted:
+            # File write is content-addressed and idempotent; safe to do
+            # before commit because re-running on a rollback writes the same
+            # bytes to the same path and either succeeds or no-ops.
             await storage.put(sha, att.payload)
-            q = Queue.from_url(str(settings.redis_url))
-            try:
-                await q.enqueue("extract_document", document_id=str(row.id))
-            finally:
-                await q.disconnect()
-        # else: existing row — UPSERT just updated raw_email_id; nothing to enqueue.
-    await db.commit()
+            new_ids.append(row.id)
+        # else: existing row — UPSERT just updated raw_email_id; no new file.
+    return new_ids
 ```
+
+**Why no commit + return ids:** if the segment-dispatch step in `parse_raw_email` later raises, the whole transaction rolls back — including these document INSERTs. Otherwise we'd ship orphan attachment rows tied to a `raw_email` whose `parse_status` never advanced. The file on disk is content-addressed and idempotent, so leaving an unreferenced file after rollback is acceptable (would be cleaned up by a future `bin/cleanup-orphans` job; tracked as Phase 5.x).
+
+**Why enqueue after commit:** if we enqueue inside the transaction, a worker could pick up `extract_document` for a doc id that doesn't exist yet (the INSERT hasn't committed). Saq commits the enqueue immediately on its Redis side; the DB INSERT is on a separate transaction. Race-safe ordering is: caller commits → caller enqueues.
 
 - [ ] **Step 6.4 — Wire into `parse_raw_email`**
 
-In `src/trip_tracker/worker.py`, inside `parse_raw_email`, **right after the alias-resolution block succeeds** (after the `owner = ...` lookup and the `no_segments` early-return for missing aliases), add:
+In `src/trip_tracker/worker.py`, inside `parse_raw_email`, **right after the alias-resolution block succeeds** (after `owner = ...` and the `no_segments` early-return for missing aliases), add the persistence call and capture the returned ids:
 
 ```python
 # Persist PDF attachments now that we have owner.user_id. Auto-link is
-# deferred to a separate call after segment dispatch (Task 7).
+# deferred to a separate call after segment dispatch (Task 7). The helper
+# does NOT commit — that happens after segment dispatch.
 from trip_tracker.documents.persist import persist_pdf_attachments
-await persist_pdf_attachments(
+new_doc_ids = await persist_pdf_attachments(
     db, settings,
     raw_email_id=raw.id,
     owner_user_id=owner.user_id,
@@ -1754,6 +1788,24 @@ await persist_pdf_attachments(
 ```
 
 The exact insertion line: just above the `_msg = BytesParser(...)` line that begins segment dispatch (around `worker.py:84`). The `db`, `settings`, `raw`, and `owner` variables are all already in scope at that point.
+
+**After the existing `db.commit()` at the end of the function** (or in the same commit block where `parse_status` is updated), add:
+
+```python
+# Enqueue extract_document for each newly-inserted doc, AFTER commit so
+# the worker that picks up the task can find the row.
+if new_doc_ids:
+    q = Queue.from_url(str(settings.redis_url))
+    try:
+        for doc_id in new_doc_ids:
+            await q.enqueue("extract_document", document_id=str(doc_id))
+    finally:
+        await q.disconnect()
+```
+
+Adjust the `persist_pdf_attachments` test (Step 6.1) to reflect the new contract:
+- The test should pass `db_session` (which auto-commits when the test exits the fixture) and assert that `persist_pdf_attachments` returns the list of new ids.
+- The "enqueue called" assertion is removed from the helper test — enqueueing is now the caller's responsibility. Add a separate small integration test for `parse_raw_email` that mocks `Queue.from_url` and asserts `q.enqueue("extract_document", ...)` is called once per new doc id, ONLY after the segment-commit transaction succeeds.
 
 - [ ] **Step 6.5 — Run + commit**
 
@@ -2598,9 +2650,11 @@ async def sync_meili(ctx: dict[str, Any], *, entity: str, entity_id: str) -> Non
         elif entity == "document":
             from trip_tracker.models.document import Document
             from trip_tracker.search.sync import document_to_doc
-            doc = (await db.execute(
-                select(Document).where(Document.id == entity_id)
-            )).scalar_one_or_none()
+            # Match the trip/segment arms: resolve the string id to a UUID
+            # once, then use db.get() (avoids the raw-string == UUID compare
+            # that other arms intentionally don't do).
+            doc_uuid = uuid.UUID(entity_id)
+            doc = await db.get(Document, doc_uuid)
             if doc is None:
                 await meili.index("documents").delete_document(entity_id)
             else:
