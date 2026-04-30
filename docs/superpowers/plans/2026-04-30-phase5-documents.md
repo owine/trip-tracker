@@ -577,12 +577,18 @@ def _validate_key(key: str) -> None:
 
 
 class StorageBackend(Protocol):
-    """File storage abstraction. v0.5.0 ships LocalFsStorage; S3 in Phase 5.x."""
+    """File storage abstraction. v0.5.0 ships LocalFsStorage; S3 in Phase 5.x.
+
+    NOTE: `open` is `async def` (returning AsyncIterator[bytes]) so future S3
+    backends can do an async metadata check before yielding. Call sites use
+    `async for chunk in await storage.open(key):` (double-await — the await
+    resolves the coroutine, the async-for iterates).
+    """
 
     async def put(self, sha256: str, content: bytes) -> str:
         """Persist content. Returns storage_key. Idempotent on identical content."""
 
-    def open(self, storage_key: str) -> AsyncIterator[bytes]:
+    async def open(self, storage_key: str) -> AsyncIterator[bytes]:
         """Iterate file content in chunks. Raises ValueError on bad key."""
 
     async def delete(self, storage_key: str) -> None:
@@ -639,13 +645,12 @@ class LocalFsStorage:
         return str(self._root / storage_key)
 ```
 
-Note: `open` returns an `AsyncIterator[bytes]` directly (the inner `_iter` is the generator). Callers iterate it with `async for chunk in await storage.open(key):`. This shape matches the Protocol's signature.
+Note: `open` returns an `AsyncIterator[bytes]` directly (the inner `_iter` is the generator). The Protocol and the impl both declare `async def open(...) -> AsyncIterator[bytes]` so the structural match is exact. Call sites: `async for chunk in await storage.open(key):` — the await resolves the coroutine, the async-for iterates the chunks.
 
-Wait — review: the Protocol declares `def open(...) -> AsyncIterator[bytes]` (sync method returning an iterator), but the impl declares `async def open(...) -> AsyncIterator[bytes]` (coroutine returning an iterator). To satisfy the Protocol structurally, both must agree. Make the Protocol's `open` `async def` to match the impl, or vice versa. **Pick `async def open(...) -> AsyncIterator[bytes]` everywhere** — it lets future S3 backends do an async `head_object` first.
-
-Update the Protocol:
+(Historical note for skimmers: an earlier draft of this plan declared `open` as sync on the Protocol and async on the impl, causing a structural mismatch. The fix has been folded into the Protocol block above; no separate re-spec step is needed.)
 
 ```python
+# (already shown above) — no additional Protocol changes needed
 class StorageBackend(Protocol):
     async def put(self, sha256: str, content: bytes) -> str: ...
     async def open(self, storage_key: str) -> AsyncIterator[bytes]: ...
@@ -904,7 +909,36 @@ async def test_upload_requires_traveler_membership(
     assert r.status_code in (403, 404)
 ```
 
-The `authenticated_client_factory` fixture lives in `tests/conftest.py` already (used by Phase 4 tests). If it doesn't exist with that exact name in the project, look at how the existing `tests/test_routes_search.py` builds an authenticated client and reuse that pattern — match the existing convention.
+**Fixture note — `authenticated_client_factory` does NOT exist.** Phase 4's `tests/test_routes_search.py` builds its authed client inline with a small `_cookie(user, settings)` helper:
+
+```python
+import httpx
+from trip_tracker.app import create_app
+from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.config import Settings
+
+
+def _cookie(user, settings):
+    return {"tt_session": encode_session(
+        SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
+        secret=settings.session_secret.get_secret_value(),
+        max_age=3600,
+    )}
+
+
+# In each test:
+monkeypatch.setenv("DATABASE_URL", db_url)
+settings = Settings()
+app = create_app(settings=settings)
+async with (
+    app.router.lifespan_context(app),
+    httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
+                      cookies=_cookie(user, settings)) as client,
+):
+    r = await client.post(...)
+```
+
+**Adapt the failing-test code blocks above** by replacing every `async with authenticated_client_factory(u) as client:` with the inline pattern. Keep `_cookie` as a top-level helper inside the test file (or copy-paste into both new test files). Don't add a shared fixture — the inline pattern is the project's existing convention.
 
 - [ ] **Step 4.2 — Failing tests for link/unlink/delete**
 
@@ -1437,157 +1471,147 @@ git commit -m "feat(documents): download route with X-Accel + FileResponse fallb
 
 ---
 
-## Task 6 — Webhook attachment extraction (extends Phase 2)
+## Task 6 — Email attachment persistence (inside `parse_raw_email`)
 
 **Spec ref:** §6.2.
 
+**Reality check vs spec.** The spec §6.2 originally located attachment persistence in the webhook. **The webhook does not resolve the alias to an `owner_user_id`** — that lookup happens in `parse_raw_email` (`src/trip_tracker/worker.py:72-79`, queries `ForwardingAlias`). Persisting attachments in the webhook would require either re-running alias resolution there (Phase-2 refactor) or guessing the owner. The simpler fix, and the one this plan adopts, is to move attachment persistence **into `parse_raw_email`**, immediately after alias resolution succeeds and before segment dispatch. The autolink step (Task 7) then runs after segment dispatch in the same task — both steps live inside the parser job, with no new variable plumbing needed.
+
+**Implication:** Re-forwarding an email with new attachments that wasn't part of the first forward would be dedup'd by `message_id` at the RawEmail level (Phase 2 behavior) — `parse_raw_email` would not re-fire for the second forward. v0.5.0 accepts this limitation; if a user wants to add an attachment to an existing email's record they upload it manually instead. Note in README's "Known limitations" if the user objects.
+
 **Files:**
-- Create: `src/trip_tracker/ingest/attachments.py` (new helper)
-- Modify: `src/trip_tracker/ingest/webhook.py` (call helper after RawEmail INSERT)
-- Modify: `src/trip_tracker/ingest/mime.py` is **untouched** — keep `parse_mime` pure
-- Create: `tests/test_ingest_webhook_attachments.py`
+- Create: `src/trip_tracker/ingest/attachments.py` (pure helper)
+- Modify: `src/trip_tracker/worker.py` (call helper inside `parse_raw_email`, after alias resolution)
+- Create: `tests/test_documents_attachment_persistence.py`
 
 - [ ] **Step 6.1 — Failing tests**
 
+The tests drive the new helper directly (a simple `persist_pdf_attachments(db, settings, *, raw_email_id, owner_user_id, body)` function), not the webhook. Driving the worker's saq task entry directly is cumbersome; a function-level test of the helper is sufficient since `parse_raw_email` will just call it.
+
+`tests/test_documents_attachment_persistence.py`:
+
 ```python
-"""Webhook attachment ingestion: PDF persistence + dedup."""
+"""persist_pdf_attachments: extract + UPSERT + storage write + extract enqueue."""
 
 from __future__ import annotations
 
-import hashlib
-import hmac
-import time
 from email.message import EmailMessage
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from trip_tracker.app import create_app
-from trip_tracker.models.alias import Alias  # adjust if class name differs
+from trip_tracker.config import Settings
+from trip_tracker.documents.persist import persist_pdf_attachments
 from trip_tracker.models.document import Document
+from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.user import User
 
 
-PDF_BODY = b"%PDF-1.4\nfake bp\n"
+PDF = b"%PDF-1.4\nfake bp\n"
 
 
-def _make_mime_with_pdf(*, to: str, frm: str, pdf: bytes,
-                       filename: str = "boarding.pdf") -> bytes:
+def _email_with(*pdfs: tuple[str, bytes], non_pdf: bytes | None = None) -> bytes:
     msg = EmailMessage()
-    msg["From"] = frm
-    msg["To"] = to
+    msg["From"] = "airline@example.com"
+    msg["To"] = "oliver@trips.example.com"
     msg["Subject"] = "Your boarding pass"
-    msg["Message-ID"] = f"<{hashlib.sha256(pdf).hexdigest()[:16]}@test>"
-    msg.set_content("Body text here.")
-    msg.add_attachment(pdf, maintype="application", subtype="pdf", filename=filename)
+    msg["Message-ID"] = "<persist1@test>"
+    msg.set_content("Body text.")
+    for filename, payload in pdfs:
+        msg.add_attachment(payload, maintype="application", subtype="pdf", filename=filename)
+    if non_pdf is not None:
+        msg.add_attachment(non_pdf, maintype="image", subtype="png", filename="snap.png")
     return msg.as_bytes()
 
 
-def _sign(body: bytes, secret: str, ts: int, nonce: str) -> dict[str, str]:
-    mac = hmac.new(secret.encode(), body, "sha256").hexdigest()
-    return {
-        "X-Webhook-Signature": f"sha256={mac}",  # adjust if header format differs
-        "X-Webhook-Timestamp": str(ts),
-        "X-Webhook-Nonce": nonce,
-    }
-
-
 @pytest.mark.asyncio
-async def test_email_with_pdf_attachment_creates_document(
-    db_session: AsyncSession, monkeypatch
+async def test_pdf_attachment_creates_document_with_owner(
+    db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("DOCUMENTS_DIR", "/tmp/tt-test-docs-6")
-    Path("/tmp/tt-test-docs-6").mkdir(exist_ok=True)
-    u = User(oidc_subject="wh1", email="wh1@x.com", display_name="WH1")
+    u = User(oidc_subject="pa1", email="pa1@x.com", display_name="PA1")
     db_session.add(u); await db_session.flush()
-    db_session.add(Alias(local_part="oliver", user_id=u.id))  # adjust to real shape
-    await db_session.commit()
+    re_ = RawEmail(to_address="oliver@trips.example.com", from_address="x@x.com",
+                   subject="bp", message_id="<pa1@test>", mime_blob=b"",
+                   headers={}, parse_status="pending")
+    db_session.add(re_); await db_session.commit()
 
-    body = _make_mime_with_pdf(to="oliver@trips.example.com", frm="airline@example.com",
-                               pdf=PDF_BODY)
-    ts = int(time.time())
-    headers = _sign(body, "x" * 32, ts, "nonce6a")
+    settings = Settings(documents_dir=tmp_path)
+    body = _email_with(("bp.pdf", PDF))
 
-    from httpx import ASGITransport, AsyncClient
-    app = create_app()
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.post("/api/ingest/email", content=body, headers=headers)
-    assert r.status_code in (200, 202)
-
-    docs = (await db_session.execute(select(Document))).scalars().all()
-    assert len(docs) == 1
-    assert docs[0].filename == "boarding.pdf"
-    assert docs[0].owner_user_id == u.id
-    assert docs[0].extract_status == "pending"
-    assert docs[0].segment_id is None  # auto-link is deferred to parser job
-    assert docs[0].trip_id is None     # ditto
-    assert docs[0].raw_email_id is not None
-    file_path = Path("/tmp/tt-test-docs-6") / docs[0].storage_key
-    assert file_path.exists() and file_path.read_bytes() == PDF_BODY
-
-
-@pytest.mark.asyncio
-async def test_reforwarded_email_with_same_pdf_does_not_double_write(
-    db_session, monkeypatch
-) -> None:
-    monkeypatch.setenv("DOCUMENTS_DIR", "/tmp/tt-test-docs-6b")
-    Path("/tmp/tt-test-docs-6b").mkdir(exist_ok=True)
-    u = User(oidc_subject="wh2", email="wh2@x.com", display_name="WH2")
-    db_session.add(u); await db_session.flush()
-    db_session.add(Alias(local_part="oliver", user_id=u.id))
-    await db_session.commit()
-
-    body = _make_mime_with_pdf(to="oliver@trips.example.com", frm="x@x.com", pdf=PDF_BODY)
-
-    from httpx import ASGITransport, AsyncClient
-    app = create_app()
-    for nonce in ("nonce6b1", "nonce6b2"):
-        ts = int(time.time())
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            await client.post(
-                "/api/ingest/email", content=body,
-                headers=_sign(body, "x" * 32, ts, nonce),
-            )
-
-    docs = (await db_session.execute(select(Document))).scalars().all()
-    # Same content, same owner → one row even with different nonces (the email
-    # body is identical so message_id is the same; raw_emails dedups too).
-    assert len(docs) == 1
-
-
-@pytest.mark.asyncio
-async def test_email_with_non_pdf_attachment_silently_skips(
-    db_session, monkeypatch, caplog
-) -> None:
-    monkeypatch.setenv("DOCUMENTS_DIR", "/tmp/tt-test-docs-6c")
-    Path("/tmp/tt-test-docs-6c").mkdir(exist_ok=True)
-    u = User(oidc_subject="wh3", email="wh3@x.com", display_name="WH3")
-    db_session.add(u); await db_session.flush()
-    db_session.add(Alias(local_part="oliver", user_id=u.id))
-    await db_session.commit()
-
-    msg = EmailMessage()
-    msg["From"] = "x@x.com"; msg["To"] = "oliver@trips.example.com"
-    msg["Subject"] = "trip"; msg["Message-ID"] = "<6c@test>"
-    msg.set_content("body")
-    msg.add_attachment(b"\x89PNG\r\n", maintype="image", subtype="png", filename="bp.png")
-    body = msg.as_bytes()
-    ts = int(time.time())
-
-    from httpx import ASGITransport, AsyncClient
-    app = create_app()
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        r = await client.post(
-            "/api/ingest/email", content=body, headers=_sign(body, "x" * 32, ts, "nonce6c"),
+    with patch("trip_tracker.documents.persist.Queue") as q_cls:
+        q = MagicMock(); q.enqueue = AsyncMock(); q.disconnect = AsyncMock()
+        q_cls.from_url = MagicMock(return_value=q)
+        await persist_pdf_attachments(
+            db_session, settings,
+            raw_email_id=re_.id, owner_user_id=u.id, body=body,
         )
-    assert r.status_code in (200, 202)
+
+    docs = (await db_session.execute(select(Document))).scalars().all()
+    assert len(docs) == 1
+    assert docs[0].filename == "bp.pdf"
+    assert docs[0].owner_user_id == u.id
+    assert docs[0].raw_email_id == re_.id
+    assert docs[0].extract_status == "pending"
+    assert docs[0].segment_id is None and docs[0].trip_id is None
+    file_path = tmp_path / docs[0].storage_key
+    assert file_path.exists() and file_path.read_bytes() == PDF
+    q.enqueue.assert_awaited_with("extract_document", document_id=str(docs[0].id))
+
+
+@pytest.mark.asyncio
+async def test_idempotent_on_duplicate_sha256(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    u = User(oidc_subject="pa2", email="pa2@x.com", display_name="PA2")
+    db_session.add(u); await db_session.flush()
+    re_ = RawEmail(to_address="o@x", from_address="x", subject="x",
+                   message_id="<pa2@test>", mime_blob=b"", headers={},
+                   parse_status="pending")
+    db_session.add(re_); await db_session.commit()
+
+    settings = Settings(documents_dir=tmp_path)
+    body = _email_with(("bp.pdf", PDF))
+
+    with patch("trip_tracker.documents.persist.Queue") as q_cls:
+        q = MagicMock(); q.enqueue = AsyncMock(); q.disconnect = AsyncMock()
+        q_cls.from_url = MagicMock(return_value=q)
+        await persist_pdf_attachments(db_session, settings,
+            raw_email_id=re_.id, owner_user_id=u.id, body=body)
+        await persist_pdf_attachments(db_session, settings,
+            raw_email_id=re_.id, owner_user_id=u.id, body=body)  # second call
+
+    docs = (await db_session.execute(select(Document))).scalars().all()
+    assert len(docs) == 1
+    assert q.enqueue.await_count == 1  # only enqueued the new doc once
+
+
+@pytest.mark.asyncio
+async def test_non_pdf_attachment_dropped(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    u = User(oidc_subject="pa3", email="pa3@x.com", display_name="PA3")
+    db_session.add(u); await db_session.flush()
+    re_ = RawEmail(to_address="o@x", from_address="x", subject="x",
+                   message_id="<pa3@test>", mime_blob=b"", headers={},
+                   parse_status="pending")
+    db_session.add(re_); await db_session.commit()
+
+    settings = Settings(documents_dir=tmp_path)
+    body = _email_with(non_pdf=b"\x89PNG\r\n")  # no PDFs, only an image
+
+    with patch("trip_tracker.documents.persist.Queue") as q_cls:
+        q = MagicMock(); q.enqueue = AsyncMock(); q.disconnect = AsyncMock()
+        q_cls.from_url = MagicMock(return_value=q)
+        await persist_pdf_attachments(db_session, settings,
+            raw_email_id=re_.id, owner_user_id=u.id, body=body)
+
     docs = (await db_session.execute(select(Document))).scalars().all()
     assert docs == []
+    q.enqueue.assert_not_awaited()
 ```
-
-The `Alias` import + table name will likely differ from the actual project. The implementer should look at how Phase 2's webhook tests resolve `to_address → owner_user_id` and mirror that.
 
 - [ ] **Step 6.2 — Implement attachment extractor**
 
@@ -1631,29 +1655,30 @@ def extract_attachments(body: bytes) -> list[Attachment]:
     return out
 ```
 
-- [ ] **Step 6.3 — Wire into webhook**
+- [ ] **Step 6.3 — Implement the persist helper**
 
-In `src/trip_tracker/ingest/webhook.py`, after the RawEmail INSERT block (around the `if inserted_id is not None:` branch), call a new helper `persist_pdf_attachments(...)`. Use the UPSERT shape from spec §6.2:
-
-```python
-# Inside ingest_email, after the begin() block that inserted RawEmail:
-if new_raw_email_id is not None:
-    await persist_pdf_attachments(
-        db, settings,
-        raw_email_id=new_raw_email_id,
-        owner_user_id=resolved_owner_id,  # from alias resolution
-        body=body,
-    )
-    await enqueue_parse(settings, new_raw_email_id)
-```
-
-And add:
+`src/trip_tracker/documents/persist.py`:
 
 ```python
+"""Persist PDF email attachments. Spec §6.2.
+
+Called from `parse_raw_email` (worker.py) after alias resolution succeeds.
+The autolink step (Task 7) runs separately, after segments are committed,
+so this function leaves segment_id and trip_id NULL.
+"""
+
+from __future__ import annotations
+
 import logging
+import uuid
+from typing import Any
+
+from saq import Queue
 from sqlalchemy import column, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from trip_tracker.config import Settings
 from trip_tracker.documents.helpers import is_pdf, sha256_hex
 from trip_tracker.documents.storage import LocalFsStorage
 from trip_tracker.ingest.attachments import extract_attachments
@@ -1666,9 +1691,8 @@ async def persist_pdf_attachments(
     db: AsyncSession, settings: Settings, *,
     raw_email_id: uuid.UUID, owner_user_id: uuid.UUID, body: bytes,
 ) -> None:
-    """For each PDF attachment: UPSERT a Document row, write the file, enqueue extract.
-
-    Spec §6.2. Auto-link runs LATER inside parse_raw_email (Task 7).
+    """For each PDF attachment in `body`: UPSERT a Document row, write the file,
+    enqueue extract_document. Idempotent on (owner_user_id, sha256).
     """
     attachments = extract_attachments(body)
     if not attachments:
@@ -1709,27 +1733,46 @@ async def persist_pdf_attachments(
                 await q.enqueue("extract_document", document_id=str(row.id))
             finally:
                 await q.disconnect()
-        # else: existing — UPSERT just updated raw_email_id; nothing to enqueue.
+        # else: existing row — UPSERT just updated raw_email_id; nothing to enqueue.
     await db.commit()
 ```
 
-The `resolved_owner_id` variable name should match whatever the existing webhook uses for the alias-resolved user; check the file before pasting.
+- [ ] **Step 6.4 — Wire into `parse_raw_email`**
 
-- [ ] **Step 6.4 — Run + commit**
+In `src/trip_tracker/worker.py`, inside `parse_raw_email`, **right after the alias-resolution block succeeds** (after the `owner = ...` lookup and the `no_segments` early-return for missing aliases), add:
+
+```python
+# Persist PDF attachments now that we have owner.user_id. Auto-link is
+# deferred to a separate call after segment dispatch (Task 7).
+from trip_tracker.documents.persist import persist_pdf_attachments
+await persist_pdf_attachments(
+    db, settings,
+    raw_email_id=raw.id,
+    owner_user_id=owner.user_id,
+    body=raw.mime_blob,
+)
+```
+
+The exact insertion line: just above the `_msg = BytesParser(...)` line that begins segment dispatch (around `worker.py:84`). The `db`, `settings`, `raw`, and `owner` variables are all already in scope at that point.
+
+- [ ] **Step 6.5 — Run + commit**
 
 ```bash
-uv run pytest tests/test_ingest_webhook_attachments.py -v
+uv run pytest tests/test_documents_attachment_persistence.py -v
 uv run pytest -q
-git add src/trip_tracker/ingest/attachments.py src/trip_tracker/ingest/webhook.py \
-        tests/test_ingest_webhook_attachments.py
-git commit -m "feat(ingest): persist PDF email attachments as Documents (auto-link deferred)"
+git add src/trip_tracker/ingest/attachments.py \
+        src/trip_tracker/documents/persist.py \
+        src/trip_tracker/worker.py \
+        tests/test_documents_attachment_persistence.py
+git commit -m "feat(documents): persist PDF email attachments inside parse_raw_email"
 ```
 
 **Quality bar:**
-- `iter_attachments()` skips inline parts (those with `Content-Disposition: inline`) and multipart wrappers automatically. Don't reimplement this.
-- The `(column("xmax") == 0).label("inserted")` literal needs `column` + `func` imported from `sqlalchemy` (top of webhook.py). Mypy may flag `column("xmax")` as `Any`-typed — that's fine, the label preserves the boolean.
-- The "owner_user_id" comes from alias resolution. Phase 2 already resolves `to_address` to a `User` via the `Alias` table; that variable's name in the existing webhook is what to pass here.
-- Don't use `await db.commit()` inside the loop — one commit at the end, as shown.
+- `iter_attachments()` skips inline parts and multipart wrappers automatically — don't reimplement.
+- `column("xmax") == 0` needs `column` + `func` imported from `sqlalchemy`. Mypy may infer `Any` for the literal — `.label("inserted")` preserves the truthy access via `row.inserted`.
+- The `Queue.from_url` open/disconnect cycle mirrors `enqueue_parse` (`webhook.py:34`); don't reach for a long-lived queue singleton.
+- One commit at the end of the loop — not per-attachment.
+- The helper takes `body: bytes` directly (not a `RawEmail`); the caller passes `raw.mime_blob`. This keeps the helper testable with hand-crafted MIME without DB seeding.
 
 ---
 
@@ -2007,10 +2050,10 @@ In `src/trip_tracker/worker.py`'s `parse_raw_email` body, after the segments-com
 
 ```python
 from trip_tracker.documents.autolink import autolink_pending_for_email
-await autolink_pending_for_email(db, raw_email_id=raw_email_id_uuid)
+await autolink_pending_for_email(db, raw_email_id=rid)
 ```
 
-The exact insertion point is right after segments are committed and Meili-synced — that way auto-link sees the just-committed segments.
+The variable name `rid` (= `uuid.UUID(raw_email_id)`) is defined near the top of `parse_raw_email` (`worker.py:58`). The exact insertion point is right after segments are committed and Meili-synced — that way auto-link sees the just-committed segments.
 
 - [ ] **Step 7.5 — Run + commit**
 
@@ -2174,6 +2217,56 @@ async def test_extract_idempotent_on_already_extracted(
         select(Document).where(Document.id == d.id)
     )).scalar_one()
     assert refreshed.extracted_text == "preserved"  # untouched
+
+
+@pytest.mark.asyncio
+async def test_extract_marks_failed_on_pdfplumber_error(
+    db_url: str, db_session: AsyncSession, tmp_path: Path, monkeypatch
+) -> None:
+    """Corrupt PDF → pdfplumber raises → extract_status='failed', text=NULL."""
+    storage = LocalFsStorage(tmp_path)
+    d = await _seed_doc(db_session, storage=storage, fixture="tiny-text.pdf")
+
+    def _boom(buf):  # type: ignore[no-untyped-def]
+        raise ValueError("simulated PDFSyntaxError")
+    monkeypatch.setattr("trip_tracker.documents.extract._extract_pdf", _boom)
+
+    engine = create_async_engine(db_url)
+    ctx = {"engine": engine, "settings": Settings(), "storage": storage}
+    await extract_document(ctx, document_id=str(d.id))
+    await engine.dispose()
+
+    refreshed = (await db_session.execute(
+        select(Document).where(Document.id == d.id)
+    )).scalar_one()
+    assert refreshed.extract_status == "failed"
+    assert refreshed.extracted_text is None
+
+
+@pytest.mark.asyncio
+async def test_extract_marks_unsupported_for_non_pdf_mime(
+    db_url: str, db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """A doc seeded with mime_type='image/png' → 'unsupported', no extraction."""
+    storage = LocalFsStorage(tmp_path)
+    u = User(oidc_subject="ex2", email="ex2@x.com", display_name="EX2")
+    db_session.add(u); await db_session.flush()
+    d = Document(owner_user_id=u.id, filename="x.png",
+                 mime_type="image/png", size_bytes=10,
+                 sha256="2" * 64, storage_key="22/" + "2" * 64,
+                 extract_status="pending")
+    db_session.add(d); await db_session.commit()
+
+    engine = create_async_engine(db_url)
+    ctx = {"engine": engine, "settings": Settings(), "storage": storage}
+    await extract_document(ctx, document_id=str(d.id))
+    await engine.dispose()
+
+    refreshed = (await db_session.execute(
+        select(Document).where(Document.id == d.id)
+    )).scalar_one()
+    assert refreshed.extract_status == "unsupported"
+    assert refreshed.extracted_text is None
 ```
 
 - [ ] **Step 8.4 — Implement the task**
@@ -2489,37 +2582,35 @@ async def enqueue_meili_sync(
 
 The existing implementation body (`q.enqueue("sync_meili", ...)`) is unchanged.
 
-- [ ] **Step 9.4 — Add `case "document"` in `sync_meili` worker**
+- [ ] **Step 9.4 — Add `elif entity == "document"` arm in `sync_meili`**
 
-In `src/trip_tracker/worker.py`'s `sync_meili` function, mirror the existing trip/segment branches:
+The existing `sync_meili` (`worker.py:168`) uses `if/elif/else`, NOT a `match` statement. Add a third `elif` arm before the existing `else`:
 
 ```python
+# Existing structure (don't refactor to match — just extend):
 async def sync_meili(ctx: dict[str, Any], *, entity: str, entity_id: str) -> None:
-    settings: Settings = ctx["settings"]
-    engine = ctx["engine"]
-    meili = ctx["meili"]
-    SM = async_sessionmaker(engine, expire_on_commit=False)
-
+    ...
     async with SM() as db:
-        match entity:
-            case "trip":
-                ...  # existing
-            case "segment":
-                ...  # existing
-            case "document":
-                from trip_tracker.models.document import Document
-                from trip_tracker.search.sync import document_to_doc
-                doc = (await db.execute(
-                    select(Document).where(Document.id == entity_id)
-                )).scalar_one_or_none()
-                if doc is None:
-                    await meili.index("documents").delete_document(entity_id)
-                else:
-                    payload = await document_to_doc(doc, db=db)
-                    await meili.index("documents").update_documents([payload])
-            case _:
-                _logger.warning("sync_meili: unknown entity=%s", entity)
+        if entity == "trip":
+            ...  # existing
+        elif entity == "segment":
+            ...  # existing
+        elif entity == "document":
+            from trip_tracker.models.document import Document
+            from trip_tracker.search.sync import document_to_doc
+            doc = (await db.execute(
+                select(Document).where(Document.id == entity_id)
+            )).scalar_one_or_none()
+            if doc is None:
+                await meili.index("documents").delete_document(entity_id)
+            else:
+                payload = await document_to_doc(doc, db=db)
+                await meili.index("documents").update_documents([payload])
+        else:
+            logger.warning("sync_meili: unknown entity=%s", entity)
 ```
+
+The `logger` name in worker.py is `logger` (not `_logger`); match the existing convention.
 
 - [ ] **Step 9.5 — Add 3rd index in `ensure_indexes_configured`**
 
