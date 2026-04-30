@@ -134,7 +134,9 @@ Searchable attributes (Meili weight order): `title`, `primary_destination`.
 
 Searchable attributes (Meili weight order): `provider`, `confirmation_number`, `vehicle_number`, `start_city`, `end_city`, `notes`.
 
-`vehicle_number` flattens `details->>'flight_number' or 'train_number'` from the Phase 2 JSONB payload. `notes` flattens `details->>'notes'`. Other JSONB fields (`seat`, `room_type`, etc.) are too type-specific to flatten and are not indexed.
+`vehicle_number` flattens `details->>'flight_number'` for `type='flight'`, `details->>'train_number'` for `type='train'`, and is `null` for all other segment types (`lodging`, `car`, `transfer`, `activity` — none have a vehicle number per the Phase 2 schema). The implementer should NOT try to invent a vehicle number from `car_class` or activity venue names.
+
+`notes` flattens `details->>'notes'`. Other JSONB fields (`seat`, `room_type`, `car_class`, etc.) are too type-specific to flatten and are not indexed.
 
 `traveler_ids` is denormalized from each segment's parent trip's `trip_travelers` rows at index time. Re-index on TripTraveler mutation is NOT required for v0.4.0 (single-user — `traveler_ids` is always `[user.id]`); revisit when cross-traveler features land.
 
@@ -174,6 +176,8 @@ The 8 write sites (catalogued at v0.4.0 design time):
 | `worker.py::parse_raw_email` | segment + (if create_new) trip |
 
 A missed call site results in stale search results until the next reindex; the recovery path is `python -m trip_tracker reindex`.
+
+**Note on `routes/inbox.py::reparse` and `routes/inbox.py::reask`:** these reset `parse_status='pending'` and re-enqueue `parse_raw_email`; they do NOT directly call `enqueue_meili_sync`. The downstream worker task already syncs on completion (it's in the table above). Adding a sync call at reparse time would be redundant and would index stale data.
 
 ### 5.2 Coalescing
 
@@ -249,7 +253,11 @@ async def search(
     results = await meili.index(index).search(
         query=body.q,
         opt_params={
-            "filter": f"traveler_ids = '{user.id}'",
+            # Meili filter DSL: 'traveler_ids = "<uuid>"' — equality on a
+            # filterable array means "this UUID is one of the elements".
+            # Single quotes around the UUID literal are required by Meili's
+            # parser. Note user.id is a uuid.UUID; str() coerces.
+            "filter": f"traveler_ids = '{user.id!s}'",
             "limit": min(body.limit, 50),
         },
     )
@@ -266,9 +274,22 @@ async def search(
 
 ## 7. ⌘K palette UI
 
-### 7.1 Component shape
+### 7.1 Setup: Alpine.js delivery
 
-`templates/_search_palette.html` is included from `base.html`. Single Alpine.js component:
+Alpine.js loads from CDN — no bundler needed. Add to `templates/base.html` immediately before `</body>`:
+
+```html
+<script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+{% include "_search_palette.html" %}
+```
+
+`{% include "_search_palette.html" %}` MUST come BEFORE the Alpine `<script>` tag is fetched (Alpine scans the DOM at startup), but `defer` ensures the script doesn't block parsing. Net effect: Alpine attaches to the palette's `x-data="searchPalette()"` after page load.
+
+The Subresource Integrity hash + a specific Alpine version pin are added in implementation (the SRI hash is generated against the chosen exact version; this is detail for the plan, not the spec).
+
+### 7.2 Component shape
+
+`templates/_search_palette.html`:
 
 ```html
 <div x-data="searchPalette()" @keydown.window.meta.k.prevent="open()" @keydown.window.ctrl.k.prevent="open()">
@@ -284,7 +305,7 @@ async def search(
 
 The Alpine component manages: `isOpen` (bool), `query` (string), `trips` (array), `segments` (array), `activeIdx` (int for keyboard nav).
 
-### 7.2 Behavior
+### 7.3 Behavior
 
 - **Open:** ⌘K (Mac) or Ctrl+K (Linux/Windows). `Escape` closes. Click-outside closes.
 - **Search:** debounced 150ms after each keystroke. From char 1 (no minimum query length). Empty query clears results, no recent-trips state.
@@ -294,11 +315,11 @@ The Alpine component manages: `isOpen` (bool), `query` (string), `trips` (array)
   - Trip → `window.location = "/trips/<hit.id>"`.
   - Segment → `window.location = "/trips/<hit.trip_id>#segment-<hit.id>"`.
 
-### 7.3 Anchor IDs
+### 7.4 Anchor IDs
 
 `templates/segments/_row.html` gets `id="segment-{{ s.id }}"` on the outer `<li>`. The browser's native `#fragment` scroll is sufficient; no JS smooth-scroll required.
 
-### 7.4 Failure modes
+### 7.5 Failure modes
 
 - **Network error fetching `/api/search/...`:** show "Search unavailable" inline. No retry — the user can re-type.
 - **Empty results:** show "No matches" instead of an empty list.
@@ -326,7 +347,7 @@ Optional flags:
 4. Stream Segment rows similarly.
 5. Print summary: `"trips: 42 indexed | segments: 187 indexed | duration 3.1s"`.
 
-Idempotent: running it twice produces the same final index state.
+Idempotent: running it twice produces the same final index state. If the command is interrupted partway (e.g., the `trips` index is deleted but the `segments` index is mid-recreation when Meili restarts), re-running it from the start completes cleanly — Meili treats `delete_index` on a missing index as a no-op (returns success). No mid-state cleanup required.
 
 ### 8.3 When to run
 
