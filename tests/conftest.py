@@ -122,3 +122,16 @@ def _mock_documents_queue(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_queue.enqueue = AsyncMock()
     mock_queue.disconnect = AsyncMock()
     monkeypatch.setattr("trip_tracker.routes.documents._build_queue", lambda s: mock_queue)
+
+
+@pytest.fixture(autouse=True)
+def _mock_worker_doc_queue(monkeypatch: pytest.MonkeyPatch, _set_required_env: None) -> None:
+    """Mock _build_doc_queue in worker.py to avoid Redis connection during tests.
+
+    Depends on _set_required_env so that env vars are set before worker.py is
+    imported (worker.py calls Settings() at module level when first imported).
+    """
+    mock_queue = MagicMock()
+    mock_queue.enqueue = AsyncMock()
+    mock_queue.disconnect = AsyncMock()
+    monkeypatch.setattr("trip_tracker.worker._build_doc_queue", lambda s: mock_queue)

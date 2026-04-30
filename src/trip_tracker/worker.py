@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 import trip_tracker.parsers.vendors  # noqa: F401  # register all packs
 from trip_tracker.config import Settings
+from trip_tracker.documents.persist import persist_pdf_attachments
 from trip_tracker.models.forwarding_alias import ForwardingAlias
 from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.segment import Segment
@@ -35,6 +36,30 @@ from trip_tracker.search.client import MeiliClientProtocol, build_client
 from trip_tracker.search.sync import enqueue_meili_sync, segment_to_doc, trip_to_doc
 
 logger = logging.getLogger(__name__)
+
+
+def _build_doc_queue(settings: Settings) -> Queue:
+    """Factory for the saq Queue used by doc-extract enqueuing. Indirected for tests."""
+    return Queue.from_url(str(settings.redis_url))
+
+
+async def _enqueue_doc_extracts(settings: Settings, new_doc_ids: list[uuid.UUID]) -> None:
+    """Enqueue extract_document for each newly-persisted document id.
+
+    Called AFTER db.commit() so the worker picking up the task can see the row.
+    Failure is logged but not propagated — the document row stays in 'pending'
+    and a future re-run will retry.
+    """
+    if not new_doc_ids:
+        return
+    q = _build_doc_queue(settings)
+    try:
+        for doc_id in new_doc_ids:
+            await q.enqueue("extract_document", document_id=str(doc_id))
+    except Exception as exc:  # Redis blip shouldn't fail the parse task
+        logger.warning("_enqueue_doc_extracts failed: %s", exc)
+    finally:
+        await q.disconnect()
 
 
 async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
@@ -81,6 +106,17 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
             await db.commit()
             return
 
+        # Phase 5: persist PDF attachments now that we have owner.user_id.
+        # Auto-link is deferred to Task 7 (runs after segment dispatch); this
+        # call leaves segment_id / trip_id NULL on each new Document row.
+        new_doc_ids = await persist_pdf_attachments(
+            db,
+            settings,
+            raw_email_id=raw.id,
+            owner_user_id=owner.user_id,
+            body=raw.mime_blob,
+        )
+
         _msg = BytesParser(policy=email_policy_default).parsebytes(raw.mime_blob)
         assert isinstance(_msg, EmailMessage), (
             "BytesParser with default policy returns EmailMessage"
@@ -106,6 +142,9 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
         if not outcome.result.segments:
             raw.parse_status = "no_segments"
             await db.commit()
+            # Phase 5: enqueue PDF extraction even when there are no segments —
+            # an email can carry a boarding-pass PDF the parser doesn't recognise.
+            await _enqueue_doc_extracts(settings, new_doc_ids)
             return
 
         created_segments: list[Segment] = []
@@ -158,6 +197,10 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
         else:
             raw.parse_status = "parsed"
         await db.commit()
+
+        # Phase 5: enqueue PDF extraction for newly-attached documents AFTER the
+        # commit so the worker that picks up the task can see the row.
+        await _enqueue_doc_extracts(settings, new_doc_ids)
 
         for s in created_segments:
             await enqueue_meili_sync(settings, entity="segment", entity_id=s.id)
