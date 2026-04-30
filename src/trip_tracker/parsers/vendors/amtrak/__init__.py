@@ -8,6 +8,7 @@ from email.message import EmailMessage
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
+from trip_tracker.parsers._email_text import extract_text
 from trip_tracker.parsers.base import ParseResult, SegmentDraft, VendorParser
 
 _TRAIN = re.compile(r"\bTrain\s+(\d+)", re.I)
@@ -25,7 +26,7 @@ class AmtrakParser(VendorParser):
     ]
 
     def parse(self, msg: EmailMessage) -> ParseResult:
-        body = _extract_text(msg)
+        body = extract_text(msg)
         train = _TRAIN.search(body)
         stations = _STATION_PAIR.search(body)
         dt = _DATETIME.search(body)
@@ -46,16 +47,3 @@ class AmtrakParser(VendorParser):
             details={"train_number": train.group(1) if train else None},
         )
         return ParseResult(segments=[seg], confidence=0.9, source="rules:amtrak")
-
-
-def _extract_text(msg: EmailMessage) -> str:
-    if msg.is_multipart():
-        for part in msg.walk():
-            if part.get_content_type() == "text/plain":
-                payload = part.get_payload(decode=True)
-                if isinstance(payload, bytes):
-                    return payload.decode(part.get_content_charset() or "utf-8", errors="replace")
-    payload = msg.get_payload(decode=True)
-    if isinstance(payload, bytes):
-        return payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
-    return str(msg.get_payload() or "")

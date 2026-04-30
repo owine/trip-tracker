@@ -8,6 +8,7 @@ from email.message import EmailMessage
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
+from trip_tracker.parsers._email_text import extract_text
 from trip_tracker.parsers.base import ParseResult, SegmentDraft, VendorParser
 
 _PICKUP = re.compile(r"(?:pickup|from)[:\s]+([^\n]+)", re.I)
@@ -22,7 +23,7 @@ class BlacklaneParser(VendorParser):
     ]
 
     def parse(self, msg: EmailMessage) -> ParseResult:
-        body = _extract_text(msg)
+        body = extract_text(msg)
         pu = _PICKUP.search(body)
         do = _DROPOFF.search(body)
         dt = _DATETIME.search(body)
@@ -41,16 +42,3 @@ class BlacklaneParser(VendorParser):
             end_location={"name": do.group(1).strip()},
         )
         return ParseResult(segments=[seg], confidence=0.9, source="rules:blacklane")
-
-
-def _extract_text(msg: EmailMessage) -> str:
-    if msg.is_multipart():
-        for part in msg.walk():
-            if part.get_content_type() == "text/plain":
-                payload = part.get_payload(decode=True)
-                if isinstance(payload, bytes):
-                    return payload.decode(part.get_content_charset() or "utf-8", errors="replace")
-    payload = msg.get_payload(decode=True)
-    if isinstance(payload, bytes):
-        return payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
-    return str(msg.get_payload() or "")

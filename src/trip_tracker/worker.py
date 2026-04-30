@@ -78,7 +78,9 @@ async def parse_raw_email(ctx: dict[str, Any], raw_email_id: str) -> None:
             return
 
         _msg = BytesParser(policy=email_policy_default).parsebytes(raw.mime_blob)
-        assert isinstance(_msg, EmailMessage)
+        assert isinstance(
+            _msg, EmailMessage
+        ), "BytesParser with default policy returns EmailMessage"  # nosec B101
         msg = _msg
         client = LLMClient(settings)
         outcome = await dispatch_parse(

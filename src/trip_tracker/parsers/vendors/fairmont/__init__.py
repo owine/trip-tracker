@@ -8,6 +8,7 @@ from email.message import EmailMessage
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
+from trip_tracker.parsers._email_text import extract_text
 from trip_tracker.parsers.base import ParseResult, SegmentDraft, VendorParser
 
 _CHECK_IN = re.compile(r"check[\s-]?in[:\s]+(\d{4}-\d{2}-\d{2})", re.I)
@@ -24,7 +25,7 @@ class FairmontParser(VendorParser):
     ]
 
     def parse(self, msg: EmailMessage) -> ParseResult:
-        body = _extract_text(msg)
+        body = extract_text(msg)
         ci = _CHECK_IN.search(body)
         co = _CHECK_OUT.search(body)
         name = _HOTEL_NAME.search(body)
@@ -47,16 +48,3 @@ class FairmontParser(VendorParser):
             start_location={"name": name.group(1).strip()},
         )
         return ParseResult(segments=[seg], confidence=0.9, source="rules:fairmont")
-
-
-def _extract_text(msg: EmailMessage) -> str:
-    if msg.is_multipart():
-        for part in msg.walk():
-            if part.get_content_type() == "text/plain":
-                payload = part.get_payload(decode=True)
-                if isinstance(payload, bytes):
-                    return payload.decode(part.get_content_charset() or "utf-8", errors="replace")
-    payload = msg.get_payload(decode=True)
-    if isinstance(payload, bytes):
-        return payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
-    return str(msg.get_payload() or "")

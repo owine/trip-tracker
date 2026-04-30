@@ -8,6 +8,7 @@ from email.message import EmailMessage
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
+from trip_tracker.parsers._email_text import extract_text
 from trip_tracker.parsers.base import ParseResult, SegmentDraft, VendorParser
 
 _FLIGHT_NUM = re.compile(r"\bAA\s?(\d{1,4})\b")
@@ -25,7 +26,7 @@ class AmericanParser(VendorParser):
     ]
 
     def parse(self, msg: EmailMessage) -> ParseResult:
-        body = _extract_text(msg)
+        body = extract_text(msg)
         flight = _FLIGHT_NUM.search(body)
         iata = _IATA_PAIR.search(body)
         date_m = _DATE.search(body)
@@ -50,16 +51,3 @@ class AmericanParser(VendorParser):
             details={"flight_number": f"AA{flight.group(1)}"},
         )
         return ParseResult(segments=[seg], confidence=0.9, source="rules:american")
-
-
-def _extract_text(msg: EmailMessage) -> str:
-    if msg.is_multipart():
-        for part in msg.walk():
-            if part.get_content_type() == "text/plain":
-                payload = part.get_payload(decode=True)
-                if isinstance(payload, bytes):
-                    return payload.decode(part.get_content_charset() or "utf-8", errors="replace")
-    payload = msg.get_payload(decode=True)
-    if isinstance(payload, bytes):
-        return payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
-    return str(msg.get_payload() or "")

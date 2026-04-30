@@ -72,3 +72,22 @@ def test_vendor_fixture(name: str, eml_path: Path, expected_path: Path) -> None:
 def test_at_least_one_fixture_pair_exists() -> None:
     """If this fails, a vendor parser exists but has no fixtures (CI gate)."""
     assert len(_fixture_pairs()) >= 1
+
+
+@pytest.mark.parametrize("parser_cls", get_registry(), ids=lambda c: c.name)
+def test_vendor_returns_empty_on_unmatchable_email(parser_cls: type[VendorParser]) -> None:
+    """Each vendor parser returns segments=[], confidence=0.0 when its regexes
+    don't match the email body. Covers the 'required fields not found' early
+    return that fixtures don't otherwise exercise."""
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["Subject"] = "Unrelated"
+    msg["From"] = "noreply@example-not-real-vendor.invalid"
+    msg["To"] = "oliver@trips.example.com"
+    msg.set_content("This email contains no parseable itinerary data whatsoever.")
+
+    result = parser_cls().parse(msg)
+    assert result.segments == []
+    assert result.confidence == 0.0
+    assert result.source.startswith("rules:")

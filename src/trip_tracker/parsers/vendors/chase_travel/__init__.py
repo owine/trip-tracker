@@ -15,6 +15,7 @@ from email.message import EmailMessage
 from typing import ClassVar
 from zoneinfo import ZoneInfo
 
+from trip_tracker.parsers._email_text import extract_text
 from trip_tracker.parsers.base import ParseResult, SegmentDraft, VendorParser
 
 # Section markers, label-based extraction
@@ -50,7 +51,7 @@ class ChaseTravelParser(VendorParser):
     ]
 
     def parse(self, msg: EmailMessage) -> ParseResult:
-        body = _extract_text(msg)
+        body = extract_text(msg)
         conf_match = _CONFIRMATION.search(body)
         confirmation = conf_match.group(1) if conf_match else None
 
@@ -140,16 +141,3 @@ def _parse_car(block: str, confirmation: str | None) -> SegmentDraft | None:
         start_location={"name": pickup.group(1).strip()},
         end_location={"name": dropoff.group(1).strip()},
     )
-
-
-def _extract_text(msg: EmailMessage) -> str:
-    if msg.is_multipart():
-        for part in msg.walk():
-            if part.get_content_type() == "text/plain":
-                payload = part.get_payload(decode=True)
-                if isinstance(payload, bytes):
-                    return payload.decode(part.get_content_charset() or "utf-8", errors="replace")
-    payload = msg.get_payload(decode=True)
-    if isinstance(payload, bytes):
-        return payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
-    return str(msg.get_payload() or "")
