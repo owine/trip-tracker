@@ -93,3 +93,7 @@ class Settings(BaseSettings):
         if not 0.0 <= v <= 1.0:
             raise ValueError("llm_confidence_floor must be in [0, 1]")
         return v
+
+    # Phase 4 — search
+    meili_url: str
+    meili_master_key: SecretStr

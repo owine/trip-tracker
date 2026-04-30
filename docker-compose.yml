@@ -20,6 +20,8 @@ services:
       TZ: ${TZ:-UTC}
       REDIS_URL: ${REDIS_URL:-redis://trip-tracker-redis:6379/0}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      MEILI_URL: ${MEILI_URL:-http://trip-tracker-search:7700}
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.trip.rule=Host(`${TRIP_HOST:-trips.example.com}`)"
@@ -50,6 +52,16 @@ services:
     restart: unless-stopped
     networks: [internal]
 
+  trip-tracker-search:
+    image: getmeili/meilisearch:v1.13
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MEILI_ENV: production
+    volumes:
+      - trip-tracker-meili:/meili_data
+    networks: [internal]
+
   trip-tracker-worker:
     image: ${TRIP_TRACKER_IMAGE:-ghcr.io/REPLACE_OWNER/trip-tracker:latest}
     restart: unless-stopped
@@ -68,10 +80,13 @@ services:
       LLM_CONFIDENCE_FLOOR: ${LLM_CONFIDENCE_FLOOR:-0.7}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-json}
+      MEILI_URL: ${MEILI_URL:-http://trip-tracker-search:7700}
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
     networks: [internal]
 
 volumes:
   trip-tracker-pg:
+  trip-tracker-meili:
 
 networks:
   proxy:

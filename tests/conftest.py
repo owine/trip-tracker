@@ -61,3 +61,6 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # Phase 3 — parser pipeline
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    # Phase 4 — search
+    monkeypatch.setenv("MEILI_URL", "http://localhost:7700")
+    monkeypatch.setenv("MEILI_MASTER_KEY", "x" * 32)
