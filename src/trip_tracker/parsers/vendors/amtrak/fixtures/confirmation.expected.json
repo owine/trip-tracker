@@ -1,0 +1,14 @@
+{
+  "source": "rules:amtrak",
+  "confidence": 0.9,
+  "segments": [
+    {
+      "type": "train",
+      "confirmation_number": "AMT789012",
+      "provider": "Amtrak",
+      "start_location": {"name": "New York Penn"},
+      "end_location": {"name": "Boston South Station"},
+      "details": {"train_number": "195"}
+    }
+  ]
+}

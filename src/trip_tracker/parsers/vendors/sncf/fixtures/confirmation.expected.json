@@ -1,0 +1,14 @@
+{
+  "source": "rules:sncf",
+  "confidence": 0.9,
+  "segments": [
+    {
+      "type": "train",
+      "confirmation_number": "SNC345678",
+      "provider": "SNCF",
+      "start_location": {"name": "Paris Gare de Lyon"},
+      "end_location": {"name": "Lyon Part Dieu"},
+      "details": {"train_number": "9573"}
+    }
+  ]
+}
