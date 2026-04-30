@@ -138,12 +138,13 @@ Same module. Constructor takes `root: Path` (= `settings.documents_dir`, default
 
 ### 5.3 Settings
 
-Two new env vars:
+Three new env vars:
 
 - `DOCUMENTS_DIR` — default `/data/documents`.
 - `MAX_UPLOAD_BYTES` — default `26214400` (25 MiB).
-- `USER_QUOTA_BYTES` — default `5368709120` (5 GiB) per `owner_user_id`.
 - `DOCUMENTS_X_ACCEL_PREFIX` — optional. When set (e.g., `/internal-documents`), the download handler emits `X-Accel-Redirect`; when unset, it streams via `FileResponse`.
+
+**No per-user quota in v0.5.0.** A `SUM(size_bytes)` quota check on every upload is engineering for a multi-tenant case this app doesn't have (single self-hoster). `MAX_UPLOAD_BYTES` per file is sufficient back-pressure; disk-fill prevention is an ops concern (NAS quota, monitoring) rather than an app concern at this scale. Reintroduce as a Phase 5.x item if the user count grows.
 
 ---
 
@@ -168,11 +169,10 @@ New module `src/trip_tracker/routes/documents.py`:
 1. Auth: `require_user`; ownership check on the target trip/segment via `TripTraveler`.
 2. Read multipart in chunks; reject if cumulative bytes > `MAX_UPLOAD_BYTES` (return 413).
 3. Compute streaming sha256 to a `BytesIO` (or `SpooledTemporaryFile` for ≥1 MiB).
-4. **MIME + magic check.** First 4 bytes must equal `b"%PDF"`. `Content-Type` from the form is advisory only.
-5. Quota check: `SELECT COALESCE(SUM(size_bytes), 0) FROM documents WHERE owner_user_id=:u`. If `+size_bytes > USER_QUOTA_BYTES`, return 413.
-6. Try `INSERT ... ON CONFLICT (owner_user_id, sha256) DO NOTHING RETURNING id`. If conflict (returned no id), fetch the existing doc by `(owner_user_id, sha256)` and redirect to its detail view with `flash("Already uploaded")`. If new, `await storage.put(...)`, then `await db.commit()`.
-7. `await enqueue_meili_sync("documents", id)` is **NOT** called here — the doc has no extracted text yet. Sync happens after extraction. (Exception: re-uploading an already-extracted file: nothing to sync.)
-8. `await queue.enqueue("extract_document", document_id=str(id))`.
+4. **Magic-byte check.** First 4 bytes must equal `b"%PDF"`. `Content-Type` from the form is advisory only — do not double-validate it; the magic header is the authoritative gate.
+5. Try `INSERT ... ON CONFLICT (owner_user_id, sha256) DO NOTHING RETURNING id`. If conflict (returned no id), fetch the existing doc by `(owner_user_id, sha256)` and redirect to its detail view with `flash("Already uploaded")`. If new, `await storage.put(...)`, then `await db.commit()`.
+6. `enqueue_meili_sync` is **NOT** called here — the doc has no extracted text yet. Sync happens after extraction.
+7. `await queue.enqueue("extract_document", document_id=str(id))`.
 
 ### 6.2 Email attachments (extends Phase 2)
 
@@ -180,22 +180,41 @@ Phase 2's webhook handler currently parses MIME parts, persists `raw_email.body_
 
 For each attachment:
 
-1. **Filter to PDFs only.** `Content-Type` must start with `application/pdf` AND the first 4 bytes must equal `b"%PDF"`. Non-PDFs (HEIC, JPG, DOCX) are silently dropped in v0.5.0 (logged at INFO, not ERROR — these aren't bugs, they're intentionally unsupported until Phase 5.1).
+1. **Filter to PDFs only.** First 4 bytes must equal `b"%PDF"` (magic-byte check is authoritative; `Content-Type` is advisory). Non-PDFs (HEIC, JPG, DOCX) are silently dropped in v0.5.0 (logged at INFO, not ERROR — intentionally unsupported until Phase 5.1).
 2. Compute sha256 of the attachment payload.
-3. **Auto-link heuristic** (§7) against the segments produced from this email by Phase 3's parser. Run *before* the INSERT so we can populate `segment_id` and derive `trip_id`.
-4. UPSERT:
-   ```sql
-   INSERT INTO documents (...) VALUES (...)
-   ON CONFLICT (owner_user_id, sha256) DO UPDATE
-     SET raw_email_id = EXCLUDED.raw_email_id,
-         updated_at   = now()
-   RETURNING id, (xmax = 0) AS inserted;
+3. UPSERT into `documents` with `segment_id = NULL`, `trip_id = NULL` (auto-link runs later — see "Phase 2 ↔ Phase 5 interaction note" below):
+   ```python
+   from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+   stmt = (
+       pg_insert(Document)
+       .values(
+           owner_user_id=user.id,
+           raw_email_id=raw_email.id,
+           filename=att.filename,
+           mime_type="application/pdf",
+           size_bytes=len(payload),
+           sha256=sha,
+           storage_key=f"{sha[:2]}/{sha}",
+           extract_status="pending",
+       )
+       .on_conflict_do_update(
+           index_elements=["owner_user_id", "sha256"],
+           set_={"raw_email_id": raw_email.id, "updated_at": func.now()},
+       )
+       .returning(Document.id, (column("xmax") == 0).label("inserted"))
+   )
+   row = (await db.execute(stmt)).one()
+   if row.inserted:
+       await storage.put(sha, payload)
+       await queue.enqueue("extract_document", document_id=str(row.id))
+   # else: existing row — just updated raw_email_id; storage + extraction already done.
    ```
-   If `inserted = true`, this is a new row — call `storage.put` and enqueue extraction. If `inserted = false`, just attach the new `raw_email_id` and skip storage write + extraction (the file is identical and already extracted, or extraction is in flight from the prior insert).
+   The `xmax = 0` test is a Postgres idiom for distinguishing INSERT from UPDATE in an UPSERT's `RETURNING` clause. Consume via `.one()` (not `.scalar_one_or_none()`) so both columns are accessible.
 
 The webhook stays synchronous on the wire; storage writes for typical 100–500 KiB boarding passes are ~10ms.
 
-**Phase 2 ↔ Phase 5 interaction note.** Phase 3's `parse_raw_email` saq job runs *after* the webhook returns, so segments may not yet exist when the webhook persists attachments. Therefore: the webhook persists attachments with `segment_id = NULL` and `trip_id = NULL`, and the auto-link step runs *inside `parse_raw_email`* after segments are created. `parse_raw_email` already loads the raw_email row; it can `SELECT id FROM documents WHERE raw_email_id = :rid AND segment_id IS NULL`, run the heuristic, and `UPDATE` matching docs with `segment_id` and `trip_id`. This keeps the webhook fast and gives the parser the chance to find segments first.
+**Phase 2 ↔ Phase 5 interaction note (auto-link timing).** Phase 3's `parse_raw_email` saq job runs *after* the webhook returns, so segments don't yet exist when the webhook persists attachments. Auto-link therefore runs **inside `parse_raw_email`**, not in the webhook: after segments are created, the parser job loads `SELECT * FROM documents WHERE raw_email_id = :rid AND segment_id IS NULL`, runs the heuristic (§7) per row, and issues an `UPDATE documents SET segment_id=..., trip_id=... WHERE id=:doc_id`. The `segment_id IS NULL` filter is intentional — if the user manually linked the doc to a segment via `POST /documents/{id}/link` between the webhook commit and the parser run, that manual link is preserved (auto-link skips already-linked docs).
 
 ---
 
@@ -241,9 +260,13 @@ ctx["storage"] = LocalFsStorage(Path(settings.documents_dir))
    - On `pdfplumber.PDFSyntaxError` / `PSException` / generic `Exception` → re-raise as `ExtractFailure`.
 6. If extraction returns ≥1 char of text: `extract_status='extracted'`, `extract_method='pdfplumber'`, `extracted_text=<text>`. If returns 0 chars: `extract_status='empty'`. On `ExtractFailure` or `asyncio.TimeoutError`: `extract_status='failed'`, `extracted_text=NULL`.
 7. Commit.
-8. `await enqueue_meili_sync("documents", document_id)` (only when `extract_status` ∈ `{extracted, empty}` — failed/unsupported docs aren't worth searching).
+8. `await enqueue_meili_sync(settings, entity="document", entity_id=doc.id)` (only when `extract_status` ∈ `{extracted, empty}` — failed/unsupported docs aren't worth searching).
+
+**`enqueue_meili_sync` signature change.** Phase 4 typed `entity: Literal["trip", "segment"]`. Phase 5 broadens it to `Literal["trip", "segment", "document"]` (singular — the index name "documents" is a separate plural string used at the Meili call site). The matching dispatch in `sync_meili` (worker.py) gets a third arm for `"document"` that loads `Document` and calls `document_to_doc`.
 
 **saq retry policy:** default 3 retries with exponential backoff. pdfplumber failures are usually deterministic, but transient FS issues (e.g., NAS mount blip) are real.
+
+**Re-extraction.** v0.5.0 has no admin "re-extract" action. The idempotency guard at step 2 (`extract_status != 'pending'` → no-op) is intentional. If a future task wants to re-extract (e.g., after a pdfplumber upgrade), it will need to UPDATE the row to `extract_status='pending'` and `extracted_text=NULL` first, then re-enqueue. Tracked as a Phase 5.x candidate.
 
 ---
 
@@ -282,14 +305,14 @@ New function in `src/trip_tracker/search/sync.py`:
 
 Two new write sites only:
 
-- `extract_document` saq task (after persisting text).
-- `delete_document` route handler (before deleting the row, so the Meili `delete_document` call still has a valid id).
+- `extract_document` saq task (after persisting text) — calls `enqueue_meili_sync(settings, entity="document", entity_id=doc.id)`.
+- `delete_document` route handler (before deleting the row, so the Meili `delete_document` call still has a valid id) — same call.
 
-The `sync_meili` saq task already has a match dispatch on entity name; add a `case "documents"` arm that calls `document_to_doc` (or `meili.index("documents").delete_document(id)` for the delete path — same dual-mode dispatch as trips/segments).
+The `sync_meili` saq task already dispatches on entity name. Add a `case "document"` arm that loads the `Document`, calls `document_to_doc(doc, db)`, and `await meili.index("documents").update_documents([doc])`. For the delete path, the dispatch follows the existing trips/segments pattern: load-by-id returns None → `meili.index("documents").delete_document(id)`.
 
 ### 9.4 Proxy + palette
 
-`POST /api/search/{index}` (Phase 4 Task 7) currently typed `Literal["trips", "segments"]`. Broaden to `Literal["trips", "segments", "documents"]`. The `traveler_ids = '<user>'` filter injection works unchanged.
+`POST /api/search/{index}` (Phase 4 Task 7) currently typed `Literal["trips", "segments"]`. Broaden to `Literal["trips", "segments", "documents"]`. The `traveler_ids = '<user>'` filter injection works unchanged — for orphan documents (`trip_id IS NULL`), `document_to_doc` populates `traveler_ids = [str(owner_user_id)]` (§9.2), so the owner still sees their own orphan docs in their search results.
 
 `_search_palette.html` already issues parallel `fetch` to all known indexes — add `"documents"` to the indexes array. Result rendering for documents:
 
@@ -369,7 +392,7 @@ Below the segment fields on segment-detail (or its edit form), a `Documents` sec
 
 ## 12. Done definition
 
-- [ ] Manual upload of a PDF from trip-level + segment-level routes works end-to-end (auth, magic-byte check, sha256 dedup, 25 MiB cap, quota check).
+- [ ] Manual upload of a PDF from trip-level + segment-level routes works end-to-end (auth, magic-byte check, sha256 dedup, 25 MiB cap → 413).
 - [ ] A forwarded email with one PDF attachment auto-creates a `documents` row, runs the auto-link heuristic, persists the file, populates `extracted_text` after the saq job runs.
 - [ ] Re-forwarding the same email reuses the existing doc row (UPSERT on `(owner_user_id, sha256)`); does not double-write storage; does not double-enqueue extraction.
 - [ ] Re-uploading the same PDF returns 303 to the existing doc with a flash; does not duplicate row or file.
@@ -381,8 +404,9 @@ Below the segment fields on segment-detail (or its edit form), a `Documents` sec
 - [ ] Deleting a segment sets the document's `segment_id` to NULL; the doc and file survive.
 - [ ] `python -m trip_tracker reindex` walks documents and rebuilds the third index from Postgres.
 - [ ] Path traversal guard: a forged `storage_key` of `../etc/passwd` is rejected by `LocalFsStorage` validation.
-- [ ] `MAX_UPLOAD_BYTES`, `USER_QUOTA_BYTES`, `DOCUMENTS_DIR`, `DOCUMENTS_X_ACCEL_PREFIX` settings are loaded from env via `Settings`.
-- [ ] README "Documents (Phase 5)" section documents upload, the auto-link heuristic, the `MAX_UPLOAD_BYTES`/quota envs, and the `internal-documents` reverse-proxy setup.
+- [ ] `MAX_UPLOAD_BYTES`, `DOCUMENTS_DIR`, `DOCUMENTS_X_ACCEL_PREFIX` settings are loaded from env via `Settings`.
+- [ ] Meili `traveler_ids` filter injection works for the `documents` index (verified by inserting a second user's doc and confirming it doesn't surface in the first user's search).
+- [ ] README "Documents (Phase 5)" section documents upload, the auto-link heuristic, the `MAX_UPLOAD_BYTES` env, and the `internal-documents` reverse-proxy setup.
 - [ ] 85% project-wide coverage holds. No new bandit findings. Strict mypy + ruff target=py313 clean. djlint clean.
 - [ ] Signed tag `v0.5.0` pushed; release workflow produces signed multi-arch GHCR image; release-verification scheduled agent confirms.
 
@@ -394,7 +418,7 @@ Below the segment fields on segment-detail (or its edit form), a `Documents` sec
 |---|---|---|
 | 1 | Path traversal via crafted `storage_key` | LocalFsStorage validates regex `^[0-9a-f]{2}/[0-9a-f]{64}$` before any FS call. Unit-tested. |
 | 2 | MIME spoofing (attacker-controlled `Content-Type`) | Magic-byte check (`%PDF-` first 4 bytes) at ingest time. Reject mismatches. |
-| 3 | Disk fill from large/many uploads | `MAX_UPLOAD_BYTES=25MiB` per file + `USER_QUOTA_BYTES=5GiB` per owner. Both env-tunable. 413 on exceed. |
+| 3 | Disk fill from large/many uploads | `MAX_UPLOAD_BYTES=25MiB` per file (env-tunable, 413 on exceed). No per-user quota in v0.5.0 — single-tenant ops use NAS-level quotas/monitoring. Reintroduce app-side quota in Phase 5.x if multi-tenant. |
 | 4 | X-Accel reverse-proxy misconfig leaks files | README explicitly requires `internal;` (Nginx) / equivalent middleware (Traefik). Compose snippet included as a starting point. |
 | 5 | pdfplumber memory blowup on pathological PDFs | 60s timeout via `asyncio.wait_for` around extraction; saq retry covers transient FS hiccups but not deterministic PDF errors. |
 | 6 | Phase 2 dedup interaction (re-forwarded email) | UPSERT on `(owner_user_id, sha256)` reuses the row; `(xmax = 0)` distinguishes new-vs-existing so we don't double-storage-write or double-enqueue. |
