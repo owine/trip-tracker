@@ -276,6 +276,99 @@ async def test_parse_raw_email_empty_segments_marks_no_segments(
 
 
 @pytest.mark.asyncio
+async def test_parse_raw_email_with_pdf_attachment_but_no_segments_still_enqueues_extract(
+    db_url: str,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    _mock_worker_doc_queue: object,  # noqa: PT019 — used to assert on enqueue calls
+) -> None:
+    """Email with PDF attached but unparseable body → no segments, but the
+    boarding-pass PDF should still be persisted + extract_document enqueued.
+    """
+    from email.message import EmailMessage
+
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from trip_tracker.models.document import Document
+    from trip_tracker.parsers.dispatch import ParseOutcome
+    from trip_tracker.worker import parse_raw_email
+
+    monkeypatch.setenv("DATABASE_URL", db_url)
+
+    # Build a MIME body with a PDF attachment and unparseable text body
+    msg = EmailMessage()
+    msg["From"] = "airline@example.com"
+    msg["To"] = "oliver@trips.example.com"
+    msg["Subject"] = "Boarding Pass"
+    msg["Message-ID"] = "<pdf-no-segments@test>"
+    msg.set_content("Some random text the parser won't extract segments from.")
+    pdf_payload = b"%PDF-1.4\nfake boarding pass content\n"
+    msg.add_attachment(pdf_payload, maintype="application", subtype="pdf", filename="boarding.pdf")
+    mime_blob = msg.as_bytes()
+
+    user = User(oidc_subject="ps", email="ps@x.com", display_name="PS")
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
+    raw = RawEmail(
+        id=uuid.uuid4(),
+        received_at=datetime.now(tz=UTC),
+        to_address="oliver@trips.example.com",
+        from_address="airline@example.com",
+        subject="Boarding Pass",
+        message_id="<pdf-no-segments@test>",
+        mime_blob=mime_blob,
+        headers={},
+        parse_status="pending",
+    )
+    db_session.add(raw)
+    await db_session.commit()
+
+    # Mock dispatch_parse to return empty segments (no trip info extracted)
+    fake_outcome = ParseOutcome(
+        result=ParseResult(segments=[], confidence=1.0, source="manual"),
+    )
+    fake_dispatch = AsyncMock(return_value=fake_outcome)
+    engine = create_async_engine(db_url)
+
+    with patch("trip_tracker.worker.dispatch_parse", new=fake_dispatch):
+        await parse_raw_email(
+            {"settings": Settings(), "engine": engine},
+            raw_email_id=str(raw.id),
+        )
+
+    await engine.dispose()
+
+    # Verify the document was persisted with extract_status="pending"
+    docs = (
+        (await db_session.execute(select(Document).where(Document.raw_email_id == raw.id)))
+        .scalars()
+        .all()
+    )
+    assert len(docs) == 1
+    assert docs[0].filename == "boarding.pdf"
+    assert docs[0].extract_status == "pending"
+
+    # Verify that enqueue was called for the document
+    from unittest.mock import MagicMock
+
+    mock_queue = _mock_worker_doc_queue  # type: ignore[name-defined]
+    if isinstance(mock_queue, MagicMock):
+        mock_queue.enqueue.assert_awaited()
+        assert mock_queue.enqueue.await_count >= 1
+        # Check that the call was for extract_document
+        call_args = mock_queue.enqueue.call_args_list
+        assert any(
+            "extract_document" in str(call) and str(docs[0].id) in str(call) for call in call_args
+        )
+
+    # Verify parse_status was set to "no_segments"
+    await db_session.refresh(raw)
+    assert raw.parse_status == "no_segments"
+
+
+@pytest.mark.asyncio
 async def test_parse_raw_email_low_confidence_marks_review(
     db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
 ) -> None:
