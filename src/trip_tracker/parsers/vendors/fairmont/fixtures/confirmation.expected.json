@@ -1,0 +1,12 @@
+{
+  "source": "rules:fairmont",
+  "confidence": 0.9,
+  "segments": [
+    {
+      "type": "lodging",
+      "confirmation_number": "ABC12345",
+      "provider": "Fairmont",
+      "start_location": {"name": "Fairmont Le Château Frontenac"}
+    }
+  ]
+}

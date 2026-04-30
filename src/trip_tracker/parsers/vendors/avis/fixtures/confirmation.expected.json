@@ -1,0 +1,13 @@
+{
+  "source": "rules:avis",
+  "confidence": 0.9,
+  "segments": [
+    {
+      "type": "car",
+      "confirmation_number": "AVIS123456",
+      "provider": "Avis",
+      "start_location": {"name": "JFK Airport"},
+      "end_location": {"name": "JFK Airport"}
+    }
+  ]
+}

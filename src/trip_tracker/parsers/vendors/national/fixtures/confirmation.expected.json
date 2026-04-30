@@ -1,0 +1,13 @@
+{
+  "source": "rules:national",
+  "confidence": 0.9,
+  "segments": [
+    {
+      "type": "car",
+      "confirmation_number": "NAT789012",
+      "provider": "National",
+      "start_location": {"name": "SFO Airport"},
+      "end_location": {"name": "SFO Airport"}
+    }
+  ]
+}
