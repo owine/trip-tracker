@@ -1,0 +1,14 @@
+{
+  "source": "rules:air_france",
+  "confidence": 0.9,
+  "segments": [
+    {
+      "type": "flight",
+      "confirmation_number": "ABCDEF",
+      "provider": "Air France",
+      "start_location": {"iata": "JFK"},
+      "end_location": {"iata": "CDG"},
+      "details": {"flight_number": "AF1234"}
+    }
+  ]
+}
