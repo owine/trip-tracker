@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 import uuid
+from html import escape
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from saq import Queue
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -232,6 +234,50 @@ async def delete_document(
     await db.delete(doc)
     await db.commit()
     return Response(status_code=204)
+
+
+@router.get("/documents/{document_id}/download")
+async def download(
+    document_id: uuid.UUID,
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+    settings: Settings = Depends(get_settings),  # noqa: B008
+    storage: StorageBackend = Depends(_storage_dep),  # noqa: B008
+) -> Response:
+    doc = (
+        await db.execute(select(Document).where(Document.id == document_id))
+    ).scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(404)
+    if not await _can_access_doc(db, user, doc):
+        raise HTTPException(403)
+
+    safe_filename = quote(doc.filename, safe="")
+    cd = f"attachment; filename=\"{escape(doc.filename)}\"; filename*=UTF-8''{safe_filename}"
+
+    if settings.documents_x_accel_prefix:
+        return Response(
+            status_code=204,
+            headers={
+                "X-Accel-Redirect": f"{settings.documents_x_accel_prefix}/{doc.storage_key}",
+                "Content-Disposition": cd,
+                "Content-Type": doc.mime_type,
+            },
+        )
+
+    path = storage.absolute_path(doc.storage_key)
+    if path is None:
+        raise HTTPException(503, detail="storage backend does not support direct streaming")
+    return FileResponse(path, media_type=doc.mime_type, filename=doc.filename)
+
+
+async def _can_access_doc(db: AsyncSession, user: User, doc: Document) -> bool:
+    """Owner OR trip-traveler can read."""
+    if doc.owner_user_id == user.id:
+        return True
+    if doc.trip_id is None:
+        return False
+    return await _user_can_access_trip(db, user, doc.trip_id)
 
 
 async def _get_owned(db: AsyncSession, doc_id: uuid.UUID, user: User) -> Document:
