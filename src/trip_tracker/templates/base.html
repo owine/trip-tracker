@@ -25,5 +25,12 @@
     <main class="mx-auto max-w-2xl px-4 py-12">
       {% block content %}{% endblock %}
     </main>
+    {% if user %}
+      {% include "_search_palette.html" %}
+    {% endif %}
+    <script defer
+            src="https://unpkg.com/alpinejs@3.15.11/dist/cdn.min.js"
+            integrity="sha384-WPtu0YHhJ3arcykfnv1JgUffWDSKRnqnDeTpJUbOc2os2moEmLkIdaeR0trPN4be"
+            crossorigin="anonymous"></script>
   </body>
 </html>

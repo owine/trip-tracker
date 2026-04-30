@@ -1,0 +1,157 @@
+<div x-data="searchPalette()"
+     @keydown.window.meta.k.prevent="open()"
+     @keydown.window.ctrl.k.prevent="open()"
+     x-cloak>
+  <div x-show="isOpen"
+       @keydown.escape.window="close()"
+       @click.self="close()"
+       class="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-black/50">
+    <div class="w-full max-w-2xl rounded-lg bg-white shadow-xl dark:bg-zinc-900"
+         @keydown.arrow-down.prevent="moveDown()"
+         @keydown.arrow-up.prevent="moveUp()"
+         @keydown.enter.prevent="activate()">
+      <input x-model="query"
+             @input.debounce.150ms="search()"
+             type="search"
+             class="w-full border-b border-zinc-200 bg-transparent p-4 text-lg focus:outline-none dark:border-zinc-800"
+             placeholder="Search trips and segments…"
+             x-ref="qbox">
+      <div class="max-h-96 overflow-y-auto p-2">
+        <template x-if="trips.length > 0">
+          <div>
+            <div class="px-2 py-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Trips</div>
+            <template x-for="(hit, i) in trips" :key="hit.id">
+              <a :href="`/trips/${hit.id}`"
+                 class="block rounded px-3 py-2 text-sm"
+                 :class="{ 'bg-zinc-100 dark:bg-zinc-800': isActive('trip', i) }"
+                 @mouseenter="setActive('trip', i)">
+                <span x-text="hit.title"></span>
+                <span x-show="hit.primary_destination"
+                      class="ml-2 text-zinc-500"
+                      x-text="hit.primary_destination"></span>
+              </a>
+            </template>
+          </div>
+        </template>
+        <template x-if="segments.length > 0">
+          <div class="mt-2">
+            <div class="px-2 py-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Segments</div>
+            <template x-for="(hit, i) in segments" :key="hit.id">
+              <a :href="`/trips/${hit.trip_id}#segment-${hit.id}`"
+                 class="block rounded px-3 py-2 text-sm"
+                 :class="{ 'bg-zinc-100 dark:bg-zinc-800': isActive('segment', i) }"
+                 @mouseenter="setActive('segment', i)">
+                <span class="rounded bg-zinc-200 px-1.5 py-0.5 text-xs uppercase dark:bg-zinc-800"
+                      x-text="hit.type"></span>
+                <span class="ml-2"
+                      x-text="hit.provider || hit.confirmation_number || hit.start_city"></span>
+                <span class="ml-2 text-zinc-500"
+                      x-show="hit.confirmation_number"
+                      x-text="hit.confirmation_number"></span>
+              </a>
+            </template>
+          </div>
+        </template>
+        <template x-if="query && trips.length === 0 && segments.length === 0 && !loading">
+          <p class="p-4 text-sm text-zinc-500">No matches.</p>
+        </template>
+        <template x-if="error">
+          <p class="p-4 text-sm text-red-600" x-text="error"></p>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  function searchPalette() {
+    return {
+      isOpen: false,
+      query: "",
+      trips: [],
+      segments: [],
+      activeKind: "trip",
+      activeIdx: 0,
+      loading: false,
+      error: "",
+      open() {
+        this.isOpen = true;
+        this.error = "";
+        this.$nextTick(() => this.$refs.qbox.focus());
+      },
+      close() {
+        this.isOpen = false;
+        this.query = "";
+        this.trips = [];
+        this.segments = [];
+      },
+      async search() {
+        if (!this.query.trim()) {
+          this.trips = []; this.segments = [];
+          return;
+        }
+        this.loading = true; this.error = "";
+        try {
+          const [tRes, sRes] = await Promise.all([
+            fetch("/api/search/trips", {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({q: this.query, limit: 5}),
+            }),
+            fetch("/api/search/segments", {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({q: this.query, limit: 5}),
+            }),
+          ]);
+          if (!tRes.ok || !sRes.ok) throw new Error("Search request failed");
+          const tBody = await tRes.json();
+          const sBody = await sRes.json();
+          this.trips = tBody.hits || [];
+          this.segments = sBody.hits || [];
+          this.activeKind = this.trips.length > 0 ? "trip" : "segment";
+          this.activeIdx = 0;
+        } catch (e) {
+          this.error = "Search unavailable.";
+        } finally {
+          this.loading = false;
+        }
+      },
+      isActive(kind, i) {
+        return this.activeKind === kind && this.activeIdx === i;
+      },
+      setActive(kind, i) {
+        this.activeKind = kind; this.activeIdx = i;
+      },
+      moveDown() {
+        const total = this.trips.length + this.segments.length;
+        if (total === 0) return;
+        let flat = this.activeKind === "trip" ? this.activeIdx : this.trips.length + this.activeIdx;
+        flat = (flat + 1) % total;
+        this._setFromFlat(flat);
+      },
+      moveUp() {
+        const total = this.trips.length + this.segments.length;
+        if (total === 0) return;
+        let flat = this.activeKind === "trip" ? this.activeIdx : this.trips.length + this.activeIdx;
+        flat = (flat - 1 + total) % total;
+        this._setFromFlat(flat);
+      },
+      _setFromFlat(flat) {
+        if (flat < this.trips.length) {
+          this.activeKind = "trip"; this.activeIdx = flat;
+        } else {
+          this.activeKind = "segment"; this.activeIdx = flat - this.trips.length;
+        }
+      },
+      activate() {
+        if (this.activeKind === "trip" && this.trips[this.activeIdx]) {
+          window.location = `/trips/${this.trips[this.activeIdx].id}`;
+        } else if (this.activeKind === "segment" && this.segments[this.activeIdx]) {
+          const h = this.segments[this.activeIdx];
+          window.location = `/trips/${h.trip_id}#segment-${h.id}`;
+        }
+      },
+    };
+  }
+</script>
+<style>[x-cloak] { display: none !important; }</style>
