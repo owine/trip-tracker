@@ -6,12 +6,15 @@ the real AsyncClient class.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Protocol, cast
 
 from fastapi import Request
 from meilisearch_python_sdk import AsyncClient
 
 from trip_tracker.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class MeiliIndexProtocol(Protocol):
@@ -20,6 +23,8 @@ class MeiliIndexProtocol(Protocol):
     async def update_documents(self, documents: list[dict[str, Any]]) -> Any: ...
     async def delete_document(self, document_id: str) -> Any: ...
     async def search(self, query: str, opt_params: dict[str, Any] | None = None) -> Any: ...
+    async def update_filterable_attributes(self, attrs: list[str]) -> Any: ...
+    async def update_sortable_attributes(self, attrs: list[str]) -> Any: ...
 
 
 class MeiliClientProtocol(Protocol):
@@ -28,6 +33,31 @@ class MeiliClientProtocol(Protocol):
     def index(self, uid: str) -> MeiliIndexProtocol: ...
     async def create_index(self, uid: str, primary_key: str | None = None) -> Any: ...
     async def delete_index(self, uid: str) -> Any: ...
+
+
+_TRIP_FILTERABLE = ["traveler_ids", "start_date", "end_date"]
+_TRIP_SORTABLE = ["start_date"]
+_SEGMENT_FILTERABLE = ["traveler_ids", "trip_id", "type", "start_at_unix"]
+_SEGMENT_SORTABLE = ["start_at_unix"]
+
+
+async def ensure_indexes_configured(meili: MeiliClientProtocol) -> None:
+    """Ensure both indexes exist with the right filterable/sortable attrs.
+
+    Idempotent. Run on app startup.
+    """
+    for name, filterable, sortable in (
+        ("trips", _TRIP_FILTERABLE, _TRIP_SORTABLE),
+        ("segments", _SEGMENT_FILTERABLE, _SEGMENT_SORTABLE),
+    ):
+        try:
+            await meili.create_index(name, primary_key="id")
+        except Exception:  # meili raises on conflict; idempotent
+            pass
+        idx = meili.index(name)
+        await idx.update_filterable_attributes(filterable)
+        await idx.update_sortable_attributes(sortable)
+        logger.info("Meili index %r configured", name)
 
 
 def build_client(settings: Settings) -> MeiliClientProtocol:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -21,8 +22,10 @@ from trip_tracker.routes.home import router as home_router
 from trip_tracker.routes.inbox import router as inbox_router
 from trip_tracker.routes.segments import router as segments_router
 from trip_tracker.routes.trips import router as trips_router
-from trip_tracker.search.client import build_client
+from trip_tracker.search.client import build_client, ensure_indexes_configured
 from trip_tracker.search.proxy import router as search_router
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -30,6 +33,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings: Settings = app.state.settings
     init_db(settings)
     app.state.meili = build_client(settings)
+    try:
+        await ensure_indexes_configured(app.state.meili)
+    except Exception as exc:
+        # Don't fail the app if Meili is down at boot — search is non-critical.
+        logger.warning("Meili index config failed at startup: %s", exc)
     try:
         yield
     finally:
