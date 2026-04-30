@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 import zoneinfo
 from datetime import date, datetime
 from pathlib import Path
@@ -114,6 +115,9 @@ async def trip_detail(
     user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> HTMLResponse:
+    from collections import defaultdict
+
+    from trip_tracker.models.document import Document
     from trip_tracker.models.segment import Segment
 
     segments = (
@@ -125,10 +129,33 @@ async def trip_detail(
         .scalars()
         .all()
     )
+
+    # Documents already linked to a segment, grouped by segment_id for inline display.
+    docs = (
+        (
+            await db.execute(
+                select(Document).where(
+                    Document.trip_id == trip.id, Document.segment_id.is_not(None)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    documents_by_segment: dict[uuid.UUID, list[Document]] = defaultdict(list)
+    for d in docs:
+        assert d.segment_id is not None  # query filter guarantees this
+        documents_by_segment[d.segment_id].append(d)
+
     return templates.TemplateResponse(
         request,
         "trips/detail.html",
-        {"trip": trip, "segments": segments, "user": user},
+        {
+            "trip": trip,
+            "segments": segments,
+            "documents_by_segment": dict(documents_by_segment),
+            "user": user,
+        },
     )
 
 

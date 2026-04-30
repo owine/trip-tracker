@@ -20,4 +20,7 @@
       <button class="text-red-600 underline">Delete</button>
     </form>
   </div>
+  {% set segment = s %}
+  {% set segment_documents = (documents_by_segment or {}).get(s.id, []) %}
+  {% include "segments/_documents.html" %}
 </li>

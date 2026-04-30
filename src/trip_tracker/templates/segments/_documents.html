@@ -1,0 +1,28 @@
+{# Per-segment inline documents list. Included from segments/_row.html.
+   Expects: segment, segment_documents (filtered list for this segment), trip_id.
+#}
+{% if segment_documents %}
+  <ul class="mt-2 space-y-1 text-xs text-zinc-500">
+    {% for d in segment_documents %}
+      <li>
+        📄
+        <a class="underline" href="/documents/{{ d.id }}/download">{{ d.filename }}</a>
+        ·
+        {% if d.extract_status == "extracted" %}
+          <span title="Text extracted">✅</span>
+        {% elif d.extract_status == "pending" %}
+          <span title="Extraction pending">⏳</span>
+        {% else %}
+          <span title="{{ d.extract_status }}">🚫</span>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+{% endif %}
+<form method="post"
+      action="/segments/{{ segment.id }}/documents"
+      enctype="multipart/form-data"
+      class="mt-1 flex items-center gap-2 text-xs">
+  <input type="file" name="file" accept=".pdf" required class="text-xs" />
+  <button class="text-blue-600 underline" type="submit">Attach PDF</button>
+</form>

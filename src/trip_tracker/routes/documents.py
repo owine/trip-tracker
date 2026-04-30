@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime
 from html import escape
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.templating import Jinja2Templates
 from saq import Queue
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -25,10 +28,33 @@ from trip_tracker.documents.helpers import (
 from trip_tracker.documents.storage import LocalFsStorage, StorageBackend
 from trip_tracker.models.document import Document
 from trip_tracker.models.segment import Segment
+from trip_tracker.models.trip import Trip
 from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 router = APIRouter()
+
+_TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+
+
+def _localize_dt(dt: datetime, tz: str = "UTC", fmt: str = "%Y-%m-%d %H:%M") -> str:
+    """Render a UTC-stored datetime in the segment's local tz.
+
+    Mirrors the same filter from routes/trips.py — each route module needs its
+    own filter registration since Jinja2Templates instantiations don't share
+    filter state.
+    """
+    from zoneinfo import ZoneInfo
+
+    if dt.tzinfo is None:
+        from datetime import UTC
+
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(ZoneInfo(tz)).strftime(fmt)
+
+
+templates.env.filters["localize_dt"] = _localize_dt
 _logger = logging.getLogger(__name__)
 
 
@@ -49,6 +75,41 @@ async def _user_can_access_trip(db: AsyncSession, user: User, trip_id: uuid.UUID
             )
         )
     ).scalar_one_or_none() is not None
+
+
+@router.get("/trips/{trip_id}/documents", response_class=HTMLResponse)
+async def list_for_trip(
+    trip_id: uuid.UUID,
+    request: Request,
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> HTMLResponse:
+    if not await _user_can_access_trip(db, user, trip_id):
+        raise HTTPException(404)
+    docs = (
+        (
+            await db.execute(
+                select(Document)
+                .where(Document.trip_id == trip_id)
+                .order_by(Document.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    segs = (await db.execute(select(Segment).where(Segment.trip_id == trip_id))).scalars().all()
+    trip = (await db.execute(select(Trip).where(Trip.id == trip_id))).scalar_one()
+    return templates.TemplateResponse(
+        request,
+        "trips/_documents.html",
+        {
+            "trip_id": trip_id,
+            "trip": trip,
+            "documents": docs,
+            "segments": segs,
+            "user": user,
+        },
+    )
 
 
 async def _read_upload(file: UploadFile, max_bytes: int) -> bytes:
