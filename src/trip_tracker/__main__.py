@@ -51,6 +51,21 @@ async def _parse_pending(*, max_emails: int = 1000, dry_run: bool = False) -> No
     await engine.dispose()
 
 
+async def _reindex(*, batch_size: int = 100, dry_run: bool = False) -> None:
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from trip_tracker.config import Settings
+    from trip_tracker.search.client import build_client
+    from trip_tracker.search.reindex import reindex_all
+
+    settings = Settings()
+    engine = create_async_engine(str(settings.database_url))
+    meili = build_client(settings)
+    counts = await reindex_all(engine, meili, batch_size=batch_size, dry_run=dry_run)
+    await engine.dispose()
+    print(f"Reindex complete: trips={counts['trips']}, segments={counts['segments']}")
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "parse_pending":
         dry_run = "--dry-run" in sys.argv
@@ -59,5 +74,12 @@ if __name__ == "__main__":
             if arg.startswith("--max-emails="):
                 max_emails = int(arg.split("=", 1)[1])
         asyncio.run(_parse_pending(max_emails=max_emails, dry_run=dry_run))
+    elif len(sys.argv) > 1 and sys.argv[1] == "reindex":
+        dry_run = "--dry-run" in sys.argv
+        batch_size = 100
+        for arg in sys.argv[2:]:
+            if arg.startswith("--batch-size="):
+                batch_size = int(arg.split("=", 1)[1])
+        asyncio.run(_reindex(batch_size=batch_size, dry_run=dry_run))
     else:
         main()
