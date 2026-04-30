@@ -22,6 +22,7 @@ from trip_tracker.routes.inbox import router as inbox_router
 from trip_tracker.routes.segments import router as segments_router
 from trip_tracker.routes.trips import router as trips_router
 from trip_tracker.search.client import build_client
+from trip_tracker.search.proxy import router as search_router
 
 
 @asynccontextmanager
@@ -62,5 +63,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(segments_router)
     app.include_router(inbox_router)
     app.include_router(admin_router)
+    app.include_router(search_router)
 
     return app

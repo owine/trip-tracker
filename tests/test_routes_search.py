@@ -1,0 +1,102 @@
+"""/api/search/<index> proxy: auth, filter injection, response shape."""
+
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
+import httpx
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from trip_tracker.app import create_app
+from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.config import Settings
+from trip_tracker.models.user import User
+
+
+def _cookie(user: User, settings: Settings) -> dict[str, str]:
+    return {
+        "tt_session": encode_session(
+            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
+            secret=settings.session_secret.get_secret_value(),
+            max_age=3600,
+        )
+    }
+
+
+@pytest.mark.asyncio
+async def test_search_segments_filters_by_user(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    """Server injects traveler_ids = '<user.id>' regardless of client input."""
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user = User(oidc_subject="s1", email="s1@x.com", display_name="S1")
+    db_session.add(user)
+    await db_session.commit()
+
+    fake_index = MagicMock()
+    fake_index.search = AsyncMock(return_value={"hits": [], "estimatedTotalHits": 0})
+    fake_meili = MagicMock()
+    fake_meili.index = MagicMock(return_value=fake_index)
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+        ) as c,
+    ):
+        # Inject fake after lifespan starts (lifespan sets app.state.meili).
+        app.state.meili = fake_meili
+        r = await c.post(
+            "/api/search/segments",
+            json={"q": "Paris", "limit": 10},
+        )
+    assert r.status_code == 200
+    body: dict[str, Any] = r.json()
+    assert "hits" in body
+    fake_index.search.assert_awaited_once()
+    call_kwargs = fake_index.search.call_args.kwargs
+    opt_params = call_kwargs.get("opt_params") or {}
+    assert f"traveler_ids = '{user.id}'" in opt_params["filter"]
+
+
+@pytest.mark.asyncio
+async def test_search_requires_session(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """No session cookie → 401."""
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=transport, base_url="http://test") as c,
+    ):
+        r = await c.post("/api/search/segments", json={"q": "Paris"})
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_search_invalid_index_returns_422(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    """Path param is constrained to {trips, segments}; other values rejected."""
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user = User(oidc_subject="s2", email="s2@x.com", display_name="S2")
+    db_session.add(user)
+    await db_session.commit()
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+        ) as c,
+    ):
+        r = await c.post("/api/search/widgets", json={"q": "x"})
+    assert r.status_code == 422
