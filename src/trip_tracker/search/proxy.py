@@ -30,7 +30,7 @@ class SearchResponse(BaseModel):
 
 @router.post("/{index}")
 async def search(
-    index: Literal["trips", "segments"],
+    index: Literal["trips", "segments", "documents"],
     body: SearchRequest,
     user: User = Depends(require_user),  # noqa: B008
     meili: MeiliClientProtocol = Depends(get_meili),  # noqa: B008

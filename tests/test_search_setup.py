@@ -17,12 +17,19 @@ async def test_ensure_indexes_configured_calls_settings() -> None:
     fake_idx_segments = MagicMock()
     fake_idx_segments.update_filterable_attributes = AsyncMock()
     fake_idx_segments.update_sortable_attributes = AsyncMock()
+    fake_idx_documents = MagicMock()
+    fake_idx_documents.update_filterable_attributes = AsyncMock()
+    fake_idx_documents.update_sortable_attributes = AsyncMock()
 
     fake_meili = MagicMock()
     fake_meili.create_index = AsyncMock()
 
     def index_router(name: str):
-        return {"trips": fake_idx_trips, "segments": fake_idx_segments}[name]
+        return {
+            "trips": fake_idx_trips,
+            "segments": fake_idx_segments,
+            "documents": fake_idx_documents,
+        }[name]
 
     fake_meili.index = MagicMock(side_effect=index_router)
 
@@ -36,6 +43,10 @@ async def test_ensure_indexes_configured_calls_settings() -> None:
         ["traveler_ids", "trip_id", "type", "start_at_unix"]
     )
     fake_idx_segments.update_sortable_attributes.assert_awaited_with(["start_at_unix"])
+    fake_idx_documents.update_filterable_attributes.assert_awaited_with(
+        ["traveler_ids", "trip_id", "segment_id", "owner_user_id"]
+    )
+    fake_idx_documents.update_sortable_attributes.assert_awaited_with(["created_at_unix"])
 
 
 @pytest.mark.asyncio
@@ -52,6 +63,6 @@ async def test_ensure_indexes_configured_swallows_create_index_conflict() -> Non
     # Should not raise
     await ensure_indexes_configured(fake_meili)
 
-    # update_* still got called for both indexes
-    assert fake_idx.update_filterable_attributes.await_count == 2
-    assert fake_idx.update_sortable_attributes.await_count == 2
+    # update_* still got called for all three indexes
+    assert fake_idx.update_filterable_attributes.await_count == 3
+    assert fake_idx.update_sortable_attributes.await_count == 3

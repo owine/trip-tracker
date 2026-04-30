@@ -242,6 +242,16 @@ async def sync_meili(ctx: dict[str, Any], *, entity: str, entity_id: str) -> Non
             else:
                 doc = await segment_to_doc(seg_row, db=db)
                 await meili.index("segments").update_documents([doc])
+        elif entity == "document":
+            from trip_tracker.models.document import Document
+            from trip_tracker.search.sync import document_to_doc
+
+            doc_row: Document | None = await db.get(Document, uuid.UUID(entity_id))
+            if doc_row is None:
+                await meili.index("documents").delete_document(entity_id)
+            else:
+                payload = await document_to_doc(doc_row, db=db)
+                await meili.index("documents").update_documents([payload])
         else:
             raise ValueError(f"unknown entity: {entity}")
 

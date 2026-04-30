@@ -48,12 +48,20 @@ async def test_reindex_walks_all_rows(db_url: str, db_session: AsyncSession) -> 
     fake_idx_segments.update_documents = AsyncMock()
     fake_idx_segments.update_filterable_attributes = AsyncMock()
     fake_idx_segments.update_sortable_attributes = AsyncMock()
+    fake_idx_documents = MagicMock()
+    fake_idx_documents.update_documents = AsyncMock()
+    fake_idx_documents.update_filterable_attributes = AsyncMock()
+    fake_idx_documents.update_sortable_attributes = AsyncMock()
     fake_meili = MagicMock()
     fake_meili.delete_index = AsyncMock()
     fake_meili.create_index = AsyncMock()
 
     def fake_index(n: str):
-        return {"trips": fake_idx_trips, "segments": fake_idx_segments}[n]
+        return {
+            "trips": fake_idx_trips,
+            "segments": fake_idx_segments,
+            "documents": fake_idx_documents,
+        }[n]
 
     fake_meili.index = MagicMock(side_effect=fake_index)
 
@@ -108,6 +116,6 @@ async def test_reindex_dry_run_skips_meili(db_url: str, db_session: AsyncSession
     await engine.dispose()
 
     # Spec §8.1: dry-run reports zero "indexed" since nothing was sent.
-    assert counts == {"trips": 0, "segments": 0}
+    assert counts == {"trips": 0, "segments": 0, "documents": 0}
     fake_idx.update_documents.assert_not_called()
     fake_meili.delete_index.assert_not_called()

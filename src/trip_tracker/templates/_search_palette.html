@@ -52,7 +52,22 @@
             </template>
           </div>
         </template>
-        <template x-if="query && trips.length === 0 && segments.length === 0 && !loading">
+        <template x-if="documents.length > 0">
+          <div class="mt-2">
+            <div class="px-2 py-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Documents</div>
+            <template x-for="(hit, i) in documents" :key="hit.id">
+              <a :href="docHref(hit)"
+                 class="block rounded px-3 py-2 text-sm"
+                 :class="{ 'bg-zinc-100 dark:bg-zinc-800': isActive('document', i) }"
+                 @mouseenter="setActive('document', i)">
+                <div class="text-sm font-medium" x-text="'📄 ' + hit.filename"></div>
+                <div class="text-xs text-gray-600"
+                     x-html="hit._formatted?.extracted_text || ''"></div>
+              </a>
+            </template>
+          </div>
+        </template>
+        <template x-if="query && trips.length === 0 && segments.length === 0 && documents.length === 0 && !loading">
           <p class="p-4 text-sm text-zinc-500">No matches.</p>
         </template>
         <template x-if="error">
@@ -69,6 +84,7 @@
       query: "",
       trips: [],
       segments: [],
+      documents: [],
       activeKind: "trip",
       activeIdx: 0,
       loading: false,
@@ -83,15 +99,16 @@
         this.query = "";
         this.trips = [];
         this.segments = [];
+        this.documents = [];
       },
       async search() {
         if (!this.query.trim()) {
-          this.trips = []; this.segments = [];
+          this.trips = []; this.segments = []; this.documents = [];
           return;
         }
         this.loading = true; this.error = "";
         try {
-          const [tRes, sRes] = await Promise.all([
+          const [tRes, sRes, dRes] = await Promise.all([
             fetch("/api/search/trips", {
               method: "POST",
               headers: {"Content-Type": "application/json"},
@@ -102,13 +119,20 @@
               headers: {"Content-Type": "application/json"},
               body: JSON.stringify({q: this.query, limit: 5}),
             }),
+            fetch("/api/search/documents", {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({q: this.query, limit: 5}),
+            }),
           ]);
-          if (!tRes.ok || !sRes.ok) throw new Error("Search request failed");
+          if (!tRes.ok || !sRes.ok || !dRes.ok) throw new Error("Search request failed");
           const tBody = await tRes.json();
           const sBody = await sRes.json();
+          const dBody = await dRes.json();
           this.trips = tBody.hits || [];
           this.segments = sBody.hits || [];
-          this.activeKind = this.trips.length > 0 ? "trip" : "segment";
+          this.documents = dBody.hits || [];
+          this.activeKind = this.trips.length > 0 ? "trip" : (this.segments.length > 0 ? "segment" : "document");
           this.activeIdx = 0;
         } catch (e) {
           this.error = "Search unavailable.";
@@ -123,25 +147,32 @@
         this.activeKind = kind; this.activeIdx = i;
       },
       moveDown() {
-        const total = this.trips.length + this.segments.length;
+        const total = this.trips.length + this.segments.length + this.documents.length;
         if (total === 0) return;
-        let flat = this.activeKind === "trip" ? this.activeIdx : this.trips.length + this.activeIdx;
+        let flat = this.activeKind === "trip" ? this.activeIdx : (this.activeKind === "segment" ? this.trips.length + this.activeIdx : this.trips.length + this.segments.length + this.activeIdx);
         flat = (flat + 1) % total;
         this._setFromFlat(flat);
       },
       moveUp() {
-        const total = this.trips.length + this.segments.length;
+        const total = this.trips.length + this.segments.length + this.documents.length;
         if (total === 0) return;
-        let flat = this.activeKind === "trip" ? this.activeIdx : this.trips.length + this.activeIdx;
+        let flat = this.activeKind === "trip" ? this.activeIdx : (this.activeKind === "segment" ? this.trips.length + this.activeIdx : this.trips.length + this.segments.length + this.activeIdx);
         flat = (flat - 1 + total) % total;
         this._setFromFlat(flat);
       },
       _setFromFlat(flat) {
         if (flat < this.trips.length) {
           this.activeKind = "trip"; this.activeIdx = flat;
-        } else {
+        } else if (flat < this.trips.length + this.segments.length) {
           this.activeKind = "segment"; this.activeIdx = flat - this.trips.length;
+        } else {
+          this.activeKind = "document"; this.activeIdx = flat - this.trips.length - this.segments.length;
         }
+      },
+      docHref(hit) {
+        if (hit.segment_id) return `/trips/${hit.trip_id}#segment-${hit.segment_id}`;
+        if (hit.trip_id) return `/trips/${hit.trip_id}/documents`;
+        return `/documents/${hit.id}/download`;
       },
       activate() {
         if (this.activeKind === "trip" && this.trips[this.activeIdx]) {
@@ -149,6 +180,8 @@
         } else if (this.activeKind === "segment" && this.segments[this.activeIdx]) {
           const h = this.segments[this.activeIdx];
           window.location = `/trips/${h.trip_id}#segment-${h.id}`;
+        } else if (this.activeKind === "document" && this.documents[this.activeIdx]) {
+          window.location = this.docHref(this.documents[this.activeIdx]);
         }
       },
     };

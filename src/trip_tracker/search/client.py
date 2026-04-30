@@ -40,6 +40,8 @@ _TRIP_FILTERABLE = ["traveler_ids", "start_date", "end_date"]
 _TRIP_SORTABLE = ["start_date"]
 _SEGMENT_FILTERABLE = ["traveler_ids", "trip_id", "type", "start_at_unix"]
 _SEGMENT_SORTABLE = ["start_at_unix"]
+_DOCUMENTS_FILTERABLE = ["traveler_ids", "trip_id", "segment_id", "owner_user_id"]
+_DOCUMENTS_SORTABLE = ["created_at_unix"]
 
 
 async def ensure_indexes_configured(meili: MeiliClientProtocol) -> None:
@@ -50,6 +52,7 @@ async def ensure_indexes_configured(meili: MeiliClientProtocol) -> None:
     for name, filterable, sortable in (
         ("trips", _TRIP_FILTERABLE, _TRIP_SORTABLE),
         ("segments", _SEGMENT_FILTERABLE, _SEGMENT_SORTABLE),
+        ("documents", _DOCUMENTS_FILTERABLE, _DOCUMENTS_SORTABLE),
     ):
         with contextlib.suppress(Exception):
             # Meili raises on conflict if the index already exists — idempotent.

@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.config import Settings
+from trip_tracker.models.document import Document
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
 from trip_tracker.models.trip_traveler import TripTraveler
@@ -73,6 +74,35 @@ async def segment_to_doc(seg: Segment, *, db: AsyncSession) -> dict[str, Any]:
         "end_city": _city_from_location(seg.end_location),
         "vehicle_number": _vehicle_number(seg),
         "notes": details.get("notes"),
+    }
+
+
+async def document_to_doc(doc: Document, *, db: AsyncSession) -> dict[str, Any]:
+    """Render a Document as a Meili index payload. Spec §9.2."""
+    if doc.trip_id is not None:
+        traveler_ids = [
+            str(uid)
+            for uid in (
+                await db.execute(
+                    select(TripTraveler.user_id).where(TripTraveler.trip_id == doc.trip_id)
+                )
+            )
+            .scalars()
+            .all()
+        ]
+    else:
+        # Orphan: surface only to the owner.
+        traveler_ids = [str(doc.owner_user_id)]
+    return {
+        "id": str(doc.id),
+        "owner_user_id": str(doc.owner_user_id),
+        "trip_id": str(doc.trip_id) if doc.trip_id else None,
+        "segment_id": str(doc.segment_id) if doc.segment_id else None,
+        "traveler_ids": traveler_ids,
+        "filename": doc.filename,
+        "extracted_text": doc.extracted_text or "",
+        "mime_type": doc.mime_type,
+        "created_at_unix": int(doc.created_at.timestamp()),
     }
 
 

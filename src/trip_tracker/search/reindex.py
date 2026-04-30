@@ -11,13 +11,14 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from trip_tracker.models.document import Document
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
 from trip_tracker.search.client import (
     MeiliClientProtocol,
     ensure_indexes_configured,
 )
-from trip_tracker.search.sync import segment_to_doc, trip_to_doc
+from trip_tracker.search.sync import document_to_doc, segment_to_doc, trip_to_doc
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +34,12 @@ async def reindex_all(
     SessionMaker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
     if not dry_run:
-        for name in ("trips", "segments"):
+        for name in ("trips", "segments", "documents"):
             with contextlib.suppress(Exception):  # missing index is fine
                 await meili.delete_index(name)
         await ensure_indexes_configured(meili)
 
-    counts = {"trips": 0, "segments": 0}
+    counts = {"trips": 0, "segments": 0, "documents": 0}
 
     async with SessionMaker() as db:
         trips_idx = meili.index("trips")
@@ -65,7 +66,19 @@ async def reindex_all(
         if batch and not dry_run:
             await seg_idx.update_documents(batch)
 
+        docs_idx = meili.index("documents")
+        batch = []
+        for doc in (await db.execute(select(Document))).scalars().all():
+            batch.append(await document_to_doc(doc, db=db))
+            counts["documents"] += 1
+            if len(batch) >= batch_size:
+                if not dry_run:
+                    await docs_idx.update_documents(batch)
+                batch = []
+        if batch and not dry_run:
+            await docs_idx.update_documents(batch)
+
     if dry_run:
-        return {"trips": 0, "segments": 0}
+        return {"trips": 0, "segments": 0, "documents": 0}
     logger.info("reindex complete: %s", counts)
     return counts

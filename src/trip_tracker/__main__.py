@@ -63,7 +63,10 @@ async def _reindex(*, batch_size: int = 100, dry_run: bool = False) -> None:
     meili = build_client(settings)
     counts = await reindex_all(engine, meili, batch_size=batch_size, dry_run=dry_run)
     await engine.dispose()
-    print(f"Reindex complete: trips={counts['trips']}, segments={counts['segments']}")
+    print(
+        f"Reindex complete: trips={counts['trips']} "
+        f"segments={counts['segments']} documents={counts['documents']}"
+    )
 
 
 if __name__ == "__main__":
