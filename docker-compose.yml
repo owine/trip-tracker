@@ -18,6 +18,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-json}
       TZ: ${TZ:-UTC}
+      REDIS_URL: ${REDIS_URL:-redis://trip-tracker-redis:6379/0}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.trip.rule=Host(`${TRIP_HOST:-trips.example.com}`)"
@@ -41,6 +43,31 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks: [internal]
+
+  trip-tracker-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [internal]
+
+  trip-tracker-worker:
+    image: ${TRIP_TRACKER_IMAGE:-ghcr.io/REPLACE_OWNER/trip-tracker:latest}
+    restart: unless-stopped
+    command: ["arq", "trip_tracker.worker.WorkerSettings"]
+    depends_on:
+      trip-tracker-db:
+        condition: service_healthy
+      trip-tracker-redis:
+        condition: service_started
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      REDIS_URL: ${REDIS_URL:-redis://trip-tracker-redis:6379/0}
+      LLM_DAILY_BUDGET_CENTS: ${LLM_DAILY_BUDGET_CENTS:-100}
+      LLM_MODEL: ${LLM_MODEL:-claude-haiku-4-5-20251001}
+      LLM_CONFIDENCE_FLOOR: ${LLM_CONFIDENCE_FLOOR:-0.7}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
     networks: [internal]
 
 volumes:

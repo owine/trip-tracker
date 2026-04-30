@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import time
+import uuid
 
 import structlog
+from arq import create_pool
+from arq.connections import RedisSettings
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse, Response
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -24,7 +28,19 @@ from trip_tracker.models.raw_email import RawEmail
 
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 log = structlog.get_logger(__name__)
+_logger = logging.getLogger(__name__)
 _PRUNE_GATE = PruneGate(interval_seconds=60.0)
+
+
+async def enqueue_parse(settings: Settings, raw_email_id: uuid.UUID) -> None:
+    """Enqueue parse_raw_email task. Failure is logged but not propagated —
+    the parse_pending admin command is the recovery path."""
+    try:
+        redis = await create_pool(RedisSettings.from_dsn(settings.redis_url))
+        await redis.enqueue_job("parse_raw_email", str(raw_email_id))
+        await redis.aclose()
+    except Exception as exc:  # Redis blip shouldn't fail the webhook
+        _logger.warning("enqueue_parse failed for %s: %s", raw_email_id, exc)
 
 
 def _settings_dep() -> Settings:
@@ -87,6 +103,7 @@ async def ingest_email(
     parsed = parse_mime(body)
 
     # Step 5-6: Single transaction for nonce-insert + raw_emails-insert.
+    new_raw_email_id: uuid.UUID | None = None
     async with db.begin():
         recorded = await record_nonce(db, ts_seconds=ts, nonce=nonce)
         replay = not recorded
@@ -103,9 +120,13 @@ async def ingest_email(
                 parse_status="pending",
             )
             .on_conflict_do_nothing(index_elements=["message_id"])
+            .returning(RawEmail.id)
         )
         result: CursorResult[tuple[()]] = await db.execute(stmt)  # type: ignore[assignment]
-        duplicate = result.rowcount == 0 and not replay
+        inserted_id = result.scalar_one_or_none()
+        duplicate = inserted_id is None and not replay
+        if inserted_id is not None:
+            new_raw_email_id = inserted_id
 
     log.info(
         "ingest_webhook",
@@ -117,6 +138,10 @@ async def ingest_email(
         replay=replay,
         duplicate_message_id=duplicate,
     )
+
+    # Step 8: Enqueue background parse task (best-effort; Redis blip → logged only).
+    if new_raw_email_id is not None:
+        await enqueue_parse(settings, new_raw_email_id)
 
     # Step 7: Always 202 once HMAC + timestamp pass.
     return Response(status_code=202)
