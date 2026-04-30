@@ -54,6 +54,10 @@ async def _parse_pending(*, max_emails: int = 1000, dry_run: bool = False) -> No
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "parse_pending":
         dry_run = "--dry-run" in sys.argv
-        asyncio.run(_parse_pending(dry_run=dry_run))
+        max_emails = 1000
+        for arg in sys.argv[2:]:
+            if arg.startswith("--max-emails="):
+                max_emails = int(arg.split("=", 1)[1])
+        asyncio.run(_parse_pending(max_emails=max_emails, dry_run=dry_run))
     else:
         main()

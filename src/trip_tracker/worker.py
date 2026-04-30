@@ -45,7 +45,10 @@ async def parse_raw_email(ctx: dict[str, Any], raw_email_id: str) -> None:
     LLM picks up the user's correction. v0.3.0 ships without this propagation.
     """
     settings: Settings = ctx["settings"]
-    engine = ctx.get("engine") or create_async_engine(str(settings.database_url))
+    # Use the engine populated by WorkerSettings.startup() in production. Tests
+    # may inject their own engine via ctx["engine"]. Either way, the engine is
+    # owned by the caller — don't dispose it here.
+    engine = ctx["engine"]
     SessionMaker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
     rid = uuid.UUID(raw_email_id)
@@ -155,13 +158,18 @@ class WorkerSettings:
 
     functions: ClassVar[list[Any]] = [parse_raw_email]
     max_tries = 5
-    keep_result_seconds = 0
+    keep_result = 0  # ARQ attribute name (was `keep_result_seconds` typo)
     redis_settings = RedisSettings.from_dsn(_SETTINGS.redis_url)
 
     @staticmethod
     async def startup(ctx: dict[str, Any]) -> None:
         ctx["settings"] = _SETTINGS
+        # Build one engine per worker process (not per task) so the connection
+        # pool is reused across thousands of jobs. Disposed in shutdown().
+        ctx["engine"] = create_async_engine(str(_SETTINGS.database_url))
 
     @staticmethod
     async def shutdown(ctx: dict[str, Any]) -> None:
-        pass
+        engine = ctx.get("engine")
+        if engine is not None:
+            await engine.dispose()
