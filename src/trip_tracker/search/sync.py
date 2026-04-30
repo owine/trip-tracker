@@ -84,7 +84,7 @@ def _build_queue(settings: Settings) -> Queue:
 async def enqueue_meili_sync(
     settings: Settings,
     *,
-    entity: Literal["trip", "segment"],
+    entity: Literal["trip", "segment", "document"],
     entity_id: uuid.UUID,
 ) -> None:
     """Enqueue a sync_meili saq job, deduping in-flight duplicates."""

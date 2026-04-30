@@ -17,6 +17,7 @@ from trip_tracker.db import dispose_db, init_db
 from trip_tracker.ingest.webhook import router as ingest_router
 from trip_tracker.logging_setup import configure_logging
 from trip_tracker.routes.admin import router as admin_router
+from trip_tracker.routes.documents import router as documents_router
 from trip_tracker.routes.health import router as health_router
 from trip_tracker.routes.home import router as home_router
 from trip_tracker.routes.inbox import router as inbox_router
@@ -72,5 +73,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(inbox_router)
     app.include_router(admin_router)
     app.include_router(search_router)
+    app.include_router(documents_router)
 
     return app

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -97,3 +98,8 @@ class Settings(BaseSettings):
     # Phase 4 — search
     meili_url: str
     meili_master_key: SecretStr
+
+    # Phase 5 — documents
+    documents_dir: Path = Path("/data/documents")
+    max_upload_bytes: int = 26_214_400  # 25 MiB
+    documents_x_accel_prefix: str | None = None

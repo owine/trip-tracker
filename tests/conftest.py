@@ -48,7 +48,7 @@ async def db_session(db_url: str) -> AsyncIterator[AsyncSession]:
 
 
 @pytest.fixture(autouse=True)
-def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def _set_required_env(monkeypatch: pytest.MonkeyPatch, tmp_path: pytest.TempPathFactory) -> None:
     """Populate required env vars so importing config.Settings doesn't fail."""
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db")
     monkeypatch.setenv("SESSION_SECRET", "x" * 32)
@@ -65,6 +65,10 @@ def _set_required_env(monkeypatch: pytest.MonkeyPatch) -> None:
     # Phase 4 — search
     monkeypatch.setenv("MEILI_URL", "http://localhost:7700")
     monkeypatch.setenv("MEILI_MASTER_KEY", "x" * 32)
+    # Phase 5 — documents (use a writable per-test temp dir instead of /data/documents)
+    docs_dir = tmp_path / "documents"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("DOCUMENTS_DIR", str(docs_dir))
 
 
 @pytest.fixture(autouse=True)
@@ -109,3 +113,12 @@ def _mock_meili_client(monkeypatch: pytest.MonkeyPatch) -> None:
         return None
 
     monkeypatch.setattr("trip_tracker.app.ensure_indexes_configured", _noop_ensure)
+
+
+@pytest.fixture(autouse=True)
+def _mock_documents_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock the saq Queue used by routes/documents._build_queue to avoid Redis connection."""
+    mock_queue = MagicMock()
+    mock_queue.enqueue = AsyncMock()
+    mock_queue.disconnect = AsyncMock()
+    monkeypatch.setattr("trip_tracker.routes.documents._build_queue", lambda s: mock_queue)
