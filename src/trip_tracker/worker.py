@@ -198,6 +198,14 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
             raw.parse_status = "parsed"
         await db.commit()
 
+        # Phase 5 Task 7: link previously-persisted attachment Documents to the
+        # segments we just committed. The heuristic operates on filename
+        # substrings (confirmation #, flight/train #, unique date) and skips
+        # already-manually-linked rows.
+        from trip_tracker.documents.autolink import autolink_pending_for_email
+
+        await autolink_pending_for_email(db, raw_email_id=raw.id)
+
         # Phase 5: enqueue PDF extraction for newly-attached documents AFTER the
         # commit so the worker that picks up the task can see the row.
         await _enqueue_doc_extracts(settings, new_doc_ids)
