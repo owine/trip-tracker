@@ -74,3 +74,38 @@ def _mock_meili_queue(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_queue.enqueue = AsyncMock()
     mock_queue.disconnect = AsyncMock()
     monkeypatch.setattr("trip_tracker.search.sync._build_queue", lambda s: mock_queue)
+
+
+@pytest.fixture(autouse=True)
+def _mock_meili_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock the Meili client built in the app lifespan to avoid HTTP calls.
+
+    The app's lifespan calls build_client(settings) and then
+    ensure_indexes_configured(client). Tests that exercise the lifespan
+    via app.router.lifespan_context(app) would otherwise fail trying to
+    reach a real Meili instance. This fixture replaces build_client with
+    a MagicMock that has all the methods ensure_indexes_configured calls.
+    """
+    fake_index = MagicMock()
+    fake_index.update_documents = AsyncMock()
+    fake_index.delete_document = AsyncMock()
+    fake_index.search = AsyncMock(return_value={"hits": [], "estimatedTotalHits": 0})
+    fake_index.update_filterable_attributes = AsyncMock()
+    fake_index.update_sortable_attributes = AsyncMock()
+
+    fake_client = MagicMock()
+    fake_client.index = MagicMock(return_value=fake_index)
+    fake_client.create_index = AsyncMock()
+    fake_client.delete_index = AsyncMock()
+
+    # Patch at BOTH the source module AND the app.py import site (app.py uses
+    # `from trip_tracker.search.client import build_client`, which captures the
+    # function at import time — patching the source module alone misses the call).
+    monkeypatch.setattr("trip_tracker.search.client.build_client", lambda s: fake_client)
+    monkeypatch.setattr("trip_tracker.app.build_client", lambda s: fake_client)
+
+    # Same for ensure_indexes_configured — its real implementation calls Meili HTTP.
+    async def _noop_ensure(meili: object) -> None:
+        return None
+
+    monkeypatch.setattr("trip_tracker.app.ensure_indexes_configured", _noop_ensure)
