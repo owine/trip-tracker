@@ -6,6 +6,7 @@ the real AsyncClient class.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import Any, Protocol, cast
 
@@ -50,10 +51,9 @@ async def ensure_indexes_configured(meili: MeiliClientProtocol) -> None:
         ("trips", _TRIP_FILTERABLE, _TRIP_SORTABLE),
         ("segments", _SEGMENT_FILTERABLE, _SEGMENT_SORTABLE),
     ):
-        try:
+        with contextlib.suppress(Exception):
+            # Meili raises on conflict if the index already exists — idempotent.
             await meili.create_index(name, primary_key="id")
-        except Exception:  # meili raises on conflict; idempotent
-            pass
         idx = meili.index(name)
         await idx.update_filterable_attributes(filterable)
         await idx.update_sortable_attributes(sortable)
