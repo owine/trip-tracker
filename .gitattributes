@@ -1,1 +1,2 @@
 tests/fixtures/webhooks/*.eml binary
+tests/fixtures/documents/*.pdf binary
