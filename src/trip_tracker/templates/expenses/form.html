@@ -1,0 +1,40 @@
+{# templates/expenses/form.html — Task 6 stub. Task 7 expands this. #}
+{% extends "base.html" %}
+{% block title %}
+  {% if edit_id %}
+    Edit
+  {% else %}
+    New
+  {% endif %}
+  expense
+{% endblock %}
+{% block content %}
+  <h1>
+    {% if edit_id %}
+      Edit
+    {% else %}
+      New
+    {% endif %}
+    expense
+  </h1>
+  {% if errors._form %}<p class="error">{{ errors._form }}</p>{% endif %}
+  <form method="post"
+        action="{% if edit_id %}/expenses/{{ edit_id }}{% else %}/trips/{{ trip_id }}/expenses{% endif %}">
+    <input type="hidden"
+           name="home_currency_at_load"
+           value="{{ home_currency }}">
+    <input name="amount_minor" value="{{ values.get('amount_minor', '') }}">
+    <input name="currency" value="{{ values.get('currency', '') }}">
+    <input name="incurred_on"
+           type="date"
+           value="{{ values.get('incurred_on', '') }}">
+    <select name="category">
+      {% for cat, label in category_labels.items() %}<option value="{{ cat.value }}">{{ label }}</option>{% endfor %}
+    </select>
+    <select name="status">
+      <option value="paid">Paid</option>
+      <option value="pending">Pending</option>
+    </select>
+    <button type="submit">Save</button>
+  </form>
+{% endblock %}

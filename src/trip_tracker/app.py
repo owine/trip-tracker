@@ -19,6 +19,7 @@ from trip_tracker.ingest.webhook import router as ingest_router
 from trip_tracker.logging_setup import configure_logging
 from trip_tracker.routes.admin import router as admin_router
 from trip_tracker.routes.documents import router as documents_router
+from trip_tracker.routes.expenses import router as expenses_router
 from trip_tracker.routes.health import router as health_router
 from trip_tracker.routes.home import router as home_router
 from trip_tracker.routes.ics import router as ics_router
@@ -85,6 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin_router)
     app.include_router(search_router)
     app.include_router(documents_router)
+    app.include_router(expenses_router)
     app.include_router(ics_router)
     app.include_router(map_router)
     app.include_router(settings_router)
