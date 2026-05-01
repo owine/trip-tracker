@@ -48,10 +48,14 @@ async def ics_feed(
     )
 
     body = render_calendar(user=user, segments=segments, base_url=str(settings.base_url))
-    # Log first 6 hex chars of the hash (NOT the plaintext token) so suspicious
-    # spikes from a particular subscribed client surface in logs without
-    # leaking enough to recover the secret. Spec §7.1.
+    # Log first 6 hex chars of the SHA-256 hash (NOT the plaintext token) so
+    # suspicious spikes from a particular subscribed client surface in logs
+    # without leaking enough to recover the secret. The plaintext token is
+    # never logged. Spec §7.1.
     token_prefix = hash_token(token)[:6]
+    # `token_prefix` is a 6-char hash prefix, not a credential; format string
+    # mentions "token" only as a label. Suppress semgrep false positive.
+    # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure  # noqa: E501
     _logger.info(
         "ics_feed served: token_prefix=%s user_id=%s n_segments=%d",
         token_prefix,
