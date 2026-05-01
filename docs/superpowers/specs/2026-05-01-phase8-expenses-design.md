@@ -133,7 +133,9 @@ CREATE INDEX ix_expenses_incurred   ON expenses(incurred_on);
 - **Document delete → SET NULL.** Receipt gone, expense row stays.
 - **User delete → CASCADE.** Same as Phase 5.
 
-**Trigger note:** `updated_at` uses ORM-side `onupdate=lambda: datetime.now(UTC)` matching the project's existing convention (Phase 1 User model uses `server_default=func.now()` + `onupdate=func.now()`).
+**Convention:** `created_at` / `updated_at` use `server_default=func.now()` + `onupdate=func.now()`, matching Phase 1 User. The migration uses Postgres `now()` for both; ORM uses `onupdate=func.now()`.
+
+**Status validation:** No DB-level CHECK constraint or Postgres enum — app-side Pydantic validation only (parity with Phase 5 Document `extract_status`).
 
 ### 4.2 `users.home_currency` column
 
@@ -182,6 +184,13 @@ amount_home_minor = int(
 ```
 
 `Decimal` (not float) for the multiplication; `int()` only at the end. Stored, never recomputed — that's "frozen FX."
+
+**Edit-path recompute rule.** When the user edits an existing expense, the route MUST:
+- If `currency` changed: re-fetch `fx_rate` AND recompute `amount_home_minor`.
+- If `currency` unchanged BUT `amount_minor` changed: keep the original `fx_rate`; recompute `amount_home_minor` using the formula above.
+- If neither changed: no recompute.
+
+Skipping the second case is the silent-corruption trap — a row whose native amount no longer matches its home equivalent.
 
 ### 4.5 Categories — closed enum
 
@@ -236,6 +245,8 @@ class AwardDetails(BaseModel):
 
 Empty-form behavior: if `points_spent` is blank, no `details["award"]` key is written. Partial submissions (program but no points_spent) → 400 with field-level errors via FastAPI's existing form-error display pattern.
 
+**Clearing an existing award.** The form gains a "Clear award metadata" checkbox visible only when `details.award` is already set. On POST, if the checkbox is set, the route deletes the `"award"` key from `details` (preserving any other JSONB siblings) and writes the segment back. Without an explicit "clear" action, blanking the form fields and re-saving has no effect — Pydantic validation rejects the empty submission with field errors. This avoids accidental clears.
+
 ---
 
 ## 5. FX subsystem (`src/trip_tracker/expenses/fx.py`)
@@ -243,8 +254,10 @@ Empty-form behavior: if `points_spent` is blank, no `details["award"]` key is wr
 ### 5.1 Frankfurter HTTP client
 
 ```
-GET https://api.frankfurter.dev/v1/latest?base=USD&symbols=EUR,JPY,GBP
+GET https://api.frankfurter.dev/v1/latest?base=USD
 ```
+
+We always call **without** a `symbols` parameter so Frankfurter returns ALL ~30 supported currencies under that base in one shot. This makes the per-base cache entry maximally useful: a cache hit covers any target currency.
 
 Response (~150ms typical):
 
@@ -253,24 +266,24 @@ Response (~150ms typical):
   "amount": 1.0,
   "base": "USD",
   "date": "2026-05-01",
-  "rates": {"EUR": 0.93, "JPY": 156.4, "GBP": 0.79}
+  "rates": {"EUR": 0.93, "JPY": 156.4, "GBP": 0.79, ...}
 }
 ```
 
 ECB publishes daily ~16:00 CET; weekends carry forward. Frankfurter handles that.
 
 ```python
-async def fetch_rates(base: str, symbols: list[str]) -> dict[str, Decimal]:
-    """Single Frankfurter HTTP call. Returns Decimal-typed rates.
+async def fetch_rates(base: str) -> dict[str, Decimal]:
+    """Single Frankfurter HTTP call. Returns ALL rates under `base` as Decimal.
     Raises FxError on 5xx/network failure. 10s timeout via httpx.
     """
 ```
 
-Rates parsed as `Decimal` from the JSON-string form (NOT float — Pydantic v2's strict-decimal mode), preserving precision.
+Rates are parsed from the JSON response by reading them as strings first (`json.loads(..., parse_float=Decimal)` or equivalent), then converting — this avoids a float→Decimal round-trip that would import precision loss.
 
 ### 5.2 Redis cache
 
-Key: `fx:<base>:<YYYY-MM-DD>` (e.g., `fx:USD:2026-05-01`). TTL: 24h.
+Key: `fx:<base>:<YYYY-MM-DD>` (e.g., `fx:USD:2026-05-01`). TTL: 24h. Value: JSON map of `{currency: rate_str}`.
 
 ```python
 async def get_cached_rates(base: str, redis: Redis) -> dict[str, Decimal] | None:
@@ -278,18 +291,26 @@ async def get_cached_rates(base: str, redis: Redis) -> dict[str, Decimal] | None
     component — auto-rolls when the calendar day changes."""
 
 async def set_cached_rates(base: str, rates: dict[str, Decimal], redis: Redis) -> None:
-    """Caches under fx:<base>:<today_iso> with 24h TTL."""
+    """Caches under fx:<base>:<today_iso> with 24h TTL. Stores rate values as
+    strings to preserve Decimal precision through Redis."""
 
 async def get_rate(base: str, target: str, redis: Redis) -> Decimal:
     """Convert between any two currencies. Returns the rate `1 base = X target`.
-    Cache hit → returns cached rate. Cache miss → fetch_rates + set_cached + return.
-    Raises FxError on network failure with no cache.
 
-    Special case: base == target returns Decimal(1) without any I/O.
+    Implementation: ALWAYS look up under cache key `fx:<base>:<today>`. On cache
+    miss, call fetch_rates(base) and store the full table. Then return rates[target].
+
+    Special cases:
+    - base == target → return Decimal(1) with no I/O.
+    - target not in rates → FxError (Frankfurter doesn't support that currency).
+
+    We do NOT invert (i.e., never call fetch_rates(target) and divide). Each
+    distinct `base` gets its own cache entry; for a 2-currency user (home + one
+    foreign), expect 2 cache entries.
     """
 ```
 
-The cache stores ALL symbols Frankfurter returns under one base, not per (base, target) pair — one HTTP call yields ~30 currencies, all cacheable together.
+The cache stores ALL ~30 symbols Frankfurter returns under one base, not per (base, target) pair — one HTTP call yields the full table, all cacheable together.
 
 ### 5.3 Failure mode
 
@@ -315,7 +336,8 @@ FX must be available **synchronously** before saving an expense (we need `fx_rat
 |---|---|
 | `POST /trips/{trip_id}/expenses`   | Create. Calls `freeze_fx()` before INSERT. Redirect 303 to trip detail. |
 | `GET /expenses/{id}/edit`          | Render the edit form pre-populated (auth: owner OR trip-traveler). |
-| `POST /expenses/{id}`              | Update. Re-FX only if `currency` changed (else preserve original `fx_rate`). |
+| `POST /expenses/{id}`              | Update. Recompute per §4.4 edit-path rule (re-fetch `fx_rate` only if `currency` changed; recompute `amount_home_minor` if `amount_minor` OR `currency` changed). |
+| `GET /segments/award-programs.json`| Autocomplete endpoint. Returns recent distinct `program` strings from this user's `details.award` entries. `require_user`-gated. |
 | `POST /expenses/{id}/delete`       | Delete. HTMX `hx-delete` form-method-override. |
 
 All routes `require_user`-gated. Ownership: owner OR trip-traveler can read/edit/delete. Mirrors Phase 5 documents auth.
@@ -345,27 +367,33 @@ for e in expenses:
     if e.status == "paid":
         by_category[e.category] += e.amount_home_minor
 
-# Award "saved by points" rollup across flight + lodging segments
-total_saved_home = 0
-for s in segments:
-    award = (s.details or {}).get("award")
-    if not award:
-        continue
-    eq_minor = award.get("cash_equivalent_minor")
-    eq_currency = award.get("cash_equivalent_currency")
-    cp_minor = award.get("cash_copay_minor", 0)
-    cp_currency = award.get("cash_copay_currency")
-    if eq_minor is None:
-        continue
-    # Reuse get_rate to convert eq + co-pay to home currency at *render time* (not entry time)
-    # — this is a soft estimate, not a stored value, so live FX is OK here.
-    eq_home_rate = await get_rate(eq_currency, home_currency, redis)
-    cp_home_rate = await get_rate(cp_currency, home_currency, redis)
-    # ... apply minor-digits conversion + sum ...
-    total_saved_home += saved
+# Award "saved by points" rollup across flight + lodging segments.
+# Live FX is OK here (soft estimate, not stored). FxError is SWALLOWED so a
+# Frankfurter outage doesn't 500 the whole trip detail page.
+total_saved_home: int | None = 0
+try:
+    for s in segments:
+        award = (s.details or {}).get("award")
+        if not award or award.get("cash_equivalent_minor") is None:
+            continue
+        eq_home_rate = await get_rate(award["cash_equivalent_currency"], home_currency, redis)
+        cp_home_rate = await get_rate(award["cash_copay_currency"], home_currency, redis)
+        # convert minor-units across digit differences then sum (eq - copay)
+        total_saved_home += _convert_to_home(award["cash_equivalent_minor"],
+                                             award["cash_equivalent_currency"],
+                                             eq_home_rate, home_currency)
+        total_saved_home -= _convert_to_home(award["cash_copay_minor"],
+                                             award["cash_copay_currency"],
+                                             cp_home_rate, home_currency)
+except FxError:
+    # Frankfurter unreachable AND no cache. Hide the line entirely.
+    total_saved_home = None
+    logger.info("FX unavailable; saved-by-points rollup hidden for trip %s", trip.id)
 ```
 
-Template variables added: `expenses`, `total_paid_home`, `total_expected_home`, `by_category`, `total_saved_home`, `home_currency`.
+Template variables added: `expenses`, `total_paid_home`, `total_expected_home`, `by_category`, `total_saved_home` (None when FX failed), `home_currency`. Template renders the "Saved by points" line only when `total_saved_home is not None and total_saved_home > 0`.
+
+**Per-segment N+1 note.** With N award segments and a cold cache, the loop triggers up to 2 distinct `get_rate` calls (one per distinct currency in the award), but each cache miss costs at most one Frankfurter HTTP per `base`. The cache de-dupes within a render. Worst case for a typical trip: 1 Frankfurter call (home_currency base) covers all conversions. We do NOT batch across segments because `get_rate` already serves from cache after the first miss.
 
 ### 6.3 Trip-detail expense section template
 
@@ -467,6 +495,9 @@ Common currencies (USD, EUR, GBP, CAD, AUD, JPY, CHF, CNY) at the top; full list
 | Float drift in FX math | `Decimal` arithmetic throughout; `int(round(...))` only at the final amount_home_minor. `numeric(20, 10)` storage. |
 | Currency-minor edge cases (JPY/KRW/BHD) | `CURRENCY_MINOR` lookup with sensible default (2); test fixtures cover all three classes (0, 2, 3 decimals). |
 | Home-currency change confusion | Settings page warning explicitly says "only affects new expenses." Future v0.8.x may add a "re-FX historical" admin button. |
+| Concurrent home-currency change mid-entry | Form GET captures current `user.home_currency` and writes it as a hidden field; POST verifies it still matches the user's current setting. On mismatch, render the form with a flash: "Your home currency changed in another tab — review and resubmit." Lost-update window collapses to a single round trip. |
+| Trip-traveler removed but still owns expense rows | Owner permission is independent of trip-traveler membership: a removed traveler still owns their rows and can edit/delete them via owner-only auth (the rows show in their personal exports). The trip view, however, only renders rows for users currently in the traveler list — orphan rows are hidden from non-owners. |
+| Settings home-currency POST CSRF | Existing FastAPI session middleware + same-origin POST + `require_user`. No new attack surface. |
 
 ---
 
@@ -479,7 +510,13 @@ Common currencies (USD, EUR, GBP, CAD, AUD, JPY, CHF, CNY) at the top; full list
 - [ ] `expenses/currencies.py` exposes `CURRENCY_MINOR` lookup with sensible defaults.
 - [ ] `expenses/fx.py`: `fetch_rates`, `get_cached_rates`, `set_cached_rates`, `get_rate(base, target, redis)`. Cold-cache `get_rate` performs a Frankfurter HTTP call within 1s.
 - [ ] `freeze_fx(amount_minor, currency, home_currency, redis)` helper returns `(fx_rate, amount_home_minor)` using `Decimal` math. Tests cover JPY (0 decimals), USD (2), BHD (3), and same-currency (returns rate=1).
-- [ ] Manual expense routes: create, edit, delete; auth + traveler scope.
+- [ ] Manual expense routes: create, edit, delete; auth + traveler scope. Edit-path correctly recomputes `amount_home_minor` per §4.4 rule (incl. amount-only-changed case).
+- [ ] Award-program autocomplete endpoint `GET /segments/award-programs.json` returning recent distinct values from this user's `details.award.program`.
+- [ ] Award badge formatter helpers (`k_format`, `program_short`) with unit tests covering 75000→"75k", 1500→"1.5k", "Chase Ultimate Rewards"→"Chase UR", "Amex Membership Rewards"→"Amex MR", etc.
+- [ ] "Clear award metadata" checkbox on flight + lodging edit forms + handler that deletes the `"award"` JSONB sub-key while preserving siblings.
+- [ ] Concurrent home-currency-change guard: hidden `home_currency_at_load` field on expense forms; POST mismatch re-renders with flash.
+- [ ] Trip-detail render swallows `FxError` from the saved-by-points rollup; the rest of the page still renders.
+- [ ] Per-row `📎` icon links to attached document when `expense.document_id` is set.
 - [ ] Trip detail page expense section: paid total, expected total, by-category breakdown, saved-by-points rollup (await live FX in render — not stored), per-row display with status icon, cancellation deadline warning when ≤30 days away.
 - [ ] Award fields (`AwardDetails` Pydantic model) on flight + lodging forms; on POST, `details.award` populated; on render, segment row shows the badge.
 - [ ] Settings page exposes `home_currency` dropdown with save flow + warning copy.
@@ -507,24 +544,26 @@ Common currencies (USD, EUR, GBP, CAD, AUD, JPY, CHF, CNY) at the top; full list
 
 ---
 
-## 10. Sequencing — 14 tasks
+## 10. Sequencing — 16 tasks
 
 | # | Task | Model | Notes |
 |---|---|---|---|
-| 1 | Schema + Alembic migration + ORM + cascade listener | sonnet | Multi-FK cascade is subtle; mirror Phase 5 documents pattern |
+| 1 | Schema + Alembic migration + ORM + cascade listener | sonnet | Multi-FK cascade; mirror Phase 5 documents pattern |
 | 2 | `users.home_currency` column + migration + ORM update | haiku | One-column add |
-| 3 | `expenses/categories.py` (Category enum) + `currencies.py` (CURRENCY_MINOR table + minor_digits helper) | haiku | Pure data |
-| 4 | Frankfurter HTTP client + Redis cache + `get_rate` helper | haiku | Mirrors Phase 7 weather subsystem shape |
-| 5 | `freeze_fx` helper + Decimal math tests + same-currency short-circuit | haiku | Pure function, table-driven tests |
-| 6 | Expense CRUD routes (create/edit/delete; auth-gated; FX freeze on save) | sonnet | Multi-file |
-| 7 | Expense form template + cancellation/deposit collapsible | sonnet | djlint-heavy |
-| 8 | Trip detail page expense section (template + load+rollup in handler) | sonnet | Touches existing route + template |
+| 3 | `expenses/categories.py` (Category enum) + `currencies.py` (CURRENCY_MINOR + minor_digits) | haiku | Pure data |
+| 4 | Frankfurter HTTP client + Redis cache + `get_rate` (no-symbols, never-invert direction) | sonnet | Direction is subtle; cache shape and Decimal-from-string parsing matter |
+| 5 | `freeze_fx` helper + edit-path recompute helper + Decimal math tests (JPY/USD/BHD/same-currency) | haiku | Pure function, table-driven tests |
+| 6 | Expense CRUD routes (create/edit/delete; auth; FX freeze on create; recompute on edit per §4.4) | sonnet | Edit recompute rule is the gotcha |
+| 7 | Expense form template + cancellation/deposit collapsible + home-currency-at-load hidden field | sonnet | djlint-heavy |
+| 8 | Trip detail page expense section (rollups + FxError swallow + template) | sonnet | Touches existing route + template |
 | 9 | Pydantic v2 `AwardDetails` model + form-validator integration into segment routes | haiku | Schema-only |
-| 10 | Award fields on flight + lodging forms (template + form posts write `details.award`) | sonnet | Two forms, similar structure |
-| 11 | Award badge on segment row + per-trip "saved by points" rollup (live FX) | haiku | Display-only |
-| 12 | Settings page `home_currency` dropdown + POST handler | haiku | Mirror Phase 6 ICS regenerate flow |
-| 13 | README + verification gate + integration smoke (real Frankfurter call once) | inline | Same as Phase 6/7 ship |
-| 14 | Tag v0.8.0 + push + schedule release-verification agent | inline | Standard ship |
+| 10 | Award fields on flight + lodging forms (template + POST writes `details.award` + clear-award checkbox handler) | sonnet | Two forms; clear-award path |
+| 11 | Award badge on segment row + `k_format` / `program_short` helpers (with unit tests) + "saved by points" inline rollup | haiku | Display-only |
+| 12 | Award-program autocomplete endpoint (`/segments/award-programs.json`) + datalist wiring | haiku | One route + JS hook |
+| 13 | Settings page `home_currency` dropdown + POST handler | haiku | Mirror Phase 6 ICS regenerate flow |
+| 14 | README "Expenses (Phase 8)" section + deferred-items list | inline | Docs only |
+| 15 | Verification gate + Playwright smoke (EUR + JPY entry, home-currency change, FxError fallback rendering) | inline | Same as Phase 6/7 ship |
+| 16 | Tag v0.8.0 + push + schedule release-verification agent | inline | Standard ship |
 
 ---
 
