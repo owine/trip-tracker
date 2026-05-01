@@ -3,8 +3,8 @@
 Self-hosted itinerary aggregator. Forwarded confirmation emails (flights, hotels,
 rentals, trains, transfers, activities) → unified day-by-day timeline.
 
-> **Status:** Phase 5 — document upload + email-attachment ingestion + ⌘K search of extracted text.
-> Phase 6 (TBD — candidates: ICS feed, world map, expenses, OCR) is next.
+> **Status:** Phase 6 — ICS subscribable feed for upcoming trips.
+> Phase 7 (TBD — candidates: world map + Open-Meteo weather, expense tracking with frozen FX, OCR) is next.
 > See [`docs/superpowers/specs/2026-04-26-trip-tracker-design.md`](docs/superpowers/specs/2026-04-26-trip-tracker-design.md) for the full spec.
 
 ## Quick start (local dev)
@@ -124,6 +124,67 @@ Walks all three indexes (`trips`, `segments`, `documents`).
 - Drag-and-drop UI + thumbnails (Phase 5.4)
 - Per-user storage quota
 - Re-extraction admin action (currently requires manually setting `extract_status='pending'`)
+
+## ICS subscribable feed (Phase 6)
+
+Subscribe your calendar app to your upcoming trips. Each segment becomes a
+calendar event with title, location, confirmation number, deep-link back to
+the app, and (for flights) a 3-hour-ahead reminder.
+
+### Generate a feed URL
+
+1. Sign in to trip-tracker.
+2. Open **Settings** in the top nav.
+3. Click **Generate calendar feed URL**.
+4. The URL is displayed exactly **once** — copy it into your calendar client now.
+
+### Subscribe in your calendar app
+
+- **Apple Calendar:** *File → New Calendar Subscription → paste the URL*. Set
+  refresh to "Every 15 minutes" if you want near-realtime updates.
+- **Google Calendar:** *Other calendars → + → From URL*. Polls hourly.
+- **Thunderbird:** *Calendar → New Calendar → On the network → iCalendar (ICS)*.
+- **Outlook:** Use the `https://...` URL directly. Outlook desktop sometimes
+  treats `webcal://` URLs as web links instead of subscriptions.
+
+### Authelia exempt-path setup
+
+The feed URL is gated by the token in the path; it does not require an
+Authelia session. If you self-host with Authelia, add the path to your
+`access_control.rules` block:
+
+```yaml
+# In authelia/configuration.yml under your trips.example.com domain rules:
+access_control:
+  rules:
+    - domain: trips.example.com
+      policy: bypass
+      resources:
+        - "^/api/ingest/email$"        # existing (Phase 2)
+        - "^/healthz$"                 # existing (Phase 1)
+        - "^/ics/[^/]+\\.ics$"          # NEW for Phase 6
+```
+
+Verify with `curl`:
+
+```
+curl -I https://trips.example.com/ics/<your-token>.ics
+# Expect: HTTP/2 200 (NOT 302 redirect to Authelia login)
+```
+
+### Regenerate / revoke
+
+Click **Regenerate** in Settings to invalidate the old URL and produce a new
+one (the old URL returns 404 immediately). There is no separate "disable"
+button in v0.6.0; regeneration is the revocation path.
+
+### Out of scope (Phase 6.x roadmap)
+
+- Per-segment-type SUMMARY polish (e.g., showing nightly check-in + check-out as separate events for hotels)
+- Per-device tokens (revoke one device without affecting others)
+- Trip-level feed variant (one event per trip in addition to per-segment events)
+- ETag / If-Modified-Since 304 responses (bandwidth optimization for high-poll clients)
+- Audit trail of fetches
 
 ## Production deploy
 
