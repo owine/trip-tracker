@@ -15,9 +15,11 @@ from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from trip_tracker.auth.deps import require_user
 from trip_tracker.db import get_session
+from trip_tracker.expenses.awards import AwardDetails
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
 from trip_tracker.models.trip_traveler import TripTraveler
@@ -52,6 +54,34 @@ FORM_BY_TYPE: dict[str, type[_SegmentBase]] = {
 }
 
 DESTINATION_FROM_END = {"flight", "train", "transfer"}
+
+
+def _apply_award_from_form(seg: Segment, form: dict[str, str]) -> dict[str, str] | None:
+    """Mutate seg.details based on award fields in form. Returns errors dict or None."""
+    if form.get("clear_award") == "1" and (seg.details or {}).get("award"):
+        seg.details = {k: v for k, v in (seg.details or {}).items() if k != "award"}
+        flag_modified(seg, "details")
+        return None
+    if not form.get("award_points_spent"):
+        return None  # award fields blank → no-op (don't touch existing if present)
+    try:
+        award = AwardDetails(
+            program=form.get("award_program", ""),
+            points_spent=int(form["award_points_spent"]),
+            cash_copay_minor=int(form.get("award_cash_copay_minor") or 0),
+            cash_copay_currency=form.get("award_cash_copay_currency", "USD"),
+            cash_equivalent_minor=int(form["award_cash_equivalent_minor"])
+            if form.get("award_cash_equivalent_minor")
+            else None,
+            cash_equivalent_currency=form.get("award_cash_equivalent_currency") or None,
+        )
+    except (ValidationError, ValueError) as exc:
+        return {"award": str(exc)}
+    details = dict(seg.details or {})
+    details["award"] = award.model_dump(exclude_none=True)
+    seg.details = details
+    flag_modified(seg, "details")
+    return None
 
 
 def _to_utc(local: datetime, tz: str) -> datetime:
@@ -192,6 +222,27 @@ async def create_segment(
         parse_confidence=1.0,
     )
     db.add(seg)
+
+    # Apply award metadata for flight + lodging only (Spec §4.6).
+    if seg_type in ("flight", "lodging"):
+        award_errors = _apply_award_from_form(seg, raw)
+        if award_errors:
+            trips = (await db.execute(_user_trips(db, user.id))).scalars().all()
+            return templates.TemplateResponse(
+                request,
+                f"segments/{seg_type}_form.html",
+                {
+                    "user": user,
+                    "trips": trips,
+                    "timezones": TIMEZONES,
+                    "values": raw,
+                    "errors": award_errors,
+                    "type": seg_type,
+                    "existing_award": (seg.details or {}).get("award"),
+                },
+                status_code=200,
+            )
+
     await db.commit()
     await enqueue_meili_sync(request.app.state.settings, entity="trip", entity_id=trip.id)
     await enqueue_meili_sync(request.app.state.settings, entity="segment", entity_id=seg.id)
@@ -294,6 +345,7 @@ async def edit_segment_form(
             "edit_segment_id": str(seg.id),
             "ai_suggested": ai_suggested,
             "from_raw_email": from_raw_email,
+            "existing_award": (seg.details or {}).get("award"),
         },
     )
 
@@ -374,6 +426,26 @@ async def update_segment(
     if (new_start, new_end) != (trip.start_date, trip.end_date):
         trip.start_date = new_start
         trip.end_date = new_end
+
+    # Apply award metadata for flight + lodging only (Spec §4.6).
+    if seg_type in ("flight", "lodging"):
+        award_errors = _apply_award_from_form(seg, raw)
+        if award_errors:
+            return templates.TemplateResponse(
+                request,
+                f"segments/{seg_type}_form.html",
+                {
+                    "user": user,
+                    "trips": [trip],
+                    "timezones": TIMEZONES,
+                    "values": raw,
+                    "errors": award_errors,
+                    "type": seg_type,
+                    "edit_segment_id": str(seg.id),
+                    "existing_award": (seg.details or {}).get("award"),
+                },
+                status_code=200,
+            )
 
     await db.commit()
     await enqueue_meili_sync(request.app.state.settings, entity="trip", entity_id=trip.id)
