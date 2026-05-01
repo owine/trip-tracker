@@ -61,42 +61,41 @@ Add two new map views — `/map` (lifetime atlas of every trip) and `/trips/<id>
 
 ## 4. Data sources
 
-### 4.1 Airports — `src/trip_tracker/geo/airports.py`
+### 4.1 Airports — re-use `src/trip_tracker/parsers/enrich.py`
 
-Phase 3's parser bundle already includes `airports.csv` (IATA + name + city + country + lat + lng). Phase 7 either:
+Phase 3's `parsers/enrich.py` already loads `airports.csv` into a `dict[str, Airport]` and exposes `get_airport(iata) -> Airport | None`. The existing `Airport` is a `@dataclass(frozen=True)` with fields: `iata`, `name`, `city`, `country`, `tz`, `lat`, `lon`. **Note: the field is `lon`, not `lng`.**
 
-- **Re-exports the existing parser-side loader** (preferred — single source of truth); or
-- **Reads the same CSV from a new entry point** if the parser-side loader is too coupled to parser internals.
-
-Public interface:
+Phase 7 imports directly:
 
 ```python
-class Airport(NamedTuple):
-    iata: str
-    name: str
-    city: str
-    country: str   # ISO 3166-1 alpha-2
-    lat: float
-    lng: float
-
-
-def lookup_airport(iata: str) -> Airport | None: ...
+from trip_tracker.parsers.enrich import Airport, get_airport, haversine_km
 ```
 
-Loaded once at module import; ~10k airports, ~500 KB resident.
+No new airport loader / no `geo/airports.py` module — single source of truth. The Phase 3 module also already provides `haversine_km(a, b)` for great-circle distance, which Section 5.2's ground-polyline gate uses.
+
+Coordinate convention throughout Phase 7 is `(lat, lon)` (matching `enrich.py`); the spec wording elsewhere should be read with `lon = lng`.
 
 ### 4.2 Cities — `src/trip_tracker/geo/cities.py`
 
-New bundled file `src/trip_tracker/static/data/cities1000.tsv` from GeoNames (cities with population ≥ 1000, ~150k rows, ~3 MB). License: **CC BY 4.0** — attribution shown on the map page footer ("Geocoding © GeoNames + OpenStreetMap").
+New bundled file `src/trip_tracker/static/data/cities1000.tsv` derived from GeoNames `cities1000.txt`. License: **CC BY 4.0** (GeoNames data) — attribution shown on the map page footer.
+
+**Source vs bundled.** GeoNames' raw `cities1000.txt` (download at https://download.geonames.org/export/dump/cities1000.zip) is tab-separated despite the `.txt` extension and contains 19 columns (~28 MB raw). Phase 7 bundles a **filtered** version — only the 6 columns we need — produced once via a `scripts/_make_cities_data.py` one-shot script. After filtering, `cities1000.tsv` is ~7–10 MB and contains:
+
+```
+name <TAB> asciiname <TAB> country_code <TAB> population <TAB> lat <TAB> lon
+```
+
+(Lon, not lng, matching `enrich.py`.) The filter script is committed for reproducibility but not run at build time.
 
 ```python
-class City(NamedTuple):
+@dataclass(frozen=True)
+class City:
     name: str
     asciiname: str
     country_code: str   # ISO 3166-1 alpha-2
     population: int
     lat: float
-    lng: float
+    lon: float
 
 
 def lookup_city(name: str, country: str | None = None) -> City | None:
@@ -107,9 +106,11 @@ def lookup_city(name: str, country: str | None = None) -> City | None:
 
 **Disambiguation strategy:** "Paris" with no country hint → returns Paris/FR (population 2.1M, highest). "Paris" with `country="US"` → returns Paris/Texas. Most segments have `country` set by the parser, so disambiguation is rarely ambiguous; when it is, the highest-pop fallback is the right answer ~99% of the time.
 
-**Memory:** ~5 MB resident after parsing (Python NamedTuple overhead + duplicate-name index). Acceptable.
+**Memory:** ~12–15 MB resident after parsing (the asciiname + country_code index doubles the raw text footprint). Acceptable.
 
 **Loader:** parses TSV at import time, builds two indexes — exact-name → list of cities, and (asciiname, country_code) → city. The first lookup hit returns the highest-population match.
+
+**Why `@dataclass(frozen=True)` not `NamedTuple`:** matches `enrich.Airport` style — single convention across `geo/`.
 
 ### 4.3 Great-circle arcs — `src/trip_tracker/geo/arcs.py`
 
@@ -179,7 +180,7 @@ Same handler shape, scoped to one trip. Renders:
 
 - **Numbered markers** for every resolved segment in trip order (1, 2, 3, ...) so users see the chronological path.
 - **Flight arcs** for the trip's flights only.
-- **Polyline** between consecutive non-flight segments (e.g., hotel → car-rental pickup → next-day train station) — straight line, no great-circle math, since these are short ground distances.
+- **Polyline** between consecutive non-flight segments — gated to **same-day OR within 500 km** transitions only, using `haversine_km` from `parsers/enrich.py`. This prevents drawing a transcontinental "ground" line between Paris hotel night 3 and a Berlin hotel on day 4 (which would imply they drove). When the gate fails, no line is drawn — the geographic gap is the user's clue that they flew or trained between those points.
 - **Per-destination weather cards** overlaid on the map — one per unique (lat, lng) where the segment is in the future or "active" (start_at within the next 14 days). Past segments don't show weather.
 
 Weather cards render as Leaflet popups attached to the matching marker, opened on hover or click. **NOT** separate floating elements that need repositioning on pan/zoom.
@@ -300,7 +301,7 @@ Page render p99 stays under ~50 ms even on cold cache. Stale destinations show a
 
 ### 6.4 saq task — `refresh_weather`
 
-Registered in `worker.py`'s `WorkerSettings.functions`:
+Registered by appending to the `functions` list in `worker.py`'s `settings = {...}` dict (the existing pattern shipped in Phase 4's saq migration; there is no `WorkerSettings` class):
 
 ```python
 async def refresh_weather(ctx: dict[str, Any], *, lat: float, lng: float) -> None:
@@ -343,9 +344,9 @@ The saq dedup key (`weather:<lat:.2f>:<lng:.2f>`) prevents thundering-herd refre
 ## 8. Done definition
 
 - [ ] New `geo/` subpackage with airports re-export, cities1000 lookup, great-circle interpolation, `resolve_point` dispatcher.
-- [ ] Bundled `cities1000.tsv` from GeoNames committed; size ≤5 MB.
+- [ ] Filtered `cities1000.tsv` (6 columns from GeoNames source) committed at `src/trip_tracker/static/data/cities1000.tsv`; size ≤10 MB. Filter script `scripts/_make_cities_data.py` committed for reproducibility but not run at build time.
 - [ ] New `weather/` subpackage: Open-Meteo client + Redis cache + `refresh_weather` saq task.
-- [ ] `worker.py` registers `refresh_weather` in `WorkerSettings.functions`.
+- [ ] `worker.py`'s `settings` dict has `refresh_weather` appended to its `functions` list.
 - [ ] `GET /map` returns the lifetime atlas: every traveler-scoped segment pinned, flights arc, no weather.
 - [ ] `GET /trips/<id>/map` returns the per-trip view: numbered chronological markers, flight arcs, ground polylines, weather cards on future/active destinations.
 - [ ] Both routes 401 when unauthenticated; 404 / empty when no segments are visible to the user.
@@ -382,7 +383,7 @@ The saq dedup key (`weather:<lat:.2f>:<lng:.2f>`) prevents thundering-herd refre
 | 2 | Great-circle interpolation (`geo/arcs.py`) | haiku | Stdlib math, ~30 lines, table-driven tests |
 | 3 | Open-Meteo client + Redis cache + saq task wiring | sonnet | Adds task to worker.py + httpx call |
 | 4 | `/map` lifetime route + template (Leaflet init + JSON marker pipeline) | sonnet | Frontend-heavy; SRI hashes; OSM attribution |
-| 5 | `/trips/<id>/map` per-trip route + template + weather card overlay | sonnet | Reuses Task 4's Leaflet config; adds weather popups |
+| 5 | `/trips/<id>/map` per-trip route + template + weather card overlay | sonnet | **Depends on Task 4** (reuses its Leaflet config + base template); adds weather popups + the same-day/500km ground-polyline gate |
 | 6 | README + navbar link | inline | No code surface beyond the navbar one-liner |
 | 7 | Verification gate + Playwright smoke (open `/trips/<id>/map`, assert markers + arc + weather) + tag v0.7.0 | inline | Same shape as v0.5.0/v0.6.0 ship |
 
