@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{{ trip.title }} · Map · trip-tracker{% endblock %}
+{% block head_extra %}
+  {% include "map/_leaflet_head.html" %}
+  <style>
+    #map { width: 100%; height: calc(100vh - 4rem); }
+    .weather-card { font-size: 0.8rem; min-width: 12rem; }
+    .weather-card .day { display: inline-block; margin-right: 0.5rem; }
+  </style>
+{% endblock %}
+{% block content %}
+  <div class="px-4 py-2 flex justify-between items-center">
+    <div>
+      <strong>{{ trip.title }}</strong>
+      <span class="text-zinc-500 text-sm">{{ trip.start_date }} – {{ trip.end_date }}</span>
+    </div>
+    <a href="/trips/{{ trip.id }}" class="text-sm underline">← Back to trip</a>
+  </div>
+  <div id="map"></div>
+  <script id="map-data" type="application/json">{{ map_data_json | safe }}</script>
+  <script>
+    (function () {
+      const data = JSON.parse(document.getElementById('map-data').textContent);
+      const map = L.map('map');
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · '
+                   + 'Geocoding © <a href="https://www.geonames.org/">GeoNames</a> · '
+                   + 'Weather © <a href="https://open-meteo.com/">Open-Meteo</a>',
+        maxZoom: 19,
+      }).addTo(map);
+
+      const weatherByPoint = {};
+      data.weather.forEach(w => {
+        const k = `${w.lat.toFixed(2)},${w.lon.toFixed(2)}`;
+        weatherByPoint[k] = w;
+      });
+
+      const bounds = [];
+      data.markers.forEach(m => {
+        const k = `${m.lat.toFixed(2)},${m.lon.toFixed(2)}`;
+        const w = weatherByPoint[k];
+        const marker = L.marker([m.lat, m.lon])
+          .bindTooltip(`${m.seq}. ${m.label}`)
+          .addTo(map);
+        if (w) {
+          marker.bindPopup(renderWeatherCard(w));
+        }
+        bounds.push([m.lat, m.lon]);
+      });
+
+      data.arcs.forEach(a => {
+        L.polyline(a.points, { color: a.color, weight: 2, opacity: 0.8 }).addTo(map);
+      });
+
+      if (data.ground.length >= 2) {
+        for (let i = 0; i < data.ground.length; i += 2) {
+          L.polyline([data.ground[i], data.ground[i + 1]], {
+            color: '#10b981', weight: 1.5, opacity: 0.6, dashArray: '5,5',
+          }).addTo(map);
+        }
+      }
+
+      if (bounds.length) map.fitBounds(bounds, { padding: [40, 40] });
+      else map.setView([20, 0], 2);
+
+      function renderWeatherCard(w) {
+        if (w.loading) {
+          return `<div class="weather-card"><strong>${escapeHtml(w.city)}</strong><br>`
+                 + `Loading weather…</div>`;
+        }
+        const html = w.days.map(d => {
+          return `<span class="day"><strong>${d.date.slice(5)}</strong> `
+               + `${Math.round(d.temp_max_c)}°/${Math.round(d.temp_min_c)}°</span>`;
+        }).join('');
+        return `<div class="weather-card"><strong>${escapeHtml(w.city)}</strong><br>`
+               + `<small>${escapeHtml(w.timezone)}</small><br>${html}</div>`;
+      }
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;',
+          '"': '&quot;', "'": '&#39;',
+        }[c]));
+      }
+    })();
+  </script>
+{% endblock %}

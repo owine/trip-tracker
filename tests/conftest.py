@@ -138,3 +138,31 @@ def _mock_worker_doc_queue(monkeypatch: pytest.MonkeyPatch, _set_required_env: N
     mock_queue.disconnect = AsyncMock()
     monkeypatch.setattr("trip_tracker.worker._build_doc_queue", lambda s: mock_queue)
     return mock_queue
+
+
+@pytest.fixture(autouse=True)
+def _mock_map_redis_queue(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock Redis and saq Queue construction in routes/map to avoid real connections.
+
+    The per-trip map handler builds AsyncRedis and Queue per-request.  Tests
+    that exercise that handler patch get_cached / _enqueue_weather_refresh at a
+    higher level; this fixture just prevents the underlying connection attempts
+    from failing.
+    """
+    mock_redis = MagicMock()
+    mock_redis.get = AsyncMock(return_value=None)
+    mock_redis.set = AsyncMock()
+    mock_redis.aclose = AsyncMock()
+
+    mock_queue = MagicMock()
+    mock_queue.enqueue = AsyncMock()
+    mock_queue.disconnect = AsyncMock()
+
+    monkeypatch.setattr(
+        "trip_tracker.routes.map.AsyncRedis",
+        MagicMock(from_url=MagicMock(return_value=mock_redis)),
+    )
+    monkeypatch.setattr(
+        "trip_tracker.routes.map.SaqQueue",
+        MagicMock(from_url=MagicMock(return_value=mock_queue)),
+    )
