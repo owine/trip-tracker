@@ -1,2 +1,0 @@
-[      88ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:8765/trips/c557aa0a-44ed-4fe0-8a98-2a8c62388bb5/documents:0
-[     104ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:8765/favicon.ico:0
