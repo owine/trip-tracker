@@ -1,2 +1,3 @@
 tests/fixtures/webhooks/*.eml binary
 tests/fixtures/documents/*.pdf binary
+src/trip_tracker/static/data/*.tsv binary
