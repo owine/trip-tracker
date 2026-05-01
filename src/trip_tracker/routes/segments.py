@@ -159,6 +159,7 @@ async def create_segment(
                 "values": raw,
                 "errors": {"_form": str(e)},
                 "type": seg_type,
+                "existing_award": None,
             },
             status_code=200,
         )
