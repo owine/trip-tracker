@@ -228,6 +228,44 @@ The bundled `cities1000.tsv` was filtered from GeoNames `cities1000.txt` to
 Downloads the latest from <https://download.geonames.org/export/dump/>
 and rewrites the bundled TSV. Commit the result.
 
+## Expenses (Phase 8 — v0.8.0)
+
+trip-tracker tracks per-trip expenses with frozen-at-entry FX so historical totals
+never silently shift when ECB rates move.
+
+- **Currencies:** ISO 4217 minor units (cents/sen/fils) stored as `bigint`;
+  `Decimal` math throughout; `numeric(20,10)` `fx_rate`. JPY (0 decimals) and
+  BHD (3 decimals) are handled via the `CURRENCY_MINOR` lookup.
+- **FX:** Frankfurter (free, ECB-backed, no API key). Cached in Redis for 24h.
+  If Frankfurter is unreachable AND nothing is cached, the expense save fails
+  with a 503 — we never store a wrong rate.
+- **Categories:** food, transit, lodging, activities, shopping, gratuities,
+  connectivity, other (+ free-text notes).
+- **Status:** paid (default) / pending. Pending expenses count toward the
+  "Expected" total but not the "Spent so far" total.
+- **Cancellation/deposit:** optional triple `deposit_minor` /
+  `cancellation_deadline` / `cancellation_fee_minor`. Pending expenses with a
+  deadline within 30 days surface a warning on the trip detail page.
+- **Award redemptions:** flight + lodging segments accept inline award metadata
+  (program, points, cash co-pay, optional cash equivalent). Covers airline
+  miles AND CC-transferable points (Chase UR, Amex MR, Capital One, Citi TY,
+  Bilt). Per-trip "saved by points" rollup uses live FX at render time;
+  Frankfurter outages just hide the line, don't 500 the page.
+- **Home currency:** per-user setting, default USD. Changing it only affects
+  new expenses — existing rows keep their original frozen FX.
+
+### Deferred to later v0.8.x phases
+
+- v0.8.1 — Auto-extract expenses from forwarded receipt emails (vendor packs +
+  Haiku LLM fallback).
+- v0.8.2 — CSV import from credit-card statements.
+- v0.8.3 — Hotel-loyalty award nights on lodging segments + nightly breakdown.
+- v0.8.4 — Per-segment cost rollup.
+- v0.8.5 — Expense splitting between travelers (master-spec non-goal; revisit if
+  household travel ever becomes in scope).
+- v0.8.6 — Multi-currency receipts (e.g., EUR folio + USD card surcharge).
+- v0.8.7 — Re-FX historical expenses admin tool.
+
 ## Production deploy
 
 See `docker-compose.yml` — drop into your existing Traefik + Authelia Docker stack.
