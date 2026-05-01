@@ -21,6 +21,7 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     ics_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    home_currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="USD")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
