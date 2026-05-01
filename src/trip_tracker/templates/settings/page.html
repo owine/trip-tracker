@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Settings · trip-tracker{% endblock %}
+{% block content %}
+  <h1 class="text-3xl font-semibold">Settings</h1>
+  {% if flash and flash.kind == "ics_generated" %}
+    <div class="mt-6 rounded border border-green-300 bg-green-50 p-4 dark:border-green-800 dark:bg-green-950">
+      <p class="font-semibold">🔗 Your new calendar feed URL — save it now, it won't be shown again:</p>
+      <pre class="mt-2 break-all rounded border border-green-200 bg-white p-2 text-xs dark:border-green-900 dark:bg-zinc-900">{{ flash.url }}</pre>
+      <p class="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
+        Subscribe in Apple Calendar: <em>File → New Calendar Subscription → paste this URL</em>.
+        Google Calendar: <em>Other calendars → + → From URL</em>.
+        Outlook: paste the <code>https://</code> URL directly (do not use <code>webcal://</code>).
+      </p>
+    </div>
+  {% endif %}
+  <section class="mt-8 space-y-3">
+    <h2 class="text-xl font-semibold">Calendar feed (subscribable iCalendar)</h2>
+    <p class="text-sm text-zinc-600 dark:text-zinc-400">
+      Generate a token-signed URL to subscribe your phone or computer's calendar app to your trips.
+      The URL contains a secret token; treat it like a password.
+    </p>
+    {% if not ics_present %}
+      <form method="post" action="/settings/ics/regenerate" class="inline">
+        <button class="rounded bg-blue-600 px-3 py-1 text-sm text-white hover:bg-blue-700">Generate calendar feed URL</button>
+      </form>
+    {% else %}
+      <p class="text-sm">
+        Calendar feed: <strong>enabled</strong> · ●●●●●...{{ ics_hash_suffix }}
+        <br />
+        <span class="text-xs text-zinc-500">The URL was shown to you once at generation time. If lost, regenerate (which invalidates the old URL).</span>
+      </p>
+      <form method="post"
+            action="/settings/ics/regenerate"
+            class="inline"
+            onsubmit="return confirm('Regenerate? Your old URL will stop working immediately.')">
+        <button class="rounded border border-red-300 px-3 py-1 text-sm text-red-700 hover:bg-red-50 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950">
+          Regenerate
+        </button>
+      </form>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 from trip_tracker import __version__
 from trip_tracker.auth.routes import router as auth_router
@@ -23,6 +24,7 @@ from trip_tracker.routes.home import router as home_router
 from trip_tracker.routes.ics import router as ics_router
 from trip_tracker.routes.inbox import router as inbox_router
 from trip_tracker.routes.segments import router as segments_router
+from trip_tracker.routes.settings import router as settings_router
 from trip_tracker.routes.trips import router as trips_router
 from trip_tracker.search.client import build_client, ensure_indexes_configured
 from trip_tracker.search.proxy import router as search_router
@@ -60,6 +62,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
 
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=settings.session_secret.get_secret_value(),
+        https_only=False,
+        same_site="lax",
+    )
+
     # Static files (Tailwind output ships baked into the image).
     # Use a path computed from __file__ so the app works regardless of CWD.
     static_dir = Path(__file__).parent / "static"
@@ -76,5 +85,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(search_router)
     app.include_router(documents_router)
     app.include_router(ics_router)
+    app.include_router(settings_router)
 
     return app
