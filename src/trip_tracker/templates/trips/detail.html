@@ -20,14 +20,49 @@
       </form>
     </div>
   </div>
-  <ul class="mt-6 divide-y divide-zinc-200 dark:divide-zinc-800">
-    {% for s in segments %}
-      {% include "segments/_row.html" %}
-    {% else %}
-      <li class="py-6 text-zinc-500">
-        No segments yet.
-        <a class="underline" href="/segments/new">Add one.</a>
-      </li>
-    {% endfor %}
-  </ul>
+  <section class="mt-8">
+    <div class="flex items-baseline justify-between">
+      <h2 class="text-2xl font-semibold">Expenses</h2>
+      <a href="/trips/{{ trip.id }}/expenses/new"
+         class="rounded bg-zinc-900 px-3 py-1 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">+ Add expense</a>
+    </div>
+    <p class="mt-1 text-sm">
+      Spent so far: <strong>{{ home_currency }}
+    {{ "%.2f"|format(total_paid_home / 10**minor_digits(home_currency) ) }}</strong>
+    · Expected: {{ home_currency }}
+    {{ "%.2f"|format(total_expected_home / 10**minor_digits(home_currency) ) }}
+    {% if total_saved_home is not none and total_saved_home > 0 %}
+      · &#9992; Saved by points: ~{{ home_currency }}
+      {{ "%.2f"|format(total_saved_home / 10**minor_digits(home_currency) ) }}
+    {% endif %}
+  </p>
+  {% if by_category %}
+    <p class="mt-1 text-xs text-zinc-500">
+      {% for cat, total in by_category.items() %}
+        {{ category_labels[Category(cat) ] }} {{ home_currency }}
+        {{ "%.2f"|format(total / 10**minor_digits(home_currency) ) }}
+        {% if not loop.last %}·{% endif %}
+      {% endfor %}
+    </p>
+  {% endif %}
+  {% if expenses %}
+    <ul class="mt-3">
+      {% for e in expenses %}
+        {% include "expenses/_row.html" %}
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="mt-3 text-sm text-zinc-500">No expenses yet.</p>
+  {% endif %}
+</section>
+<ul class="mt-6 divide-y divide-zinc-200 dark:divide-zinc-800">
+  {% for s in segments %}
+    {% include "segments/_row.html" %}
+  {% else %}
+    <li class="py-6 text-zinc-500">
+      No segments yet.
+      <a class="underline" href="/segments/new">Add one.</a>
+    </li>
+  {% endfor %}
+</ul>
 {% endblock %}

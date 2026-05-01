@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 import zoneinfo
 from datetime import date, datetime
@@ -11,10 +12,12 @@ import pydantic
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from trip_tracker.auth.deps import require_traveler, require_user
+from trip_tracker.auth.deps import get_settings, require_traveler, require_user
+from trip_tracker.config import Settings
 from trip_tracker.db import get_session
 from trip_tracker.models.trip import Trip
 from trip_tracker.models.trip_traveler import TripTraveler
@@ -23,6 +26,12 @@ from trip_tracker.schemas.trip_forms import TripForm
 from trip_tracker.search.sync import enqueue_meili_sync
 
 router = APIRouter(prefix="/trips", tags=["trips"])
+logger = logging.getLogger(__name__)
+
+
+async def _redis(settings: Settings = Depends(get_settings)) -> AsyncRedis:  # noqa: B008
+    return AsyncRedis.from_url(str(settings.redis_url))
+
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
@@ -114,10 +123,17 @@ async def trip_detail(
     trip: Trip = Depends(require_traveler),  # noqa: B008
     user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
+    redis: AsyncRedis = Depends(_redis),  # noqa: B008
 ) -> HTMLResponse:
     from collections import defaultdict
+    from datetime import date as _date_cls
 
+    from trip_tracker.expenses.categories import CATEGORY_LABELS, Category
+    from trip_tracker.expenses.currencies import minor_digits
+    from trip_tracker.expenses.freeze import recompute_home_minor
+    from trip_tracker.expenses.fx import FxError, get_rate
     from trip_tracker.models.document import Document
+    from trip_tracker.models.expense import Expense
     from trip_tracker.models.segment import Segment
 
     segments = (
@@ -149,6 +165,60 @@ async def trip_detail(
         assert d.segment_id is not None  # nosec B101
         documents_by_segment[d.segment_id].append(d)
 
+    expenses = (
+        (
+            await db.execute(
+                select(Expense)
+                .where(Expense.trip_id == trip.id)
+                .order_by(Expense.incurred_on.desc(), Expense.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    home_currency = user.home_currency
+    total_paid_home = sum(e.amount_home_minor for e in expenses if e.status == "paid")
+    total_expected_home = sum(e.amount_home_minor for e in expenses)
+    by_category: dict[str, int] = defaultdict(int)
+    for e in expenses:
+        if e.status == "paid":
+            by_category[e.category] += e.amount_home_minor
+
+    # Saved-by-points rollup with FxError swallow.
+    total_saved_home: int | None = 0
+    try:
+        for s in segments:
+            award = (s.details or {}).get("award")
+            if not award or award.get("cash_equivalent_minor") is None:
+                continue
+            eq_rate = await get_rate(
+                award["cash_equivalent_currency"],
+                home_currency,
+                redis,  # type: ignore[arg-type]
+            )
+            cp_rate = await get_rate(
+                award["cash_copay_currency"],
+                home_currency,
+                redis,  # type: ignore[arg-type]
+            )
+            eq_home = recompute_home_minor(
+                award["cash_equivalent_minor"],
+                award["cash_equivalent_currency"],
+                home_currency,
+                eq_rate,
+            )
+            cp_home = recompute_home_minor(
+                award["cash_copay_minor"],
+                award["cash_copay_currency"],
+                home_currency,
+                cp_rate,
+            )
+            total_saved_home += eq_home - cp_home  # type: ignore[operator]
+    except FxError:
+        logger.info("FX unavailable; saved-by-points rollup hidden for trip %s", trip.id)
+        total_saved_home = None
+
     return templates.TemplateResponse(
         request,
         "trips/detail.html",
@@ -157,6 +227,16 @@ async def trip_detail(
             "segments": segments,
             "documents_by_segment": dict(documents_by_segment),
             "user": user,
+            "expenses": expenses,
+            "total_paid_home": total_paid_home,
+            "total_expected_home": total_expected_home,
+            "by_category": dict(by_category),
+            "total_saved_home": total_saved_home,
+            "home_currency": home_currency,
+            "category_labels": CATEGORY_LABELS,
+            "Category": Category,
+            "minor_digits": minor_digits,
+            "today": _date_cls.today(),
         },
     )
 
