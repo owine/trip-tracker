@@ -117,14 +117,21 @@ async def enqueue_meili_sync(
     entity: Literal["trip", "segment", "document"],
     entity_id: uuid.UUID,
 ) -> None:
-    """Enqueue a sync_meili saq job, deduping in-flight duplicates."""
+    """Enqueue a sync_meili saq job.
+
+    NOTE: do NOT pass `unique=True` here — saq 0.26's `Queue.enqueue` treats
+    only `Job.__dataclass_fields__` keys as job metadata; `unique` is not
+    one of them and would fall through to the worker function as a kwarg,
+    causing `TypeError: sync_meili() got an unexpected keyword argument
+    'unique'`. `key=...` is set so log lookups can find the job; if perfect
+    in-flight dedup matters, route through saq's `apply()` API instead.
+    """
     q = _build_queue(settings)
     try:
         await q.enqueue(
             "sync_meili",
             entity=entity,
             entity_id=str(entity_id),
-            unique=True,
             key=f"meili_sync:{entity}:{entity_id}",
             retries=5,
         )

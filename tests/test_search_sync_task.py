@@ -76,10 +76,16 @@ async def test_sync_meili_deletes_when_row_missing(db_url: str, db_session: Asyn
 
 
 @pytest.mark.asyncio
-async def test_enqueue_meili_sync_uses_unique_key(
+async def test_enqueue_meili_sync_uses_stable_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """enqueue_meili_sync passes unique=True with a stable key per (entity, id)."""
+    """enqueue_meili_sync sets a stable `key` per (entity, id).
+
+    saq 0.26 doesn't accept `unique` as a Job field — it would fall through
+    as a function kwarg and crash sync_meili. We rely on `key=` for
+    job-status lookups; concurrent enqueues may double-process briefly,
+    which is acceptable for our workload.
+    """
     from trip_tracker.search.sync import enqueue_meili_sync
 
     fake_queue = MagicMock()
@@ -95,5 +101,5 @@ async def test_enqueue_meili_sync_uses_unique_key(
     kwargs = fake_queue.enqueue.call_args.kwargs
     assert kwargs.get("entity") == "segment"
     assert kwargs.get("entity_id") == str(seg_id)
-    assert kwargs.get("unique") is True
+    assert "unique" not in kwargs  # explicitly NOT passed (saq compat)
     assert "meili_sync:segment:" in kwargs.get("key", "")

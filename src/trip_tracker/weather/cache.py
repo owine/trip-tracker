@@ -30,6 +30,22 @@ async def get_cached(lat: float, lon: float, redis: _RedisLike) -> Forecast | No
     return Forecast.model_validate_json(raw)
 
 
-async def set_cached(forecast: Forecast, redis: _RedisLike) -> None:
+async def set_cached(
+    forecast: Forecast,
+    redis: _RedisLike,
+    *,
+    request_lat: float | None = None,
+    request_lon: float | None = None,
+) -> None:
+    """Persist a forecast under either the request coords or the response's.
+
+    Open-Meteo snaps the response `latitude`/`longitude` to the nearest
+    weather station, which can differ from the requested coords by ~0.02°.
+    Callers fetching for a known (lat, lon) should pass `request_lat` /
+    `request_lon` so the cache key matches what `get_cached` will look up
+    next time. Otherwise, fall back to the forecast's own coords.
+    """
+    key_lat = request_lat if request_lat is not None else forecast.lat
+    key_lon = request_lon if request_lon is not None else forecast.lon
     payload = forecast.model_dump_json()
-    await redis.set(_key(forecast.lat, forecast.lon), payload, ex=_TTL_SEC)
+    await redis.set(_key(key_lat, key_lon), payload, ex=_TTL_SEC)

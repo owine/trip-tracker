@@ -62,6 +62,38 @@ async def test_get_cached_returns_none_on_miss() -> None:
 
 
 @pytest.mark.asyncio
+async def test_set_cached_uses_request_coords_when_provided() -> None:
+    """Open-Meteo's response.lat/lon are nearest-station coords; we must
+    cache under the REQUESTED coords so subsequent get_cached() hits."""
+    fake_redis = MagicMock()
+    fake_redis.set = AsyncMock()
+    # Forecast comes back with response coords (Open-Meteo snapped to station)
+    forecast_with_snapped_coords = Forecast(
+        lat=40.643,  # response — snapped slightly
+        lon=-73.796,  # response — snapped slightly
+        timezone="America/New_York",
+        days=[
+            DailyForecast(
+                date=date(2026, 6, 1),
+                temp_max_c=18.0,
+                temp_min_c=10.0,
+                weather_code=1,
+                precip_prob=0,
+            )
+        ],
+    )
+    # Cache under the ORIGINAL request coords (40.64, -73.78)
+    await set_cached(
+        forecast_with_snapped_coords,
+        fake_redis,
+        request_lat=40.64,
+        request_lon=-73.78,
+    )
+    args, _ = fake_redis.set.call_args
+    assert args[0] == "weather:40.64:-73.78"  # NOT weather:40.64:-73.80
+
+
+@pytest.mark.asyncio
 async def test_cache_key_rounds_to_two_decimals() -> None:
     """48.85657 → '48.86'; -73.7842 → '-73.78'."""
     fake_redis = MagicMock()

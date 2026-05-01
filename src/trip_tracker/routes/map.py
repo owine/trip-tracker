@@ -116,12 +116,20 @@ _WEATHER_FUTURE_DAYS = 14
 
 
 async def _enqueue_weather_refresh(queue: SaqQueue, lat: float, lon: float) -> None:
-    """Fire-and-forget saq enqueue for refresh_weather. Dedupes via key."""
+    """Fire-and-forget saq enqueue for refresh_weather.
+
+    `key=...` lets future job-status lookups find this enqueue; saq 0.26
+    does NOT use `key` for in-flight dedup. We do NOT pass `unique=True`
+    — saq treats only `Job.__dataclass_fields__` keys as job metadata, and
+    `unique` is not one; it would fall through as a function kwarg and
+    cause TypeError. Concurrent map renders may double-fetch the same
+    destination — acceptable; Open-Meteo is keyless and we cap with the
+    1h Redis TTL.
+    """
     await queue.enqueue(
         "refresh_weather",
         lat=lat,
         lon=lon,
-        unique=True,
         key=f"weather:{lat:.2f}:{lon:.2f}",
     )
 

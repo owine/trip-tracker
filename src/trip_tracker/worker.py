@@ -262,12 +262,15 @@ async def sync_meili(ctx: dict[str, Any], *, entity: str, entity_id: str) -> Non
 async def refresh_weather(ctx: dict[str, Any], *, lat: float, lon: float) -> None:
     """saq task: pull a fresh Open-Meteo forecast and cache it. Idempotent.
 
-    Dedup key (set at enqueue time) collapses concurrent requests for the
-    same (lat, lon) into one network call. Spec §6.4.
+    Cache the result under the REQUESTED (lat, lon), not the response's
+    nearest-station coords — Open-Meteo snaps to the nearest station, which
+    can shift coordinates by ~0.02°. If we cached under response coords,
+    the next page-render lookup with original coords would miss every time.
+    Spec §6.4.
     """
     redis = ctx["redis"]
     forecast = await fetch_forecast(lat, lon)
-    await set_cached(forecast, redis)
+    await set_cached(forecast, redis, request_lat=lat, request_lon=lon)
 
 
 async def startup(ctx: dict[str, Any]) -> None:
