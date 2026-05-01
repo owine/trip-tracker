@@ -6,7 +6,7 @@
       + {{ award.cash_copay_currency }}
       {{ "%.2f" | format(award.cash_copay_minor / 10**minor_digits(award.cash_copay_currency) ) }}
     {% endif %}
-    {% if award.cash_equivalent_minor %}
+    {% if award.cash_equivalent_minor and award.cash_equivalent_currency %}
       — saved ~{{ award.cash_equivalent_currency }}
       {{ "%.2f" | format((award.cash_equivalent_minor - (award.cash_copay_minor or 0) ) / 10**minor_digits(award.cash_equivalent_currency)) }}
     {% endif %}
