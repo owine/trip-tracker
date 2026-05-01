@@ -158,18 +158,22 @@ END:VEVENT
 
 ### 6.3 Per-type SUMMARY/LOCATION dispatch
 
+`Segment.start_location` and `Segment.end_location` are `Mapped[dict[str, Any] | None]` (JSONB), and `Segment.details` likewise. Access via dict subscript / `.get(...)`, NOT dotted attribute access. `flight_number` / `train_number` live in `details`. IATA codes / city / address live inside `start_location` / `end_location`.
+
 Small lookup table in `_render_segment_vevent`:
 
-| `segment.type` | Icon | SUMMARY format | LOCATION |
+| `segment.type` | Icon | SUMMARY source | LOCATION source |
 |---|---|---|---|
-| `flight`       | ✈ | `✈ {flight_number} {start_iata} → {end_iata}` | `end_location.city` |
-| `lodging`      | 🏨 | `🏨 {provider}` | `end_location.address` or `.city` |
-| `car`          | 🚗 | `🚗 {provider} {start_location.city}` | `start_location.city` |
-| `train`        | 🚆 | `🚆 {train_number} {start_iata?} → {end_iata?}` | `end_location.city` |
-| `transfer`     | 🚐 | `🚐 {provider}` | `end_location.city` |
-| `activity`     | 🎟 | `🎟 {provider}` | `start_location.city` |
+| `flight`       | ✈ | `details.get("flight_number")` + `start_location.get("iata")` `→` `end_location.get("iata")` | `end_location.get("city")` |
+| `lodging`      | 🏨 | `provider` (e.g., "Hotel Adlon") | `end_location.get("address") or end_location.get("city")` |
+| `car`          | 🚗 | `provider` + `start_location.get("city")` | `start_location.get("city")` |
+| `train`        | 🚆 | `details.get("train_number")` + `start_location.get("iata")` → `end_location.get("iata")` | `end_location.get("city")` |
+| `transfer`     | 🚐 | `provider` | `end_location.get("city")` |
+| `activity`     | 🎟 | `provider` | `start_location.get("city")` |
 
-**Fallback** when per-type fields are missing: `📍 {type} · {provider or ""}`. The dispatcher gracefully degrades for partially-parsed segments.
+In rendered form (after substitution): `✈ AF007 JFK → CDG`, `🏨 Hotel Adlon`, `🚆 9023 PAR → BCN`, etc.
+
+**Fallback** when per-type fields are missing or `None`: `📍 {type} · {provider or ""}`. The dispatcher gracefully degrades for partially-parsed segments. Each per-type helper returns `(summary, location)` strings; the wrapper handles None-coalescing.
 
 ### 6.4 VALARM on flights only
 
@@ -201,8 +205,9 @@ RFC 5545 §3.3.11 requires escaping in TEXT-typed fields (SUMMARY, DESCRIPTION, 
 | `;` | `\;` |
 | `\` | `\\` |
 | `\n` (newline in body) | `\n` (literal backslash-n) |
+| `\r` (lone CR — illegal in TEXT bodies) | strip or replace with `\n` |
 
-Six-character helper `_escape(s: str) -> str`. URL field and DTSTART/DTEND are NOT TEXT — no escaping there.
+`_escape(s: str) -> str`. Order matters: escape `\` first, then `;` `,`, then collapse `\r\n` / `\n` / lone `\r` → `\n`. URL field and DTSTART/DTEND are NOT TEXT — no escaping there.
 
 ### 6.8 Filter
 
@@ -287,17 +292,28 @@ Modify `src/trip_tracker/routes/admin.py` (or whichever module hosts settings; i
   - "Calendar feed: enabled · `●●●●●●...a3f7c`" (last 5 chars of the hash; non-recoverable)
   - Button: `[ Regenerate ]` (red-tinted; warning text "Your old URL will stop working immediately.")
 
-The plaintext-URL flash uses Phase 1's session flash mechanism (`request.session["flash"]` → consumed on next render). The plaintext URL is in the FLASH only (a session cookie), not persisted to the DB beyond the hash.
+The plaintext-URL flash uses the existing session-flash mechanism (`request.session["flash"]` → consumed on next render; first introduced in Phase 5's `routes/documents.py`). The plaintext URL is in the FLASH only (a session cookie), not persisted to the DB beyond the hash. **Caveat:** if the user's app session cookie is stolen during the regenerate window, an attacker who already has session access could capture the plaintext URL from the flash. This is bounded by the user's session lifetime and the few-seconds window between regenerate and the next page render that consumes the flash. Document in README; not a practical concern for a self-hosted single-user system.
 
 ### 7.3 Authelia exemption
 
-The `/ics/` prefix MUST be added to Traefik's exempt-path list. The existing exemption (Phase 1/2) covers `/api/ingest/email` and `/healthz`; the README and `docker-compose.yml` snippet add `/ics/`:
+`docker-compose.yml` applies `authelia@docker` middleware blanket to the `trip` router; the existing `/api/ingest/email` and `/healthz` exemptions live in **Authelia's own `configuration.yml` `access_control` block**, not in this repo. Phase 6 follows the same pattern: README documents that the self-hoster's Authelia config needs an additional bypass rule:
 
 ```yaml
-- "traefik.http.routers.app-public.rule=Host(`${TRIP_HOST}`) && (PathPrefix(`/api/ingest/email`) || PathPrefix(`/healthz`) || PathPrefix(`/ics/`))"
+# In authelia/configuration.yml under the existing trips.example.com domain rules:
+access_control:
+  rules:
+    - domain: trips.example.com
+      policy: bypass
+      resources:
+        - "^/api/ingest/email$"      # existing (Phase 2)
+        - "^/healthz$"               # existing (Phase 1)
+        - "^/ics/[^/]+\\.ics$"        # NEW for Phase 6
+      # Token in path serves as auth; no Authelia session needed.
 ```
 
-Self-hosters who don't run Authelia (dev mode, alternative reverse proxy) get the public route working without any extra config — the route itself has no `require_user`.
+**No changes to `docker-compose.yml`** — the route is exposed at the FastAPI layer regardless of Authelia, and the project's compose config already routes everything matching `Host(${TRIP_HOST})` to the app. Self-hosters who don't run Authelia (dev mode, alternative reverse proxy) get the public route working without any extra config — the route itself has no `require_user`.
+
+**Verification:** README's Phase 6 section shows the exact regex and a one-line `curl` command to verify exempt-paths are working: `curl -I https://trips.example.com/ics/<token>.ics` should return 200 / 404, NEVER a redirect to the Authelia login page.
 
 ---
 
@@ -306,7 +322,7 @@ Self-hosters who don't run Authelia (dev mode, alternative reverse proxy) get th
 | Risk | Mitigation |
 |---|---|
 | Stolen URL exposes segment metadata to an attacker | Regenerate from Settings (one click, instant invalidation). The exposure is limited to: dates, cities, flight/train numbers, confirmation numbers in DESCRIPTION. No write surface; no documents; no payment data. |
-| Timing attack to enumerate near-valid tokens | The 404 response shape is identical for invalid-token and valid-token-but-no-user. The hash lookup is constant-time enough on a short hash column to make practical timing oracles uneconomical. |
+| Timing attack to enumerate near-valid tokens | The 256-bit token space makes brute-force enumeration infeasible (10^65 years at 1M req/s). Network jitter (typically 1–100 ms) dominates any sub-microsecond DB-lookup timing signal at the column-equality layer. Postgres `=` on text is NOT constant-time, but exploitable timing oracles aren't practical against this combination of high-entropy keyspace + network noise. |
 | Brute-force tokens via `/ics/<random>.ics` | 256-bit token space; even at 1M req/s a brute-force attacker needs ~10^65 years. Authelia exemption doesn't add risk because the auth is the token, not the session. |
 | Backup leaks the user's URL | Only the SHA-256 hash is in the DB. The plaintext exists exactly once during the regenerate flash and on the user's calendar client. |
 | Calendar client misbehavior (Outlook with `webcal://`) | README documents the workaround: use the `https://...` URL directly in Outlook. |
@@ -322,7 +338,7 @@ Self-hosters who don't run Authelia (dev mode, alternative reverse proxy) get th
 - [ ] Per-segment-type SUMMARY/LOCATION dispatch covered for all 6 types + fallback.
 - [ ] Flight VEVENT carries `-PT3H` VALARM; non-flight types do not.
 - [ ] Times emitted in UTC basic format; line folding at 75 octets respects multi-byte chars.
-- [ ] `GET /ics/<token>.ics` returns `text/calendar; charset=utf-8` for valid token; 404 for invalid; 404 for valid-token-of-disabled-user.
+- [ ] `GET /ics/<token>.ics` returns `text/calendar; charset=utf-8` for valid token; 404 for invalid token; 404 for the same-shape-response when `users.ics_token_hash IS NULL` (no token-leak via response shape).
 - [ ] UID stability: re-fetch produces identical UIDs per segment.
 - [ ] Settings page: "Generate" button when no token; one-time plaintext URL flash; "Regenerate" button when token exists.
 - [ ] Old URL returns 404 immediately after regeneration.
