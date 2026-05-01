@@ -157,24 +157,102 @@ async def test_expense_cascades_with_trip(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_expense_segment_set_null_on_segment_delete(db_session: AsyncSession) -> None:
     """Segment delete → expense.segment_id becomes NULL but row survives."""
-    # ... build user + trip + segment + expense linked to segment ...
-    # delete segment, assert expense row exists and segment_id is None
-    pass  # TODO: fill out fully in implementation
+    from datetime import datetime as _dt
+    user = User(oidc_subject="e2", email="e2@x.com", display_name="E2")
+    db_session.add(user)
+    await db_session.flush()
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
+                created_by=user.id)
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+    from trip_tracker.models.segment import Segment
+    seg = Segment(
+        trip_id=trip.id, owner_user_id=user.id, type="lodging", status="confirmed",
+        provider="Hotel X", start_at=_dt(2026, 6, 2, 15, 0, tzinfo=UTC), start_tz="UTC",
+        end_at=_dt(2026, 6, 3, 11, 0, tzinfo=UTC), end_tz="UTC",
+        details={}, parse_source="manual", parse_confidence=1.0,
+    )
+    db_session.add(seg)
+    await db_session.flush()
+    exp = Expense(
+        trip_id=trip.id, owner_user_id=user.id, segment_id=seg.id,
+        amount_minor=20000, currency="USD",
+        fx_rate=Decimal("1.0000000000"), amount_home_minor=20000,
+        home_currency="USD", category="lodging", incurred_on=date(2026, 6, 2),
+        status="paid",
+    )
+    db_session.add(exp)
+    await db_session.commit()
+
+    await db_session.delete(seg)
+    await db_session.commit()
+    await db_session.refresh(exp)
+    assert exp.segment_id is None
+    assert (await db_session.execute(select(Expense).where(Expense.id == exp.id))).scalar_one()
 
 
 @pytest.mark.asyncio
 async def test_expense_document_set_null_on_document_delete(db_session: AsyncSession) -> None:
     """Document delete → expense.document_id becomes NULL but row survives."""
-    pass  # TODO: fill out fully
+    from trip_tracker.models.document import Document
+    user = User(oidc_subject="e3", email="e3@x.com", display_name="E3")
+    db_session.add(user)
+    await db_session.flush()
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
+                created_by=user.id)
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+    doc = Document(
+        owner_user_id=user.id, filename="receipt.pdf", mime_type="application/pdf",
+        size_bytes=1024, sha256="a" * 64, storage_key="docs/x.pdf",
+    )
+    db_session.add(doc)
+    await db_session.flush()
+    exp = Expense(
+        trip_id=trip.id, owner_user_id=user.id, document_id=doc.id,
+        amount_minor=3800, currency="EUR",
+        fx_rate=Decimal("1.0700000000"), amount_home_minor=4066,
+        home_currency="USD", category="food", incurred_on=date(2026, 6, 4), status="paid",
+    )
+    db_session.add(exp)
+    await db_session.commit()
+
+    await db_session.delete(doc)
+    await db_session.commit()
+    await db_session.refresh(exp)
+    assert exp.document_id is None
 
 
 @pytest.mark.asyncio
 async def test_expense_owner_cascade_on_user_delete(db_session: AsyncSession) -> None:
     """User delete → expense rows gone (CASCADE)."""
-    pass  # TODO: fill out fully
+    user = User(oidc_subject="e4", email="e4@x.com", display_name="E4")
+    db_session.add(user)
+    await db_session.flush()
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
+                created_by=user.id)
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+    exp = Expense(
+        trip_id=trip.id, owner_user_id=user.id,
+        amount_minor=3800, currency="EUR",
+        fx_rate=Decimal("1.0700000000"), amount_home_minor=4066,
+        home_currency="USD", category="food", incurred_on=date(2026, 6, 4), status="paid",
+    )
+    db_session.add(exp)
+    await db_session.commit()
+    exp_id = exp.id
+
+    await db_session.delete(user)
+    await db_session.commit()
+    rows = (await db_session.execute(select(Expense).where(Expense.id == exp_id))).scalars().all()
+    assert rows == []
 ```
 
-- [ ] **Step 1.1:** Write all four cascade tests (fully — the `pass` stubs above are sketches; flesh them out following the first test's pattern).
+- [ ] **Step 1.1:** Write all four cascade tests (bodies above are complete; copy as-is).
 - [ ] **Step 1.2:** Run `uv run pytest tests/test_models_expense.py -v` → expected: ImportError (Expense doesn't exist yet).
 - [ ] **Step 1.3:** Implement `src/trip_tracker/models/expense.py`:
 
@@ -246,13 +324,14 @@ class Expense(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    trip: Mapped[Trip] = relationship(back_populates=None, lazy="raise")
-    segment: Mapped[Segment | None] = relationship(back_populates=None, lazy="raise")
-    document: Mapped[Document | None] = relationship(back_populates=None, lazy="raise")
-    owner: Mapped[User] = relationship(back_populates=None, lazy="raise")
+    # Phase 5 Document pattern: omit `back_populates` entirely when there's no inverse.
+    trip: Mapped[Trip] = relationship(lazy="raise")
+    segment: Mapped[Segment | None] = relationship(lazy="raise")
+    document: Mapped[Document | None] = relationship(lazy="raise")
+    owner: Mapped[User] = relationship(lazy="raise")
 ```
 
-- [ ] **Step 1.4:** Run `uv run alembic revision -m "phase8_expenses"` to scaffold the migration. Edit the generated file to:
+- [ ] **Step 1.4:** Run `uv run alembic heads` to confirm the current alembic head (should be the Phase 6 ICS-token migration, `2dead0c2dfd4`). Then `uv run alembic revision -m "phase8_expenses"` to scaffold. Edit the generated file: set `down_revision = "2dead0c2dfd4"` (or whatever `alembic heads` reported). The body:
 
 ```python
 def upgrade() -> None:
@@ -341,7 +420,7 @@ home_currency: Mapped[str] = mapped_column(
 )
 ```
 
-- [ ] **Step 2.4:** Generate migration:
+- [ ] **Step 2.4:** `uv run alembic revision -m "phase8_home_currency"`. Set `down_revision` to the revision id generated by Task 1 (run `uv run alembic heads` after Task 1's migration is in place — it should be Task 1's id). Body:
 
 ```python
 def upgrade() -> None:
@@ -940,6 +1019,17 @@ from trip_tracker.schemas.expense_forms import ExpenseForm
 router = APIRouter(tags=["expenses"])
 logger = logging.getLogger(__name__)
 
+
+@router.get("/trips/{trip_id}/expenses/new", response_class=HTMLResponse)
+async def new_expense_form(
+    request: Request, trip_id: uuid.UUID,
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> HTMLResponse:
+    if not await _user_can_access_trip(db, user, trip_id):
+        raise HTTPException(404)
+    return _render_form(request, user, trip_id, values={}, errors={})
+
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
@@ -1505,19 +1595,7 @@ Insert before the segments list (or wherever fits the existing layout). Match ex
 </section>
 ```
 
-Add a small `GET /trips/{trip_id}/expenses/new` handler in `routes/expenses.py` that just renders the empty form:
-
-```python
-@router.get("/trips/{trip_id}/expenses/new", response_class=HTMLResponse)
-async def new_expense_form(
-    request: Request, trip_id: uuid.UUID,
-    user: User = Depends(require_user),  # noqa: B008
-    db: AsyncSession = Depends(get_session),  # noqa: B008
-) -> HTMLResponse:
-    if not await _user_can_access_trip(db, user, trip_id):
-        raise HTTPException(404)
-    return _render_form(request, user, trip_id, values={}, errors={})
-```
+(The `GET /trips/{trip_id}/expenses/new` handler that renders the empty form was created in Task 6 — the trip-detail "+ Add expense" link points to it.)
 
 - [ ] **Step 8.1:** Add the 7 tests. Run → fail.
 - [ ] **Step 8.2:** Implement the handler change in `trip_detail`.
@@ -1548,7 +1626,7 @@ git commit -am "feat(expenses): trip-detail section + rollups + FxError swallow"
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class AwardDetails(BaseModel):
@@ -1563,6 +1641,14 @@ class AwardDetails(BaseModel):
     @classmethod
     def upper(cls, v: str | None) -> str | None:
         return v.upper() if v else v
+
+    @model_validator(mode="after")
+    def _equivalent_pair(self) -> "AwardDetails":
+        """If cash_equivalent_minor is set, cash_equivalent_currency must be too.
+        Saved-by-points rollup needs both — None currency would crash the rate lookup."""
+        if self.cash_equivalent_minor is not None and not self.cash_equivalent_currency:
+            raise ValueError("cash_equivalent_currency required when cash_equivalent_minor is set")
+        return self
 
 
 def k_format(points: int) -> str:
@@ -1677,6 +1763,29 @@ def _apply_award_from_form(seg: Segment, form: dict[str, str]) -> dict | None:
 ```
 
 Call `_apply_award_from_form(seg, form_data)` inside flight + lodging handlers AFTER constructing/loading the segment but BEFORE `db.commit()`. If it returns errors, re-render the form.
+
+**Concrete wiring point** (`src/trip_tracker/routes/segments.py`):
+
+```python
+# Inside POST /segments and POST /segments/{id} handlers, after the segment
+# row is built/loaded and just before the existing `await db.commit()`:
+form_data = dict(await request.form())
+award_errors = _apply_award_from_form(seg, form_data)
+if award_errors:
+    # Existing form-error path: build the same error context shape used for
+    # validation failures elsewhere in this file (errors dict passed to
+    # templates).
+    return templates.TemplateResponse(
+        request,
+        f"segments/{seg.type}_form.html",
+        {"user": user, "values": form_data,
+         "errors": award_errors,
+         "existing_award": (seg.details or {}).get("award")},
+    )
+# … existing db.commit() runs unchanged …
+```
+
+The `existing_award` context key is also passed to the GET-edit handlers (Task 10 Step 10.2) so the partial can pre-populate.
 
 - [ ] **Step 9.1:** Write `awards.py`.
 - [ ] **Step 9.2:** Write tests in `tests/test_expenses_awards.py`. Run → ImportError → PASS.
@@ -1838,16 +1947,41 @@ git commit -am "feat(expenses): award fields on flight + lodging forms + clear-a
 {% endif %}
 ```
 
-### Step 11.2 — Register Jinja filters in the trip-detail template's renderer (`routes/trips.py`):
+### Step 11.2 — Register Jinja filters + globals on EVERY `Jinja2Templates` instance.
+
+The repo has multiple `Jinja2Templates` singletons (one per route module — `trips.py`, `expenses.py`, `segments.py`, `settings.py` etc.). Each instance has its own filter/globals dict. Rather than registering in each, create a small helper and call it from every route module that imports `Jinja2Templates`.
+
+Create `src/trip_tracker/templating.py`:
 
 ```python
+"""Shared Jinja env extensions. Call register_globals(templates) from every
+route module's templates instance so filters/globals are available everywhere."""
+
+from __future__ import annotations
+
+from fastapi.templating import Jinja2Templates
+
 from trip_tracker.expenses.awards import k_format, program_short
-templates.env.filters["k_format"] = k_format
-templates.env.filters["program_short"] = program_short
-templates.env.filters["minor_digits"] = minor_digits  # stash for the badge math
+from trip_tracker.expenses.categories import CATEGORY_LABELS, Category
+from trip_tracker.expenses.currencies import minor_digits
+
+
+def register_globals(templates: Jinja2Templates) -> None:
+    templates.env.filters["k_format"] = k_format
+    templates.env.filters["program_short"] = program_short
+    templates.env.globals["minor_digits"] = minor_digits
+    templates.env.globals["Category"] = Category
+    templates.env.globals["category_labels"] = CATEGORY_LABELS
 ```
 
-(The badge file uses `{{ ... | k_format }}` etc.)
+Then in each route module that has `templates = Jinja2Templates(...)` (specifically: `routes/trips.py`, `routes/expenses.py`, `routes/segments.py`, `routes/settings.py`), add immediately after instantiation:
+
+```python
+from trip_tracker.templating import register_globals
+register_globals(templates)
+```
+
+This means `_row.html`'s `minor_digits(e.currency)` call resolves as a global (NOT a filter), and `_award_badge.html`'s `{{ award.points_spent | k_format }}` resolves as a filter, on every render path consistently.
 
 ### Step 11.3 — Modify `segments/_row.html`:
 
@@ -1901,11 +2035,15 @@ async def award_programs_autocomplete(
 ) -> list[str]:
     """Return up to 20 most recent distinct `program` values from this user's
     award segments, ordered by recency."""
-    # Postgres-flavoured: extract details->>'award'->>'program' over user's owned segments
+    from sqlalchemy import func as _f
+    # Use jsonb_extract_path_text for nested JSONB key lookup. SQLAlchemy 2.x
+    # does NOT chain `details["award"]["program"]` cleanly to text — we must
+    # call the Postgres function explicitly.
+    program_expr = _f.jsonb_extract_path_text(Segment.details, "award", "program")
     res = await db.execute(
-        select(Segment.details["award"]["program"].astext)
+        select(program_expr)
         .where(Segment.owner_user_id == user.id)
-        .where(Segment.details["award"].is_not(None))
+        .where(program_expr.is_not(None))
         .order_by(Segment.created_at.desc())
         .limit(50)
     )
@@ -2125,7 +2263,7 @@ Expected: zero pre-commit failures; coverage **≥ 85%** project-wide; all tests
   6. Add a pending expense with cancellation_deadline today + 5 days. Verify the trip detail shows the warning row.
   7. Edit a flight segment: add award metadata (Chase UR, 75000 points, $5.60 copay, $1500 equivalent). Verify the badge "75k Chase UR + $5.60 — saved ~$1494.40" appears on the segment row and the trip summary line shows "Saved by points: ~$1,494.40".
   8. Visit `/settings`, change home currency to JPY. Verify the warning copy. Add a new expense in JPY currency; verify the trip rollup mixes correctly (old USD/EUR rows keep their frozen home-equiv; new JPY row uses JPY home).
-  9. Patch the FX module to raise FxError mid-render (e.g., temporarily kill Redis) and reload the trip detail. Verify the page renders 200 and the "Saved by points" line is hidden.
+  9. Induce an FxError during the saved-by-points render: temporarily edit `src/trip_tracker/expenses/fx.py::get_rate` to add `raise FxError("smoke test")` at the top of the function, restart the app, and reload a trip with at least one award segment. Verify the page renders 200 and the "Saved by points" line is hidden. (Killing Redis alone is NOT enough — that just falls through to a Frankfurter call which may succeed.) Revert the patch after smoke.
   10. Clear an award via the checkbox; verify the badge is gone and the "saved by points" total drops.
 
 - [ ] **Step 15.4:** If any step fails, file the regression as a follow-up commit and re-run smoke. Don't tag until smoke is clean.
