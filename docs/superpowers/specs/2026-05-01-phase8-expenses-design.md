@@ -245,7 +245,7 @@ class AwardDetails(BaseModel):
 
 Empty-form behavior: if `points_spent` is blank, no `details["award"]` key is written. Partial submissions (program but no points_spent) → 400 with field-level errors via FastAPI's existing form-error display pattern.
 
-**Clearing an existing award.** The form gains a "Clear award metadata" checkbox visible only when `details.award` is already set. On POST, if the checkbox is set, the route deletes the `"award"` key from `details` (preserving any other JSONB siblings) and writes the segment back. Without an explicit "clear" action, blanking the form fields and re-saving has no effect — Pydantic validation rejects the empty submission with field errors. This avoids accidental clears.
+**Clearing an existing award.** The form gains a "Clear award metadata" checkbox visible only when `details.award` is already set. On POST, the route checks the `clear_award` flag **before** attempting `AwardDetails` parse: if set, skip validation entirely, delete the `"award"` key from `details` (preserving any other JSONB siblings), and write the segment back. Without this short-circuit, blank fields + clear-checked would 400 on the `points_spent` validator. Without an explicit "clear" action, blanking fields and re-saving has no effect — Pydantic rejects the empty submission with field errors. Avoids accidental clears.
 
 ---
 
@@ -495,7 +495,7 @@ Common currencies (USD, EUR, GBP, CAD, AUD, JPY, CHF, CNY) at the top; full list
 | Float drift in FX math | `Decimal` arithmetic throughout; `int(round(...))` only at the final amount_home_minor. `numeric(20, 10)` storage. |
 | Currency-minor edge cases (JPY/KRW/BHD) | `CURRENCY_MINOR` lookup with sensible default (2); test fixtures cover all three classes (0, 2, 3 decimals). |
 | Home-currency change confusion | Settings page warning explicitly says "only affects new expenses." Future v0.8.x may add a "re-FX historical" admin button. |
-| Concurrent home-currency change mid-entry | Form GET captures current `user.home_currency` and writes it as a hidden field; POST verifies it still matches the user's current setting. On mismatch, render the form with a flash: "Your home currency changed in another tab — review and resubmit." Lost-update window collapses to a single round trip. |
+| Concurrent home-currency change mid-entry | Form GET captures current `user.home_currency` and writes it as a hidden field; POST verifies it still matches the user's current setting. On mismatch, render the form with a flash: "Your home currency changed in another tab — review and resubmit." Re-render preserves the user's `currency` selection as-is; we don't auto-rewrite. Lost-update window collapses to a single round trip. |
 | Trip-traveler removed but still owns expense rows | Owner permission is independent of trip-traveler membership: a removed traveler still owns their rows and can edit/delete them via owner-only auth (the rows show in their personal exports). The trip view, however, only renders rows for users currently in the traveler list — orphan rows are hidden from non-owners. |
 | Settings home-currency POST CSRF | Existing FastAPI session middleware + same-origin POST + `require_user`. No new attack surface. |
 
