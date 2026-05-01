@@ -74,6 +74,24 @@ async def test_post_home_currency_persists(
 
 
 @pytest.mark.asyncio
+async def test_post_home_currency_lowercase_normalized_and_accepted(
+    db_session: AsyncSession, authenticated_client_factory
+) -> None:
+    """POST with lowercase code is uppercased and accepted (not rejected as invalid)."""
+    u = User(oidc_subject="hc3", email="hc3@x.com", display_name="HC3")
+    db_session.add(u)
+    await db_session.commit()
+
+    async with authenticated_client_factory(u) as client:
+        r = await client.post(
+            "/settings/home_currency", data={"home_currency": "eur"}, follow_redirects=False
+        )
+    assert r.status_code == 303
+    await db_session.refresh(u)
+    assert u.home_currency == "EUR"
+
+
+@pytest.mark.asyncio
 async def test_post_home_currency_invalid_code_rejected(
     db_session: AsyncSession, authenticated_client_factory
 ) -> None:
