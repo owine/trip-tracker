@@ -17,6 +17,7 @@ from email.policy import default as email_policy_default
 from pathlib import Path
 from typing import Any
 
+from redis.asyncio import Redis as AsyncRedis
 from saq import Queue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -37,6 +38,8 @@ from trip_tracker.parsers.dispatch import dispatch_parse
 from trip_tracker.parsers.llm import LLMClient
 from trip_tracker.search.client import MeiliClientProtocol, build_client
 from trip_tracker.search.sync import enqueue_meili_sync, segment_to_doc, trip_to_doc
+from trip_tracker.weather.cache import set_cached
+from trip_tracker.weather.client import fetch_forecast
 
 logger = logging.getLogger(__name__)
 
@@ -256,6 +259,17 @@ async def sync_meili(ctx: dict[str, Any], *, entity: str, entity_id: str) -> Non
             raise ValueError(f"unknown entity: {entity}")
 
 
+async def refresh_weather(ctx: dict[str, Any], *, lat: float, lon: float) -> None:
+    """saq task: pull a fresh Open-Meteo forecast and cache it. Idempotent.
+
+    Dedup key (set at enqueue time) collapses concurrent requests for the
+    same (lat, lon) into one network call. Spec §6.4.
+    """
+    redis = ctx["redis"]
+    forecast = await fetch_forecast(lat, lon)
+    await set_cached(forecast, redis)
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     """Build worker-process singletons. saq calls this once when the worker boots."""
     s = Settings()
@@ -265,6 +279,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     ctx["engine"] = create_async_engine(str(s.database_url))
     ctx["meili"] = build_client(s)
     ctx["storage"] = LocalFsStorage(Path(s.documents_dir))
+    ctx["redis"] = AsyncRedis.from_url(s.redis_url)  # NEW for Phase 7
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
@@ -272,6 +287,9 @@ async def shutdown(ctx: dict[str, Any]) -> None:
     engine = ctx.get("engine")
     if engine is not None:
         await engine.dispose()
+    redis = ctx.get("redis")
+    if redis is not None:
+        await redis.aclose()  # NEW for Phase 7
 
 
 # Read settings once at module import. Worker fails fast if env is incomplete.
@@ -281,7 +299,7 @@ queue = Queue.from_url(_SETTINGS.redis_url)
 # saq picks up `settings` (a dict) when invoked via `saq trip_tracker.worker.settings`.
 settings = {
     "queue": queue,
-    "functions": [parse_raw_email, sync_meili, extract_document],
+    "functions": [parse_raw_email, sync_meili, extract_document, refresh_weather],
     "startup": startup,
     "shutdown": shutdown,
     "concurrency": 1,  # one task at a time per worker; matches arq's effective default
