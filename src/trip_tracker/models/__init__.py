@@ -1,6 +1,7 @@
 """SQLAlchemy ORM models."""
 
 from trip_tracker.models.document import Document  # noqa: F401
+from trip_tracker.models.expense import Expense  # noqa: F401
 from trip_tracker.models.forwarding_alias import ForwardingAlias  # noqa: F401
 from trip_tracker.models.llm_budget import LlmBudget  # noqa: F401
 from trip_tracker.models.raw_email import RawEmail  # noqa: F401
