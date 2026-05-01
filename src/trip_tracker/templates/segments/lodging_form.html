@@ -38,6 +38,7 @@
              name="room_type"
              value="{{ values.get('room_type', '') }}">
     </label>
+    {% include "segments/_award_section.html" %}
     <button class="rounded bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">Create</button>
   </form>
 {% endblock %}

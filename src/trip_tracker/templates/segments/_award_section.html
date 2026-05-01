@@ -1,0 +1,80 @@
+{# djlint:off #}
+{# Reusable award fields. Spec §6.5. Caller passes `existing_award` (dict|None). #}
+<details class="rounded border p-3 text-sm"
+         {% if existing_award %}open{% endif %}>
+  <summary class="cursor-pointer font-medium">
+    Booked with miles or points
+    {% if existing_award %}(set){% endif %}
+  </summary>
+  <div class="mt-2 grid grid-cols-2 gap-3">
+    <label class="block text-sm">
+      Program
+      <input class="mt-1 w-full rounded border p-2"
+             name="award_program"
+             list="award-programs"
+             maxlength="100"
+             value="{{ existing_award.program if existing_award else '' }}">
+      <datalist id="award-programs">
+        <option value="Chase Ultimate Rewards">
+        <option value="Amex Membership Rewards">
+        <option value="Capital One Venture">
+        <option value="Citi ThankYou">
+        <option value="Bilt Rewards">
+        <option value="United MileagePlus">
+        <option value="Delta SkyMiles">
+        <option value="American AAdvantage">
+        <option value="Alaska Mileage Plan">
+        <option value="Marriott Bonvoy">
+        <option value="Hyatt World of Hyatt">
+        <option value="Hilton Honors">
+        <option value="IHG One Rewards">
+      </datalist>
+    </label>
+    <label class="block text-sm">
+      Points spent
+      <input class="mt-1 w-full rounded border p-2"
+             name="award_points_spent"
+             type="number"
+             min="0"
+             value="{{ existing_award.points_spent if existing_award else '' }}">
+    </label>
+    <label class="block text-sm">
+      Cash co-pay (minor)
+      <input class="mt-1 w-full rounded border p-2"
+             name="award_cash_copay_minor"
+             type="number"
+             min="0"
+             value="{{ existing_award.cash_copay_minor if existing_award else '' }}">
+    </label>
+    <label class="block text-sm">
+      Co-pay currency
+      <input class="mt-1 w-full rounded border p-2"
+             name="award_cash_copay_currency"
+             maxlength="3"
+             value="{{ existing_award.cash_copay_currency if existing_award else 'USD' }}">
+    </label>
+    <label class="block text-sm">
+      Cash equivalent (minor, optional)
+      <input class="mt-1 w-full rounded border p-2"
+             name="award_cash_equivalent_minor"
+             type="number"
+             min="0"
+             value="{{ existing_award.cash_equivalent_minor if existing_award else '' }}">
+      <span class="text-xs text-zinc-500">What this would have cost in cash. Used for "saved by points" totals.</span>
+    </label>
+    <label class="block text-sm">
+      Equivalent currency
+      <input class="mt-1 w-full rounded border p-2"
+             name="award_cash_equivalent_currency"
+             maxlength="3"
+             value="{{ existing_award.cash_equivalent_currency if existing_award else 'USD' }}">
+    </label>
+    {% if existing_award %}
+      <label class="col-span-2 mt-2 text-sm text-red-600">
+        <input type="checkbox" name="clear_award" value="1">
+        Clear award metadata (delete the existing award fields)
+      </label>
+    {% endif %}
+  </div>
+</details>
+{# djlint:on #}

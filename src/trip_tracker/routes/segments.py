@@ -122,6 +122,7 @@ async def new_segment(
             "values": {},
             "errors": {},
             "type": type,
+            "existing_award": None,
         },
     )
 
@@ -399,6 +400,7 @@ async def update_segment(
                 "errors": {"_form": str(e)},
                 "type": seg_type,
                 "edit_segment_id": str(seg.id),
+                "existing_award": (seg.details or {}).get("award"),
             },
             status_code=200,
         )
