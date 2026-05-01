@@ -726,8 +726,12 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_refresh_weather_fetches_and_caches() -> None:
-    from trip_tracker.weather.client import DailyForecast, Forecast
     from datetime import date
+
+    # Import the task BEFORE patching so the worker module is fully loaded
+    # and `fetch_forecast` is bound in the worker namespace at patch time.
+    from trip_tracker.weather.client import DailyForecast, Forecast
+    from trip_tracker.worker import refresh_weather
 
     fake_forecast = Forecast(
         lat=48.86, lon=2.35, timezone="Europe/Paris",
@@ -738,7 +742,6 @@ async def test_refresh_weather_fetches_and_caches() -> None:
     fake_redis.set = AsyncMock()
 
     with patch("trip_tracker.worker.fetch_forecast", AsyncMock(return_value=fake_forecast)):
-        from trip_tracker.worker import refresh_weather
         ctx = {"redis": fake_redis}
         await refresh_weather(ctx, lat=48.86, lon=2.35)
 
@@ -1210,6 +1213,31 @@ async def map_lifetime(
     )
 ```
 
+### Step 4.4a — Add `head_extra` block + Map nav link to `base.html` FIRST
+
+(This must happen before the new templates extend `base.html` — otherwise Jinja2 fails on the `{% block head_extra %}` reference in child templates.)
+
+In `src/trip_tracker/templates/base.html`:
+
+1. Inside `<head>...</head>`, add a `head_extra` block so child templates can inject Leaflet CSS:
+
+```html
+<head>
+  ...existing meta/title/css...
+  {% block head_extra %}{% endblock %}
+</head>
+```
+
+2. Add `Map` link to the navbar between `Trips` and `Inbox`:
+
+```html
+<a href="/trips" class="hover:underline">Trips</a>
+<a href="/map" class="hover:underline">Map</a>
+<a href="/inbox" class="hover:underline">Inbox</a>
+```
+
+Read the actual `base.html` first to confirm exact insertion points; insert in matching style.
+
 ### Step 4.4 — `_leaflet_head.html` partial
 
 `src/trip_tracker/templates/map/_leaflet_head.html`:
@@ -1281,30 +1309,7 @@ async def map_lifetime(
 
 `{{ map_data_json | safe }}` is acceptable here because the JSON blob is inside a `<script type="application/json">` tag — the browser doesn't execute it; only `JSON.parse(...)` does. Trip titles are inert until they hit the `escapeHtml()` helper before insertion into the DOM via `bindPopup`.
 
-### Step 4.6 — Add `/map` navbar link + `head_extra` block
-
-In `src/trip_tracker/templates/base.html`:
-
-1. Add `head_extra` block in `<head>` (so child templates can inject Leaflet CSS):
-
-```html
-<head>
-  ...
-  {% block head_extra %}{% endblock %}
-</head>
-```
-
-2. Add Map link to the navbar between Trips and Inbox:
-
-```html
-<a href="/trips" class="hover:underline">Trips</a>
-<a href="/map" class="hover:underline">Map</a>
-<a href="/inbox" class="hover:underline">Inbox</a>
-```
-
-(Read the actual `base.html` to confirm where these links live; insert in matching style.)
-
-### Step 4.7 — Wire router into app
+### Step 4.6 — Wire router into app
 
 In `src/trip_tracker/app.py`:
 
@@ -1313,7 +1318,7 @@ from trip_tracker.routes.map import router as map_router
 app.include_router(map_router)
 ```
 
-### Step 4.8 — Run + commit
+### Step 4.7 — Run + commit
 
 ```bash
 uv run djlint src/trip_tracker/templates --reformat
@@ -1445,8 +1450,8 @@ async def test_per_trip_renders_with_cached_weather(
             r = await c.get(f"/trips/{t.id}/map")
     assert r.status_code == 200
     assert "AF007" in r.text or "JFK" in r.text
-    # Weather card: high/low + city name should appear
-    assert "22.0" in r.text or "22°C" in r.text or "Paris" in r.text
+    # Weather card: explicit temperature value (NOT "Paris" — that's also the trip title)
+    assert "22.0" in r.text or "22°C" in r.text or '"temp_max_c": 22' in r.text
 
 
 @pytest.mark.asyncio
@@ -1521,13 +1526,14 @@ uv run pytest tests/test_routes_map_per_trip.py -v
 
 ### Step 5.3 — Extend `routes/map.py`
 
-Append the per-trip handler + helpers:
+Append the per-trip handler + helpers (and ensure `get_settings` is in the existing imports at the top of `routes/map.py` from Task 4 — `from trip_tracker.auth.deps import get_settings, require_user`):
 
 ```python
 from datetime import date, timedelta
 
 from saq import Queue
 
+from trip_tracker.auth.deps import get_settings  # add to existing imports
 from trip_tracker.config import Settings
 from trip_tracker.parsers.enrich import haversine_km
 from trip_tracker.weather.cache import get_cached
@@ -1556,7 +1562,7 @@ async def map_per_trip(
     request: Request,
     user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
-    settings: Settings = Depends(lambda: Settings()),  # noqa: B008
+    settings: Settings = Depends(get_settings),  # noqa: B008
 ) -> HTMLResponse:
     """Per-trip map view: numbered markers + flight arcs + weather popups."""
     # Auth: traveler-scoped
