@@ -240,6 +240,4 @@ async def test_autocomplete_unauthenticated_redirects(
     ):
         r = await c.get("/segments/award-programs.json", follow_redirects=False)
 
-    # Depending on require_user impl, expect 401 or redirect.
-    # Check the response behavior of other endpoints for consistency.
-    assert r.status_code in (401, 307, 302)
+    assert r.status_code == 401
