@@ -3,8 +3,8 @@
 Self-hosted itinerary aggregator. Forwarded confirmation emails (flights, hotels,
 rentals, trains, transfers, activities) → unified day-by-day timeline.
 
-> **Status:** Phase 6 — ICS subscribable feed for upcoming trips.
-> Phase 7 (TBD — candidates: world map + Open-Meteo weather, expense tracking with frozen FX, OCR) is next.
+> **Status:** Phase 7 — world map + per-trip Open-Meteo weather cards.
+> Phase 8 (TBD — candidates: expenses with frozen FX, OCR, S3 storage) is next.
 > See [`docs/superpowers/specs/2026-04-26-trip-tracker-design.md`](docs/superpowers/specs/2026-04-26-trip-tracker-design.md) for the full spec.
 
 ## Quick start (local dev)
@@ -185,6 +185,48 @@ button in v0.6.0; regeneration is the revocation path.
 - Trip-level feed variant (one event per trip in addition to per-segment events)
 - ETag / If-Modified-Since 304 responses (bandwidth optimization for high-poll clients)
 - Audit trail of fetches
+
+## Map (Phase 7)
+
+Two map views, both auth-gated:
+
+- **`/map`** — Lifetime atlas. Every trip you're a traveler on, color-coded.
+  Flight legs render as great-circle arcs (curving correctly over polar
+  routes); other segments pin at airport coordinates or city centroids.
+- **`/trips/<id>/map`** — Per-trip view with **weather cards** for upcoming
+  destinations (within 14 days of today). Cards show 7-day daily highs/lows
+  via Open-Meteo (free, keyless). Cold cache renders a "Loading…" placeholder
+  and triggers a background refresh; the next page load shows the real data.
+
+### Data sources
+
+- **Tiles:** OpenStreetMap (CC BY-SA, attribution shown). Heavy public deployments
+  should swap to a self-hosted tile server.
+- **Airports:** IATA codes resolve via the bundled `airports.csv` (Phase 3).
+- **Cities:** Bundled, filtered GeoNames cities-1000 (CC BY 4.0, attribution
+  shown). ~150k cities with population ≥ 1000.
+- **Weather:** Open-Meteo (no key, no signup). Forecasts cached in Redis 1h.
+
+### Known limitations (v0.7.0)
+
+- **Pacific routes** that cross ±180° longitude (e.g., LAX→SYD) draw the
+  "wrong way" because Leaflet's default polyline doesn't split at the
+  antimeridian. Phase 7.x adds the standard fix.
+- **City disambiguation** falls back to highest-population for ambiguous
+  names (e.g., "Paris" without a country code → Paris, France). Per-segment
+  location overrides are deferred to Phase 7.x.
+- **No imperial-unit toggle** for weather cards — temperatures display in
+  Celsius. Phase 7.x can add `?units=imperial` or a per-user setting.
+
+### Refreshing the cities-1000 bundle
+
+The bundled `cities1000.tsv` was filtered from GeoNames `cities1000.txt` to
+6 columns (~7-10 MB). To refresh:
+
+    uv run python scripts/_make_cities_data.py
+
+Downloads the latest from <https://download.geonames.org/export/dump/>
+and rewrites the bundled TSV. Commit the result.
 
 ## Production deploy
 
