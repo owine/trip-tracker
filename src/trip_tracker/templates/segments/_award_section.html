@@ -29,6 +29,24 @@
         <option value="Hilton Honors">
         <option value="IHG One Rewards">
       </datalist>
+      <script>
+(async () => {
+  const dl = document.getElementById("award-programs");
+  if (!dl) return;
+  try {
+    const resp = await fetch("/segments/award-programs.json");
+    if (!resp.ok) return;
+    const programs = await resp.json();
+    for (const p of programs) {
+      if (!Array.from(dl.options).some(o => o.value === p)) {
+        const opt = document.createElement("option");
+        opt.value = p;
+        dl.appendChild(opt);
+      }
+    }
+  } catch {}
+})();
+</script>
     </label>
     <label class="block text-sm">
       Points spent

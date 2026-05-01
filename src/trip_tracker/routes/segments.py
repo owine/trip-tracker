@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -471,6 +471,30 @@ async def delete_segment(
     await db.commit()
     await enqueue_meili_sync(request.app.state.settings, entity="segment", entity_id=seg.id)
     return RedirectResponse(f"/trips/{trip_id}", status_code=303)
+
+
+@router.get("/segments/award-programs.json")
+async def award_programs_autocomplete(
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> list[str]:
+    """Return up to 20 most recently used distinct award `program` values for the
+    current user, ordered by recency. Used to populate the form datalist."""
+    program_expr = func.jsonb_extract_path_text(Segment.details, "award", "program")
+    result = await db.execute(
+        select(program_expr)
+        .where(Segment.owner_user_id == user.id)
+        .where(program_expr.is_not(None))
+        .order_by(Segment.created_at.desc())
+        .limit(50)
+    )
+    seen: list[str] = []
+    for value in result.scalars():
+        if value and value not in seen:
+            seen.append(value)
+        if len(seen) >= 20:
+            break
+    return seen
 
 
 async def _load_segment_for_user(
