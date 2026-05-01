@@ -1974,12 +1974,14 @@ def register_globals(templates: Jinja2Templates) -> None:
     templates.env.globals["category_labels"] = CATEGORY_LABELS
 ```
 
-Then in each route module that has `templates = Jinja2Templates(...)` (specifically: `routes/trips.py`, `routes/expenses.py`, `routes/segments.py`, `routes/settings.py`), add immediately after instantiation:
+Then in **every** route module that instantiates `templates = Jinja2Templates(...)`, add immediately after instantiation:
 
 ```python
 from trip_tracker.templating import register_globals
 register_globals(templates)
 ```
+
+Run `grep -rn "Jinja2Templates(" src/trip_tracker/routes/` to find all sites — currently: `admin.py`, `documents.py`, `home.py`, `inbox.py`, `map.py`, `segments.py`, `settings.py`, `trips.py`, plus the new `expenses.py`. Register on **all** of them: any template that ever includes `segments/_row.html` (which now references `minor_digits` as a global) needs the registration, and `_row.html` is referenced from multiple parents (trip detail, inbox previews, map popups). It's cheaper to register globally than to track which partials propagate where.
 
 This means `_row.html`'s `minor_digits(e.currency)` call resolves as a global (NOT a filter), and `_award_badge.html`'s `{{ award.points_spent | k_format }}` resolves as a filter, on every render path consistently.
 
