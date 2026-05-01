@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -27,3 +28,20 @@ class ExpenseForm(BaseModel):
     @classmethod
     def upper(cls, v: str) -> str:
         return v.upper()
+
+    @field_validator(
+        "notes",
+        "segment_id",
+        "document_id",
+        "deposit_minor",
+        "cancellation_deadline",
+        "cancellation_fee_minor",
+        mode="before",
+    )
+    @classmethod
+    def empty_string_to_none(cls, v: Any) -> Any:
+        # Browsers submit unfilled optional fields as `name=` (empty string).
+        # Coerce to None so int/date/UUID validators don't choke on "".
+        if isinstance(v, str) and v == "":
+            return None
+        return v
