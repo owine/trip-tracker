@@ -13,6 +13,16 @@
       </p>
     </div>
   {% endif %}
+  {% if flash and flash.kind == "home_currency_saved" %}
+    <div class="mt-6 rounded border border-green-300 bg-green-50 p-4 dark:border-green-800 dark:bg-green-950">
+      <p class="font-semibold">Home currency updated to {{ flash.code }}</p>
+    </div>
+  {% endif %}
+  {% if flash and flash.kind == "home_currency_invalid" %}
+    <div class="mt-6 rounded border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950">
+      <p class="font-semibold text-red-700 dark:text-red-300">Invalid currency code. Please enter a 3-letter ISO code.</p>
+    </div>
+  {% endif %}
   <section class="mt-8 space-y-3">
     <h2 class="text-xl font-semibold">Calendar feed (subscribable iCalendar)</h2>
     <p class="text-sm text-zinc-600 dark:text-zinc-400">
@@ -38,5 +48,24 @@
         </button>
       </form>
     {% endif %}
+  </section>
+  <section class="mt-8 rounded border p-4">
+    <h2 class="text-xl font-medium">Home currency</h2>
+    <p class="mt-1 text-sm text-zinc-500">
+      Used for trip-total rollups. Changing this only affects new expenses;
+      existing rows keep their original frozen FX.
+    </p>
+    <form method="post"
+          action="/settings/home_currency"
+          class="mt-3 flex items-center gap-3">
+      <select class="rounded border p-2" name="home_currency">
+        {% for code in ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "CNY",
+          "INR", "MXN", "BRL", "SGD", "HKD", "NOK", "SEK", "DKK"] %}
+          <option value="{{ code }}"
+                  {% if user.home_currency == code %}selected{% endif %}>{{ code }}</option>
+        {% endfor %}
+      </select>
+      <button class="rounded bg-zinc-900 px-3 py-1 text-white dark:bg-zinc-100 dark:text-zinc-900">Save</button>
+    </form>
   </section>
 {% endblock %}

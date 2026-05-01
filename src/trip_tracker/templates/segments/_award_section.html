@@ -69,7 +69,7 @@
       <input class="mt-1 w-full rounded border p-2"
              name="award_cash_copay_currency"
              maxlength="3"
-             value="{{ existing_award.cash_copay_currency if existing_award else 'USD' }}">
+             value="{{ existing_award.cash_copay_currency if existing_award else (user.home_currency or 'USD') }}">
     </label>
     <label class="block text-sm">
       Cash equivalent (minor, optional)
@@ -85,7 +85,7 @@
       <input class="mt-1 w-full rounded border p-2"
              name="award_cash_equivalent_currency"
              maxlength="3"
-             value="{{ existing_award.cash_equivalent_currency if existing_award else 'USD' }}">
+             value="{{ existing_award.cash_equivalent_currency if existing_award else (user.home_currency or 'USD') }}">
     </label>
     {% if existing_award %}
       <label class="col-span-2 mt-2 text-sm text-red-600">

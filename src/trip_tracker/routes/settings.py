@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,4 +66,24 @@ async def regenerate_ics_token(
             "kind": "ics_generated",
             "url": feed_url,
         }
+    return RedirectResponse("/settings", status_code=303)
+
+
+@router.post("/settings/home_currency")
+async def update_home_currency(
+    request: Request,
+    home_currency: str = Form(...),
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> Response:
+    code = home_currency.strip().upper()
+    if len(code) != 3 or not code.isalpha():
+        if "session" in request.scope:
+            request.session["flash"] = {"kind": "home_currency_invalid"}
+        return RedirectResponse("/settings", status_code=303)
+    user.home_currency = code
+    db.add(user)
+    await db.commit()
+    if "session" in request.scope:
+        request.session["flash"] = {"kind": "home_currency_saved", "code": code}
     return RedirectResponse("/settings", status_code=303)
