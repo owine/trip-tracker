@@ -1,40 +1,120 @@
-{# templates/expenses/form.html — Task 6 stub. Task 7 expands this. #}
 {% extends "base.html" %}
 {% block title %}
   {% if edit_id %}
-    Edit
+    Edit expense
   {% else %}
-    New
+    New expense
   {% endif %}
-  expense
+  · trip-tracker
 {% endblock %}
 {% block content %}
-  <h1>
+  <h1 class="text-3xl font-semibold">
     {% if edit_id %}
-      Edit
+      Edit expense
     {% else %}
-      New
+      New expense
     {% endif %}
-    expense
   </h1>
-  {% if errors._form %}<p class="error">{{ errors._form }}</p>{% endif %}
+  {% if errors._form %}<p class="mt-2 text-red-600">{{ errors._form }}</p>{% endif %}
   <form method="post"
-        action="{% if edit_id %}/expenses/{{ edit_id }}{% else %}/trips/{{ trip_id }}/expenses{% endif %}">
+        action="{% if edit_id %}/expenses/{{ edit_id }}{% else %}/trips/{{ trip_id }}/expenses{% endif %}"
+        class="mt-6 space-y-4">
     <input type="hidden"
            name="home_currency_at_load"
            value="{{ home_currency }}">
-    <input name="amount_minor" value="{{ values.get('amount_minor', '') }}">
-    <input name="currency" value="{{ values.get('currency', '') }}">
-    <input name="incurred_on"
-           type="date"
-           value="{{ values.get('incurred_on', '') }}">
-    <select name="category">
-      {% for cat, label in category_labels.items() %}<option value="{{ cat.value }}">{{ label }}</option>{% endfor %}
-    </select>
-    <select name="status">
-      <option value="paid">Paid</option>
-      <option value="pending">Pending</option>
-    </select>
-    <button type="submit">Save</button>
+    <div class="grid grid-cols-2 gap-3">
+      <label class="block text-sm">
+        Amount (minor units)
+        <input class="mt-1 w-full rounded border p-2"
+               name="amount_minor"
+               type="number"
+               min="0"
+               required
+               value="{{ values.get('amount_minor', '') }}">
+        {% if errors.amount_minor %}<span class="text-red-600">{{ errors.amount_minor }}</span>{% endif %}
+      </label>
+      <label class="block text-sm">
+        Currency
+        <input class="mt-1 w-full rounded border p-2"
+               name="currency"
+               maxlength="3"
+               required
+               value="{{ values.get('currency', '') }}"
+               list="currency-codes">
+        <datalist id="currency-codes">
+          <option value="USD"></option>
+          <option value="EUR"></option>
+          <option value="GBP"></option>
+          <option value="JPY"></option>
+          <option value="CAD"></option>
+          <option value="AUD"></option>
+          <option value="CHF"></option>
+          <option value="CNY"></option>
+        </datalist>
+      </label>
+      <label class="block text-sm">
+        Date
+        <input class="mt-1 w-full rounded border p-2"
+               name="incurred_on"
+               type="date"
+               required
+               value="{{ values.get('incurred_on', '') }}">
+      </label>
+      <label class="block text-sm">
+        Category
+        <select class="mt-1 w-full rounded border p-2" name="category" required>
+          {% for cat, label in category_labels.items() %}
+            <option value="{{ cat.value }}"
+                    {% if values.get('category') == cat.value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="block text-sm">
+        Status
+        <select class="mt-1 w-full rounded border p-2" name="status">
+          <option value="paid"
+                  {% if values.get('status', 'paid') == 'paid' %}selected{% endif %}>Paid</option>
+          <option value="pending"
+                  {% if values.get('status') == 'pending' %}selected{% endif %}>Pending</option>
+        </select>
+      </label>
+    </div>
+    <label class="block text-sm">
+      Notes
+      <textarea class="mt-1 w-full rounded border p-2" name="notes" rows="2">{{ values.get('notes', '') }}</textarea>
+    </label>
+    <details class="rounded border p-3 text-sm">
+      <summary class="cursor-pointer font-medium">Has cancellation policy / deposit?</summary>
+      <div class="mt-2 grid grid-cols-3 gap-3">
+        <label>
+          Deposit (minor)
+          <input class="mt-1 w-full rounded border p-2"
+                 name="deposit_minor"
+                 type="number"
+                 min="0"
+                 value="{{ values.get('deposit_minor', '') }}">
+        </label>
+        <label>
+          Cancellation deadline
+          <input class="mt-1 w-full rounded border p-2"
+                 name="cancellation_deadline"
+                 type="date"
+                 value="{{ values.get('cancellation_deadline', '') }}">
+        </label>
+        <label>
+          Cancellation fee (minor)
+          <input class="mt-1 w-full rounded border p-2"
+                 name="cancellation_fee_minor"
+                 type="number"
+                 min="0"
+                 value="{{ values.get('cancellation_fee_minor', '') }}">
+        </label>
+      </div>
+    </details>
+    <div class="flex gap-3">
+      <button class="rounded bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900"
+              type="submit">Save expense</button>
+      <a href="/trips/{{ trip_id }}" class="rounded border px-4 py-2">Cancel</a>
+    </div>
   </form>
 {% endblock %}
