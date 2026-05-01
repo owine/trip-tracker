@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Map · trip-tracker{% endblock %}
+{% block head_extra %}
+  {% include "map/_leaflet_head.html" %}
+  <style>#map { width: 100%; height: calc(100vh - 4rem); }</style>
+{% endblock %}
+{% block content %}
+  <div id="map"></div>
+  <script id="map-data" type="application/json">{{ map_data_json | safe }}</script>
+  <script>
+    (function () {
+      const data = JSON.parse(document.getElementById('map-data').textContent);
+      const map = L.map('map', { worldCopyJump: true }).setView([20, 0], 2);
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · '
+                   + 'Geocoding © <a href="https://www.geonames.org/">GeoNames</a> (CC BY 4.0)',
+        maxZoom: 19,
+      }).addTo(map);
+
+      data.markers.forEach(m => {
+        L.circleMarker([m.lat, m.lon], {
+          radius: 5, color: m.color, fillColor: m.color, fillOpacity: 0.8,
+          weight: 1.5,
+        }).bindPopup(
+          `<strong>${escapeHtml(m.trip_title)}</strong><br>`
+          + `<a href="/trips/${m.trip_id}">View trip</a>`
+        ).addTo(map);
+      });
+
+      data.arcs.forEach(a => {
+        L.polyline(a.points, { color: a.color, weight: 2, opacity: 0.7 }).addTo(map);
+      });
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({
+          '&': '&amp;', '<': '&lt;', '>': '&gt;',
+          '"': '&quot;', "'": '&#39;',
+        }[c]));
+      }
+    })();
+  </script>
+{% endblock %}
