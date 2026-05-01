@@ -25,12 +25,14 @@ from trip_tracker.models.expense import Expense
 from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 from trip_tracker.schemas.expense_forms import ExpenseForm
+from trip_tracker.templating import register_globals
 
 router = APIRouter(tags=["expenses"])
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+register_globals(templates)
 
 
 async def _redis(settings: Settings = Depends(get_settings)) -> AsyncRedis:  # noqa: B008

@@ -31,11 +31,13 @@ from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
 from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
+from trip_tracker.templating import register_globals
 
 router = APIRouter()
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+register_globals(templates)
 
 
 def _localize_dt(dt: datetime, tz: str = "UTC", fmt: str = "%Y-%m-%d %H:%M") -> str:

@@ -29,6 +29,7 @@ from trip_tracker.models.trip import Trip
 from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 from trip_tracker.parsers.enrich import get_airport, haversine_km
+from trip_tracker.templating import register_globals
 from trip_tracker.weather.cache import get_cached
 from trip_tracker.weather.client import Forecast
 
@@ -36,6 +37,7 @@ router = APIRouter(tags=["map"])
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+register_globals(templates)
 
 
 # Color palette for trip-color cycling (lifetime view)

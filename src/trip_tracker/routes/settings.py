@@ -14,11 +14,13 @@ from trip_tracker.config import Settings
 from trip_tracker.db import get_session
 from trip_tracker.ics.tokens import generate_token
 from trip_tracker.models.user import User
+from trip_tracker.templating import register_globals
 
 router = APIRouter(tags=["settings"])
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+register_globals(templates)
 
 
 @router.get("/settings", response_class=HTMLResponse)

@@ -1,0 +1,14 @@
+{# Award badge. Caller provides `award` (dict|None). #}
+{% if award %}
+  <span class="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">
+    &#9992; {{ award.points_spent | k_format }} {{ award.program | program_short }}
+    {% if award.cash_copay_minor and award.cash_copay_minor > 0 %}
+      + {{ award.cash_copay_currency }}
+      {{ "%.2f" | format(award.cash_copay_minor / 10**minor_digits(award.cash_copay_currency) ) }}
+    {% endif %}
+    {% if award.cash_equivalent_minor %}
+      — saved ~{{ award.cash_equivalent_currency }}
+      {{ "%.2f" | format((award.cash_equivalent_minor - (award.cash_copay_minor or 0) ) / 10**minor_digits(award.cash_equivalent_currency)) }}
+    {% endif %}
+  </span>
+{% endif %}

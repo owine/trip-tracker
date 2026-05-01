@@ -24,6 +24,7 @@ from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 from trip_tracker.schemas.trip_forms import TripForm
 from trip_tracker.search.sync import enqueue_meili_sync
+from trip_tracker.templating import register_globals
 
 router = APIRouter(prefix="/trips", tags=["trips"])
 logger = logging.getLogger(__name__)
@@ -35,6 +36,7 @@ async def _redis(settings: Settings = Depends(get_settings)) -> AsyncRedis:  # n
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+register_globals(templates)
 
 
 def _localize_dt(dt: datetime, tz: str, fmt: str = "%Y-%m-%d %H:%M") -> str:

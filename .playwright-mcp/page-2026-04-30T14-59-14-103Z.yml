@@ -1,0 +1,6 @@
+- main [ref=e2]:
+  - heading "trip-tracker" [level=1] [ref=e3]
+  - paragraph [ref=e4]:
+    - link "Sign in" [ref=e5] [cursor=pointer]:
+      - /url: /auth/login
+    - text: to see your trips.

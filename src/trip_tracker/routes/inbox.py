@@ -26,10 +26,12 @@ from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.user import User
 from trip_tracker.search.sync import enqueue_meili_sync
+from trip_tracker.templating import register_globals
 
 router = APIRouter(prefix="/inbox", tags=["inbox"])
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+register_globals(templates)
 
 
 def _user_owned_filter(user: User) -> sa.ColumnElement[bool]:

@@ -1,0 +1,22 @@
+- generic [active] [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e3]:
+      - link "trip-tracker" [ref=e4] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e5]:
+        - link "Trips" [ref=e6] [cursor=pointer]:
+          - /url: /trips
+        - link "Inbox" [ref=e7] [cursor=pointer]:
+          - /url: /inbox
+        - link "Admin" [ref=e8] [cursor=pointer]:
+          - /url: /admin/aliases
+        - link "Settings" [ref=e9] [cursor=pointer]:
+          - /url: /settings
+        - link "Sign out" [ref=e10] [cursor=pointer]:
+          - /url: /auth/logout
+  - main [ref=e11]:
+    - heading "Settings" [level=1] [ref=e12]
+    - generic [ref=e13]:
+      - heading "Calendar feed (subscribable iCalendar)" [level=2] [ref=e14]
+      - paragraph [ref=e15]: Generate a token-signed URL to subscribe your phone or computer's calendar app to your trips. The URL contains a secret token; treat it like a password.
+      - button "Generate calendar feed URL" [ref=e17]

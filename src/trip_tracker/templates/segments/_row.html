@@ -4,6 +4,8 @@
     <span class="rounded bg-zinc-200 px-1.5 py-0.5 text-xs uppercase dark:bg-zinc-800">{{ s.type }}</span>
     <span class="ml-2 font-medium">{{ s.provider or "—" }}</span>
     {% if s.confirmation_number %}<span class="ml-2 text-zinc-500">{{ s.confirmation_number }}</span>{% endif %}
+    {% set award = (s.details or {}).get("award") %}
+    {% include "segments/_award_badge.html" %}
     <div class="text-sm text-zinc-500">
       {{ s.start_at | localize_dt(s.start_tz) }} {{ s.start_tz }}
       {% if s.start_location %}· {{ s.start_location.get("name") or s.start_location.get("city") }}{% endif %}

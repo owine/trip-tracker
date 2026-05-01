@@ -1,0 +1,43 @@
+- generic [active] [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e3]:
+      - link "trip-tracker" [ref=e4] [cursor=pointer]:
+        - /url: /
+      - generic [ref=e5]:
+        - link "Trips" [ref=e6] [cursor=pointer]:
+          - /url: /trips
+        - link "Inbox" [ref=e7] [cursor=pointer]:
+          - /url: /inbox
+        - link "Admin" [ref=e8] [cursor=pointer]:
+          - /url: /admin/aliases
+        - link "Sign out" [ref=e9] [cursor=pointer]:
+          - /url: /auth/logout
+  - main [ref=e10]:
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - heading "Paris vacation" [level=1] [ref=e13]
+        - paragraph [ref=e14]: 2026-06-01 – 2026-06-07
+      - generic [ref=e15]:
+        - link "📄 Documents" [ref=e16] [cursor=pointer]:
+          - /url: /trips/c557aa0a-44ed-4fe0-8a98-2a8c62388bb5/documents
+        - link "Edit" [ref=e17] [cursor=pointer]:
+          - /url: /trips/c557aa0a-44ed-4fe0-8a98-2a8c62388bb5/edit
+        - button "Delete" [ref=e19]
+    - list [ref=e20]:
+      - listitem [ref=e21]:
+        - generic [ref=e22]:
+          - text: flight Air France K8YH3M
+          - generic [ref=e23]: 2026-06-01 13:00 UTC · New York → Paris
+        - generic [ref=e24]:
+          - link "Edit" [ref=e25] [cursor=pointer]:
+            - /url: /trips/c557aa0a-44ed-4fe0-8a98-2a8c62388bb5/segments/97ff9542-c8dd-416f-a6ee-0d46cdd2e322/edit
+          - button "Delete" [ref=e27]
+        - list [ref=e28]:
+          - listitem [ref=e29]:
+            - text: 📄
+            - link "Itinerary_K8YH3M_2026.pdf" [ref=e30] [cursor=pointer]:
+              - /url: /documents/0dea5b35-734b-4a3c-a03e-fd83e260d405/download
+            - text: · ✅
+        - generic [ref=e31]:
+          - button "Choose File" [ref=e32]
+          - button "Attach PDF" [ref=e33]

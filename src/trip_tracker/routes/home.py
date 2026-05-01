@@ -10,12 +10,14 @@ from fastapi.templating import Jinja2Templates
 
 from trip_tracker.auth.deps import current_user
 from trip_tracker.models.user import User
+from trip_tracker.templating import register_globals
 
 router = APIRouter()
 
 # Templates path computed from __file__ for CWD-independence.
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+register_globals(templates)
 
 
 @router.get("/", response_class=HTMLResponse)

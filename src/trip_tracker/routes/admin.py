@@ -21,10 +21,12 @@ from trip_tracker.db import get_session
 from trip_tracker.models.forwarding_alias import ForwardingAlias
 from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.user import User
+from trip_tracker.templating import register_globals
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+register_globals(templates)
 
 
 @router.get("/aliases", response_class=HTMLResponse)

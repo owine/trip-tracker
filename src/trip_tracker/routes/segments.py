@@ -35,10 +35,12 @@ from trip_tracker.schemas.segment_forms import (
     _SegmentBase,
 )
 from trip_tracker.search.sync import enqueue_meili_sync
+from trip_tracker.templating import register_globals
 
 router = APIRouter(tags=["segments"])
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
+register_globals(templates)
 
 # Pre-load IANA tz list once.
 _TZ_FIXTURE = Path(__file__).parent.parent / "static" / "iana_timezones.json"
