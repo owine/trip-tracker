@@ -77,7 +77,12 @@ def _apply_award_from_form(seg: Segment, form: dict[str, str]) -> dict[str, str]
             else None,
             cash_equivalent_currency=form.get("award_cash_equivalent_currency") or None,
         )
-    except (ValidationError, ValueError) as exc:
+    except ValidationError as exc:
+        first = exc.errors()[0]
+        loc = first.get("loc") or ()
+        field = ".".join(str(p) for p in loc) if loc else "award"
+        return {"award": f"{field}: {first['msg']}"}
+    except ValueError as exc:
         return {"award": str(exc)}
     details = dict(seg.details or {})
     details["award"] = award.model_dump(exclude_none=True)

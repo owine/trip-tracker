@@ -220,7 +220,8 @@ async def test_award_zero_points_rejected_with_form_error(
             follow_redirects=False,
         )
     assert r.status_code == 200
-    assert "award" in r.text  # Error key in template
+    assert "points_spent" in r.text  # Field name surfaced in error
+    assert "https://errors.pydantic.dev" not in r.text  # Pydantic doc URL not leaked
 
 
 @pytest.mark.asyncio
