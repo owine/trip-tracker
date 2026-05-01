@@ -20,6 +20,7 @@ from trip_tracker.routes.admin import router as admin_router
 from trip_tracker.routes.documents import router as documents_router
 from trip_tracker.routes.health import router as health_router
 from trip_tracker.routes.home import router as home_router
+from trip_tracker.routes.ics import router as ics_router
 from trip_tracker.routes.inbox import router as inbox_router
 from trip_tracker.routes.segments import router as segments_router
 from trip_tracker.routes.trips import router as trips_router
@@ -74,5 +75,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin_router)
     app.include_router(search_router)
     app.include_router(documents_router)
+    app.include_router(ics_router)
 
     return app
