@@ -16,7 +16,7 @@ from trip_tracker.auth.deps import get_settings
 from trip_tracker.config import Settings
 from trip_tracker.db import get_session
 from trip_tracker.ics.render import render_calendar
-from trip_tracker.ics.tokens import resolve_token
+from trip_tracker.ics.tokens import hash_token, resolve_token
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip_traveler import TripTraveler
 
@@ -48,7 +48,16 @@ async def ics_feed(
     )
 
     body = render_calendar(user=user, segments=segments, base_url=str(settings.base_url))
-    _logger.info("ics_feed served: user_id=%s n_segments=%d", user.id, len(segments))
+    # Log first 6 hex chars of the hash (NOT the plaintext token) so suspicious
+    # spikes from a particular subscribed client surface in logs without
+    # leaking enough to recover the secret. Spec §7.1.
+    token_prefix = hash_token(token)[:6]
+    _logger.info(
+        "ics_feed served: token_prefix=%s user_id=%s n_segments=%d",
+        token_prefix,
+        user.id,
+        len(segments),
+    )
     return Response(
         content=body,
         media_type="text/calendar; charset=utf-8",
