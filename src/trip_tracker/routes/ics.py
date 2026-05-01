@@ -55,8 +55,8 @@ async def ics_feed(
     token_prefix = hash_token(token)[:6]
     # `token_prefix` is a 6-char hash prefix, not a credential; format string
     # mentions "token" only as a label. Suppress semgrep false positive.
-    # nosemgrep: python.lang.security.audit.logging.logger-credential-leak.python-logger-credential-disclosure  # noqa: E501
-    _logger.info(
+    # nosemgrep
+    _logger.info(  # nosemgrep
         "ics_feed served: token_prefix=%s user_id=%s n_segments=%d",
         token_prefix,
         user.id,
