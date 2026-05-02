@@ -45,7 +45,10 @@ _CONFIRMATION = re.compile(r"(?:confirmation|booking)[:\s]+([A-Z0-9]{6,12})", re
 class ChaseTravelParser(VendorParser):
     name: ClassVar[str] = "chase_travel"
     sender_patterns: ClassVar[list[re.Pattern[str]]] = [
-        re.compile(r"@chasetravel\.com$", re.I),
+        # Chase Travel apex + arbitrary subdomains.
+        re.compile(r"@([\w.-]+\.)?chasetravel\.com$", re.I),
+        # Chase parent domain — narrower (only chase-travel-flavored locals
+        # to avoid catching credit-card statement mail).
         re.compile(r"chase[._-]travel.*@chase\.com$", re.I),
         re.compile(r"noreply@chase\.com$", re.I),  # generic fallback if Chase Travel uses this
     ]

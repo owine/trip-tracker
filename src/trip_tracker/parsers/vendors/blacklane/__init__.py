@@ -19,7 +19,10 @@ _DATETIME = re.compile(r"(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})")
 class BlacklaneParser(VendorParser):
     name: ClassVar[str] = "blacklane"
     sender_patterns: ClassVar[list[re.Pattern[str]]] = [
-        re.compile(r"@blacklane\.com$", re.I),
+        # Apex + subdomains. No documented suffix-branded label variants for
+        # Blacklane currently, but matching subdomains future-proofs against
+        # `notifications@email.blacklane.com`-style transactional streams.
+        re.compile(r"@([\w.-]+\.)?blacklane\.com$", re.I),
     ]
 
     def parse(self, msg: EmailMessage) -> ParseResult:

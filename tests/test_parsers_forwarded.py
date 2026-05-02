@@ -138,3 +138,41 @@ Body...
 """
     msg = _msg("user@personal.com", body)
     assert effective_from(msg) == "noreply@airfrance.com"
+
+
+def test_apple_mail_forward_with_quote_prefix() -> None:
+    """Apple Mail prefixes every line of a forwarded message with `> ` when
+    the user types text above the forward (the most common Apple Mail forward
+    style). Without `>`-stripping in `_INNER_FROM`, the inner From: header
+    becomes invisible to the unwrap helper and we fall back to the outer
+    user address — defeating vendor matching for the entire forwarded email.
+    """
+    body = """\
+OW
+
+> Begin forwarded message:
+>
+> From: Air France <admin@ticket-airfrance.com>
+> Subject: Dear Oliver Wine: Ticket and information for your trip
+> Date: April 9, 2026 at 2:58:01 PM CDT
+> To: ow@mroliverwine.com
+>
+> Booking details follow...
+"""
+    msg = _msg("user@personal.com", body)
+    assert effective_from(msg) == "admin@ticket-airfrance.com"
+
+
+def test_double_quoted_forward_re_forward() -> None:
+    """A re-forward (forwarded twice) prefixes inner lines with `>>` or
+    mixed-depth quoting. The unwrap helper should still find the original
+    inner From:, not get confused by the depth."""
+    body = """\
+>> Begin forwarded message:
+>>
+>> From: Eurostar <booking@eurostar.com>
+>> Subject: Your booking
+>> Date: Apr 1
+"""
+    msg = _msg("user@personal.com", body)
+    assert effective_from(msg) == "booking@eurostar.com"
