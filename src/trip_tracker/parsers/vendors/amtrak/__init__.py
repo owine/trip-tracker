@@ -22,7 +22,11 @@ _CONFIRMATION = re.compile(r"confirmation[:\s]+([A-Z0-9]{6,12})", re.I)
 class AmtrakParser(VendorParser):
     name: ClassVar[str] = "amtrak"
     sender_patterns: ClassVar[list[re.Pattern[str]]] = [
-        re.compile(r"@amtrak\.com$", re.I),
+        # Apex + arbitrary-depth subdomains. Amtrak transactional mail comes
+        # from `etickets@amtrak.com` (apex), `confirmation@email.amtrak.com`
+        # (subdomain), and `notifications@points.email.amtrak.com` (Guest
+        # Rewards). The `[\w.-]+\.` prefix matches any depth of subdomain.
+        re.compile(r"@([\w.-]+\.)?amtrak\.com$", re.I),
     ]
 
     def parse(self, msg: EmailMessage) -> ParseResult:

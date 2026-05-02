@@ -35,9 +35,16 @@ _FORWARD_MARKERS = re.compile(
     re.IGNORECASE,
 )
 
-# `From:` header inside the forwarded section. Allows leading whitespace
-# (some clients indent forwarded headers) and captures up to end of line.
-_INNER_FROM = re.compile(r"^\s*From:\s*(.+?)\s*$", re.MULTILINE | re.IGNORECASE)
+# `From:` header inside the forwarded section. Allows:
+#   - leading whitespace (some clients indent forwarded headers)
+#   - leading `>` quoting prefix(es) — Apple Mail prefixes every line of the
+#     forwarded body with `> ` when the user types text above the forward,
+#     producing lines like `> From: vendor@example.com`. Multiple `>>` levels
+#     occur when forwarding an already-forwarded message.
+_INNER_FROM = re.compile(
+    r"^[\s>]*From:\s*(.+?)\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
 
 
 def effective_from(msg: EmailMessage) -> str:

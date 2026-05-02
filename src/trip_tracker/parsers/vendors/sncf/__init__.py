@@ -22,7 +22,19 @@ _CONFIRMATION = re.compile(r"confirmation[:\s]+([A-Z0-9]{6,12})", re.I)
 class SncfParser(VendorParser):
     name: ClassVar[str] = "sncf"
     sender_patterns: ClassVar[list[re.Pattern[str]]] = [
-        re.compile(r"@(sncf|tgv-europe|oui)\.com$", re.I),
+        # SNCF apex + arbitrary subdomains + brand-suffixed labels:
+        #   - `noreply@sncf.com` (apex)
+        #   - `info@email.sncf.com` (subdomain)
+        #   - `noreply@sncf-connect.com` (rebrand of OUI.sncf, suffix-branded)
+        #   - `info@sncf-voyageurs.com` (corporate brand, suffix-branded)
+        # Both `.com` and `.fr` because SNCF runs FR-only mail streams too.
+        re.compile(r"@([\w.-]+\.)?sncf(-\w+)?\.(com|fr)$", re.I),
+        # The `.sncf` TLD itself (real! ICANN-delegated brand TLD). Used by
+        # `e-voyages.sncf` and other product brands. Matching the TLD as a
+        # suffix catches any sub-label.
+        re.compile(r"@[\w.-]+\.sncf$", re.I),
+        # Legacy product brands (pre-rebrand).
+        re.compile(r"@(tgv-europe|oui)\.com$", re.I),
     ]
 
     def parse(self, msg: EmailMessage) -> ParseResult:

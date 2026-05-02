@@ -20,8 +20,16 @@ _CONFIRMATION = re.compile(r"\b(?:confirmation|reservation|réservation)[\s:]+([
 class AirFranceParser(VendorParser):
     name: ClassVar[str] = "air_france"
     sender_patterns: ClassVar[list[re.Pattern[str]]] = [
+        # Direct corporate domain.
         re.compile(r"@airfrance\.(fr|com)$", re.I),
         re.compile(r"flyingblue@airfrance\.com$", re.I),
+        # AF transactional/marketing subdomains. AF sends booking
+        # confirmations, ticket attachments, and itinerary changes from
+        # `*-airfrance.{com,fr}` (e.g. `admin@ticket-airfrance.com`,
+        # `noreply@info-airfrance.fr`, `mail.ticket-airfrance.com`). Match
+        # any host whose label ends in `-airfrance` to cover the family
+        # without listing each one explicitly.
+        re.compile(r"@[\w.-]*-airfrance\.(fr|com)$", re.I),
     ]
 
     def parse(self, msg: EmailMessage) -> ParseResult:

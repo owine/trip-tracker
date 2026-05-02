@@ -74,6 +74,50 @@ def test_at_least_one_fixture_pair_exists() -> None:
     assert len(_fixture_pairs()) >= 1
 
 
+@pytest.mark.parametrize(
+    ("address", "expected_vendor"),
+    [
+        # ── Air France ──────────────────────────────────────────────────
+        # Apex (already worked).
+        ("noreply@airfrance.com", "air_france"),
+        ("ticket@airfrance.fr", "air_france"),
+        # Suffix-branded labels — `*-airfrance.{com,fr}`. Real-world AF
+        # transactional senders. Caused the user's forwarded AF tickets to
+        # land in no_segments before this fix.
+        ("admin@ticket-airfrance.com", "air_france"),
+        ("noreply@info-airfrance.fr", "air_france"),
+        # ── Amtrak ──────────────────────────────────────────────────────
+        ("etickets@amtrak.com", "amtrak"),  # apex
+        ("confirmation@email.amtrak.com", "amtrak"),  # subdomain
+        ("notifications@points.email.amtrak.com", "amtrak"),  # nested subdomain
+        # ── SNCF (multi-pattern: apex + .sncf TLD + brand-suffix labels) ─
+        ("noreply@sncf.com", "sncf"),  # apex
+        ("info@email.sncf.com", "sncf"),  # subdomain
+        ("noreply@sncf-connect.com", "sncf"),  # rebrand of OUI.sncf
+        ("info@sncf-voyageurs.com", "sncf"),  # corporate brand
+        ("noreply@e-voyages.sncf", "sncf"),  # the .sncf TLD itself
+        # ── Blacklane ───────────────────────────────────────────────────
+        ("reservations@blacklane.com", "blacklane"),  # apex
+        ("notifications@email.blacklane.com", "blacklane"),  # subdomain
+        # ── Chase Travel ────────────────────────────────────────────────
+        ("noreply@chasetravel.com", "chase_travel"),  # apex
+        ("itinerary@email.chasetravel.com", "chase_travel"),  # subdomain
+    ],
+)
+def test_vendor_sender_patterns_cover_real_world_subdomain_branding(
+    address: str, expected_vendor: str
+) -> None:
+    """Audit sweep: 4 vendor packs originally matched only the apex domain
+    (`@vendor.com$`), missing real-world transactional mail from subdomains
+    (`email.vendor.com`) and brand-suffixed labels (`ticket-vendor.com`).
+    User's forwarded AF email exposed the AF case directly; the rest were
+    swept proactively per the same pattern. SNCF additionally needs the
+    `.sncf` brand TLD and `sncf-connect`/`sncf-voyageurs` rebranded variants.
+    """
+    parser_cls = _find_parser(expected_vendor)
+    assert parser_cls.matches(address), f"{expected_vendor} did not match {address!r}"
+
+
 @pytest.mark.parametrize("parser_cls", get_registry(), ids=lambda c: c.name)
 def test_vendor_returns_empty_on_unmatchable_email(parser_cls: type[VendorParser]) -> None:
     """Each vendor parser returns segments=[], confidence=0.0 when its regexes
