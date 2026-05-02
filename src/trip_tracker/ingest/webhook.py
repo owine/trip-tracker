@@ -22,7 +22,7 @@ from trip_tracker.ingest.hmac_verify import (
     record_nonce,
     verify_signature,
 )
-from trip_tracker.ingest.mime import parse_mime
+from trip_tracker.ingest.mime import ParsedEmail, parse_mime
 from trip_tracker.models.raw_email import RawEmail
 
 router = APIRouter(prefix="/api/ingest", tags=["ingest"])
@@ -44,6 +44,35 @@ async def enqueue_parse(settings: Settings, raw_email_id: uuid.UUID) -> None:
         await q.disconnect()
     except Exception as exc:  # Redis blip shouldn't fail the webhook
         _logger.warning("enqueue_parse failed for %s: %s", raw_email_id, exc)
+
+
+async def _persist_raw_email(
+    db: AsyncSession,
+    body: bytes,
+    parsed: ParsedEmail,
+) -> uuid.UUID | None:
+    """Insert a raw_emails row if Message-ID is new. Returns inserted ID, or None on duplicate.
+
+    Caller is responsible for the surrounding transaction. The single-statement
+    INSERT ... ON CONFLICT DO NOTHING RETURNING id pattern is concurrency-safe
+    under READ COMMITTED.
+    """
+    stmt = (
+        pg_insert(RawEmail)
+        .values(
+            to_address=parsed.to_address,
+            from_address=parsed.from_address,
+            subject=parsed.subject,
+            message_id=parsed.message_id,
+            mime_blob=body,
+            headers=parsed.headers,
+            parse_status="pending",
+        )
+        .on_conflict_do_nothing(index_elements=["message_id"])
+        .returning(RawEmail.id)
+    )
+    result: CursorResult[tuple[()]] = await db.execute(stmt)  # type: ignore[assignment]
+    return result.scalar_one_or_none()
 
 
 def _settings_dep() -> Settings:
@@ -106,30 +135,11 @@ async def ingest_email(
     parsed = parse_mime(body)
 
     # Step 5-6: Single transaction for nonce-insert + raw_emails-insert.
-    new_raw_email_id: uuid.UUID | None = None
     async with db.begin():
         recorded = await record_nonce(db, ts_seconds=ts, nonce=nonce)
         replay = not recorded
-
-        stmt = (
-            pg_insert(RawEmail)
-            .values(
-                to_address=parsed.to_address,
-                from_address=parsed.from_address,
-                subject=parsed.subject,
-                message_id=parsed.message_id,
-                mime_blob=body,
-                headers=parsed.headers,
-                parse_status="pending",
-            )
-            .on_conflict_do_nothing(index_elements=["message_id"])
-            .returning(RawEmail.id)
-        )
-        result: CursorResult[tuple[()]] = await db.execute(stmt)  # type: ignore[assignment]
-        inserted_id = result.scalar_one_or_none()
-        duplicate = inserted_id is None and not replay
-        if inserted_id is not None:
-            new_raw_email_id = inserted_id
+        new_raw_email_id = await _persist_raw_email(db, body, parsed)
+        duplicate = new_raw_email_id is None and not replay
 
     log.info(
         "ingest_webhook",
