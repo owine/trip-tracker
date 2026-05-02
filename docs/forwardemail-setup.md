@@ -50,10 +50,16 @@ https://trips.example.com/api/ingest/forwardemail?token=<TOKEN>&attachments=fals
 - `?token=<TOKEN>` — the value from step 1. FE preserves the URL exactly
   from the DNS TXT record / dashboard alias config, so the secret rides
   through every delivery.
-- `?attachments=false` — strips attachment buffers from FE's payload.
-  trip-tracker does not currently absorb FE attachments into the `documents`
-  store (deferred to a follow-up). Leaving `attachments=true` makes the
-  payload bigger and risks FE's 5-second endpoint timeout.
+- `?attachments=false` — bandwidth optimization. FE's webhook JSON includes
+  attachments **twice** by default: once as base64-encoded multipart sections
+  inside the `raw` MIME blob, and again as pre-decoded buffers in a separate
+  `attachments[]` array. trip-tracker's worker extracts attachments from the
+  `raw` blob (Phase 5 path), so the `attachments[]` array is redundant —
+  setting `attachments=false` removes the duplicate copy and roughly halves
+  the webhook payload size on emails with large PDFs (boarding passes, hotel
+  folios). **No data loss** — attachments still flow through end-to-end via
+  the raw MIME. Recommended to keep this on; helps stay inside FE's 5-second
+  endpoint timeout when the worker is cold.
 
 ### 4. Smoke test
 
@@ -78,7 +84,7 @@ https://trips.example.com/api/ingest/forwardemail?token=<TOKEN>&attachments=fals
 | **400 `missing or empty 'raw' field`** | FE's `?raw=false` querystring filter is on | Remove `?raw=false`. The adapter requires the raw MIME. |
 | **202 but nothing appears in `/inbox`** | Alias mismatch | The forwarded MIME's `To:` local-part doesn't match any `forwarding_aliases.local_part` row. The worker marks the email `no_segments`. Check `/admin/raw-emails`. |
 | **Same email forwarded twice — second is silently ignored** | Working as designed | Dedup is on `Message-ID`. Only the first delivery creates a segment. |
-| **5-second timeout on FE side** | Worker cold-start or large attachment payload | Drop `?attachments=false` if not already; the parser worker runs out-of-band so the adapter response itself shouldn't be slow. |
+| **5-second timeout on FE side** | Webhook payload too large (typically a big PDF attachment doubled by FE's `attachments[]` array) | Add `?attachments=false` to the URL if not already. The parse worker runs out-of-band, so the adapter response itself returns 202 quickly once the row is inserted. |
 
 ## Rotating the token
 
