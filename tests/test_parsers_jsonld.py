@@ -161,6 +161,30 @@ def test_pricing_extracted_from_food_reservation() -> None:
     assert (seg.details or {}).get("price_currency") == "USD"
 
 
+def test_lowercase_price_currency_normalizes_to_uppercase() -> None:
+    """priceCurrency must be uppercased at extraction so Frankfurter and
+    the Expense.currency column never see lowercase. Real-world emails
+    occasionally emit lowercase ISO codes."""
+    from email.message import EmailMessage
+
+    from trip_tracker.parsers.jsonld import parse_jsonld
+
+    msg = EmailMessage()
+    msg["From"] = "x@y.com"
+    msg["Subject"] = "Test"
+    msg["Content-Type"] = "text/html"
+    msg.set_payload(
+        '<html><script type="application/ld+json">'
+        '{"@context": "https://schema.org", "@type": "FoodEstablishmentReservation",'
+        ' "reservationNumber": "X", "startTime": "2026-07-01T19:00:00-04:00",'
+        ' "totalPrice": "50.00", "priceCurrency": "usd",'
+        ' "reservationFor": {"@type": "FoodEstablishment", "name": "Café"}}'
+        "</script></html>"
+    )
+    result = parse_jsonld(msg)
+    assert (result.segments[0].details or {}).get("price_currency") == "USD"
+
+
 def test_passengers_extracted_from_food_reservation() -> None:
     """underName as a list of Person → details.passengers as flat name list."""
     result = parse_jsonld(_msg("jsonld_food.eml"))

@@ -419,3 +419,117 @@ async def test_confirm_no_expense_for_cancelled_segment(
         .all()
     )
     assert expenses == []
+
+
+@pytest.mark.asyncio
+async def test_confirm_skips_expense_when_fx_fails(
+    db_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: AsyncSession,
+) -> None:
+    """If freeze_fx raises FxError (e.g. Frankfurter outage), confirm still
+    returns 303 and no Expense is created — the user can manually add it later.
+
+    Critical: a Frankfurter outage must NOT block /inbox approvals.
+    """
+    from trip_tracker.expenses.fx import FxError
+
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+
+    user, raw = await _setup_user_with_raw(db_session, parse_status="review")
+    user.home_currency = "USD"
+    await db_session.flush()
+
+    # EUR (non-USD) so freeze_fx actually calls get_rate instead of short-circuiting.
+    await _setup_confirmed_segment(
+        db_session,
+        user,
+        raw,
+        details={"total_price": 150.00, "price_currency": "EUR"},
+    )
+
+    _mock_redis_for_inbox(monkeypatch)
+    # Patch the get_rate binding in freeze.py (where it's imported and used),
+    # not in fx.py (where it's defined). The agent's first test patches the
+    # latter and gets away with it because USD→USD short-circuits before
+    # get_rate is called; non-USD tests must patch at the use site.
+    with patch(
+        "trip_tracker.expenses.freeze.get_rate",
+        new=AsyncMock(side_effect=FxError("frankfurter timeout")),
+    ):
+        app = create_app(settings=settings)
+        transport = httpx.ASGITransport(app=app)
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=transport,
+                base_url="http://test",
+                cookies=_cookie(user, settings),
+            ) as c,
+        ):
+            r = await c.post(f"/inbox/{raw.id}/confirm", follow_redirects=False)
+
+    # Confirm still succeeds; expense silently skipped.
+    assert r.status_code == 303
+    expenses = (
+        (await db_session.execute(select(Expense).where(Expense.owner_user_id == user.id)))
+        .scalars()
+        .all()
+    )
+    assert expenses == []
+
+
+@pytest.mark.asyncio
+async def test_confirm_uses_booking_time_for_incurred_on(
+    db_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: AsyncSession,
+) -> None:
+    """Auto-imported expenses record `incurred_on` as the booking date (when
+    the user actually paid), not the travel date. The JSON-LD parser sets
+    `details.booking_time` from schema.org `bookingTime`."""
+    from datetime import date as _date
+
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+
+    user, raw = await _setup_user_with_raw(db_session, parse_status="review")
+    user.home_currency = "USD"
+    await db_session.flush()
+
+    # Travel date: June 1 (set by _setup_confirmed_segment); booking date: April 15.
+    # incurred_on must be April 15 — what the user actually paid on.
+    await _setup_confirmed_segment(
+        db_session,
+        user,
+        raw,
+        details={
+            "total_price": 250.00,
+            "price_currency": "USD",
+            "booking_time": "2026-04-15T10:23:00+00:00",
+        },
+    )
+
+    _mock_redis_for_inbox(monkeypatch)
+    with patch(
+        "trip_tracker.expenses.fx.get_rate",
+        new=AsyncMock(return_value=Decimal("1")),
+    ):
+        app = create_app(settings=settings)
+        transport = httpx.ASGITransport(app=app)
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=transport,
+                base_url="http://test",
+                cookies=_cookie(user, settings),
+            ) as c,
+        ):
+            r = await c.post(f"/inbox/{raw.id}/confirm", follow_redirects=False)
+
+    assert r.status_code == 303
+    expense = (
+        await db_session.execute(select(Expense).where(Expense.owner_user_id == user.id))
+    ).scalar_one()
+    assert expense.incurred_on == _date(2026, 4, 15)

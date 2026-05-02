@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import date, datetime
 from pathlib import Path
 
 import sqlalchemy as sa
@@ -169,6 +170,7 @@ async def _maybe_create_expense(
         return
 
     category = _SEGMENT_TYPE_TO_CATEGORY.get(seg.type, Category.OTHER)
+    incurred_on = _incurred_on(details, seg.start_at)
 
     exp = Expense(
         trip_id=seg.trip_id,
@@ -180,10 +182,32 @@ async def _maybe_create_expense(
         amount_home_minor=amount_home_minor,
         home_currency=user.home_currency,
         category=category.value,
-        incurred_on=seg.start_at.date(),
+        incurred_on=incurred_on,
         status="paid",
     )
     db.add(exp)
+
+
+def _incurred_on(details: dict[str, object], start_at: datetime) -> date:
+    """Date the expense was incurred — booking_time if known, else travel date.
+
+    `details.booking_time` (set by the JSON-LD parser from schema.org
+    `bookingTime`) is when the user actually paid for the reservation.
+    `start_at` is when they travel — useful as a fallback because emails
+    often omit bookingTime, but semantically the booking date is what
+    `incurred_on` is supposed to mean.
+
+    Malformed booking_time strings fall back to start_at silently rather
+    than blocking expense creation; the worst case is "wrong by a few weeks"
+    instead of "no expense at all", which the user can fix by editing.
+    """
+    booking_iso = details.get("booking_time")
+    if isinstance(booking_iso, str):
+        try:
+            return datetime.fromisoformat(booking_iso).date()
+        except ValueError:
+            pass
+    return start_at.date()
 
 
 @router.post("/{raw_id}/confirm", response_model=None)

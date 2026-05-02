@@ -101,6 +101,12 @@ def _extract_price(d: dict[str, Any]) -> dict[str, Any]:
     `totalPrice` can be a number, a numeric string, or a PriceSpecification
     object ({"price": ..., "priceCurrency": ...}). Coerce to float; on
     coercion failure, drop price (still keep currency if it was unambiguous).
+
+    `priceCurrency` is normalized to uppercase ISO 4217. Real-world emails
+    are inconsistent (some emit `"usd"`, some `"USD"`); Frankfurter and our
+    Expense.currency column both expect uppercase. Fix once at extraction so
+    every downstream consumer (expense auto-import, FX, totals, etc.) sees a
+    single canonical shape.
     """
     out: dict[str, Any] = {}
     raw = d.get("totalPrice")
@@ -111,8 +117,8 @@ def _extract_price(d: dict[str, Any]) -> dict[str, Any]:
     if raw is not None:
         with contextlib.suppress(TypeError, ValueError):
             out["total_price"] = float(raw)
-    if currency:
-        out["price_currency"] = currency
+    if isinstance(currency, str) and currency:
+        out["price_currency"] = currency.upper()
     return out
 
 
