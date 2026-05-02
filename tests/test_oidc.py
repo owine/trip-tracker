@@ -59,11 +59,13 @@ def test_build_authorize_url_includes_pkce() -> None:
 @pytest.mark.asyncio
 async def test_exchange_code_returns_claims() -> None:
     """Use a freshly generated RSA key, sign an ID token, and verify the client validates it."""
-    # Use authlib.jose.RSAKey (modern import path; rfc7517 sub-import removed in 1.x)
-    from authlib.jose import RSAKey, jwt
+    # joserfc replaces authlib.jose (deprecated, slated for removal in Authlib 2.0).
+    from joserfc import jwt
+    from joserfc.jwk import RSAKey
 
-    key = RSAKey.generate_key(2048, is_private=True)
-    public_jwks = {"keys": [key.as_dict(is_private=False)]}
+    key = RSAKey.generate_key(2048)
+    key.ensure_kid()
+    public_jwks = {"keys": [key.as_dict(private=False)]}
 
     id_token_payload = {
         "iss": ISSUER,
@@ -75,7 +77,8 @@ async def test_exchange_code_returns_claims() -> None:
         "preferred_username": "oliver",
         "groups": ["trip-tracker:admin"],
     }
-    id_token = jwt.encode({"alg": "RS256", "kid": key.kid}, id_token_payload, key).decode()
+    # joserfc.jwt.encode returns str directly (authlib returned bytes).
+    id_token = jwt.encode({"alg": "RS256", "kid": key.kid}, id_token_payload, key)
 
     with respx.mock(assert_all_called=False) as router:
         router.post(DISCOVERY["token_endpoint"]).mock(

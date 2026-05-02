@@ -5,7 +5,8 @@ from __future__ import annotations
 import httpx
 import pytest
 import respx
-from authlib.jose import RSAKey, jwt
+from joserfc import jwt
+from joserfc.jwk import RSAKey
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,9 +39,11 @@ def signed_id_token(monkeypatch: pytest.MonkeyPatch) -> tuple[str, dict]:  # typ
         "preferred_username": "oliver",
         "groups": [],
     }
-    key = RSAKey.generate_key(2048, is_private=True)
-    token = jwt.encode({"alg": "RS256", "kid": key.kid}, payload, key).decode()
-    return token, {"keys": [key.as_dict(is_private=False)]}
+    key = RSAKey.generate_key(2048)
+    key.ensure_kid()
+    # joserfc.jwt.encode returns str directly (authlib returned bytes).
+    token = jwt.encode({"alg": "RS256", "kid": key.kid}, payload, key)
+    return token, {"keys": [key.as_dict(private=False)]}
 
 
 @pytest.mark.asyncio
