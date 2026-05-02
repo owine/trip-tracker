@@ -57,6 +57,12 @@ USER app
 
 EXPOSE 8000
 
+# Build-time identification. Placed AFTER all heavy COPY layers so a changing
+# GIT_SHA only invalidates this tiny ENV layer, not the venv or source layers
+# above. Default "unknown" lets local builds work without needing to pass it.
+ARG GIT_SHA=unknown
+ENV TRIP_TRACKER_GIT_SHA=$GIT_SHA
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD python -c "import httpx; r = httpx.get('http://127.0.0.1:8000/healthz', timeout=3); raise SystemExit(0 if r.status_code == 200 else 1)"
 
