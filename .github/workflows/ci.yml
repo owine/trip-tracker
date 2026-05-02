@@ -121,8 +121,13 @@ jobs:
   # Per-arch native image builds, push-by-digest. Only on main push — PRs skip
   # this entirely (Dockerfile breakage gets caught post-merge; acceptable for
   # the project's current pre-production stage with a small contributor pool).
+  #
+  # Gated on ALL code-quality + security jobs so a failing lint, typecheck,
+  # test, or security scan blocks image push. Sequential cost ~4 min on the
+  # slowest job (test); savings on failure are the full ~3 min image pipeline.
   docker-build:
     if: github.event_name == 'push'
+    needs: [lint, typecheck, test, security-python, security-secrets, security-semgrep]
     strategy:
       fail-fast: false
       matrix:
@@ -241,11 +246,18 @@ jobs:
   # Trivy CVE scan against the just-published manifest digest. Only on main
   # push. Scanning by digest (not local build) means we scan exactly what got
   # published — no chance of drift between scanned and deployed image.
+  # Requires docker login first because the GHCR package is private; Trivy's
+  # remote-pull resolver needs credentials to fetch the image.
   trivy-scan:
     if: github.event_name == 'push'
     needs: manifest-merge
     runs-on: ubuntu-24.04
     steps:
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository }}@${{ needs.manifest-merge.outputs.digest }}
