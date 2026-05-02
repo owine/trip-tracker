@@ -24,6 +24,7 @@ dependencies = [
     "saq[hiredis]>=0.26,<0.27",
     "meilisearch-python-sdk>=7,<8",
     "pdfplumber>=0.11,<0.12",
+    "joserfc>=1.6.4",
 ]
 
 [dependency-groups]

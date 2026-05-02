@@ -13,7 +13,9 @@ from typing import Any
 from urllib.parse import urlencode
 
 import httpx
-from authlib.jose import JsonWebKey, jwt
+from joserfc import jwt
+from joserfc.jwk import KeySet
+from joserfc.jwt import JWTClaimsRegistry
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -141,21 +143,22 @@ class OIDCClient:
         jwks_resp = await http.get(self.discovery.jwks_uri, timeout=10.0)
         if jwks_resp.status_code != 200:
             raise OIDCIDTokenInvalid(f"jwks fetch {jwks_resp.status_code}")
-        # authlib types are fully suppressed via mypy overrides (ignore_missing_imports).
-        keyset = JsonWebKey.import_key_set(jwks_resp.json())
+        keyset = KeySet.import_key_set(jwks_resp.json())
+
+        # joserfc requires explicit algorithms list (security: no default = no
+        # algorithm-confusion attacks). Prefer what the IdP advertises in
+        # discovery; fall back to RS256 (≈99% of OIDC IdPs in practice).
+        algorithms = self.discovery.id_token_signing_alg_values_supported or ["RS256"]
 
         try:
-            claims = jwt.decode(
-                id_token,
-                keyset,
-                claims_options={
-                    "iss": {"essential": True, "value": self.discovery.issuer},
-                    "aud": {"essential": True, "value": self.client_id},
-                    "exp": {"essential": True},
-                },
+            token = jwt.decode(id_token, keyset, algorithms=algorithms)
+            claims_registry = JWTClaimsRegistry(
+                iss={"essential": True, "value": self.discovery.issuer},
+                aud={"essential": True, "value": self.client_id},
+                exp={"essential": True},
             )
-            claims.validate()
+            claims_registry.validate(token.claims)
         except Exception as e:
             raise OIDCIDTokenInvalid(str(e)) from e
 
-        return OIDCClaims.model_validate(dict(claims))
+        return OIDCClaims.model_validate(token.claims)
