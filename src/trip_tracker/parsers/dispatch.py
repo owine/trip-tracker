@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.parsers.base import ParseResult, select_parsers
 from trip_tracker.parsers.budget import is_over_budget
+from trip_tracker.parsers.forwarded import effective_from
 from trip_tracker.parsers.jsonld import parse_jsonld
 from trip_tracker.parsers.llm import LLMClient, parse_with_llm
 
@@ -57,8 +58,11 @@ async def dispatch_parse(
     if r1.confidence > best.confidence:
         best = r1
 
-    # Strategy 2 — matched vendor
-    from_addr = msg.get("From", "")
+    # Strategy 2 — matched vendor.
+    # Use `effective_from` so user-forwarded emails (where the outer From: is
+    # the user, not the vendor) still hit the right vendor pack. For direct
+    # deliveries this returns the outer From: unchanged.
+    from_addr = effective_from(msg)
     for parser_cls in select_parsers(from_addr):
         try:
             r2 = parser_cls().parse(msg)
