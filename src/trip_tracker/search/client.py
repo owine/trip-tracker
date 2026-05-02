@@ -13,7 +13,7 @@ from typing import Any, Protocol, cast
 from fastapi import Request
 from meilisearch_python_sdk import AsyncClient
 
-from trip_tracker.config import Settings
+from trip_tracker.config import WorkerSettings
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ async def ensure_indexes_configured(meili: MeiliClientProtocol) -> None:
         logger.info("Meili index %r configured", name)
 
 
-def build_client(settings: Settings) -> MeiliClientProtocol:
+def build_client(settings: WorkerSettings) -> MeiliClientProtocol:
     """Construct a Meili client from settings. One per process."""
     return cast(
         MeiliClientProtocol,

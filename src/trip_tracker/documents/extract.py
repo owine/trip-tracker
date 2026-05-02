@@ -11,7 +11,7 @@ from typing import Any
 import pdfplumber
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from trip_tracker.config import Settings
+from trip_tracker.config import WorkerSettings
 from trip_tracker.documents.storage import StorageBackend
 from trip_tracker.models.document import Document
 from trip_tracker.search.sync import enqueue_meili_sync
@@ -34,7 +34,7 @@ def _extract_pdf(buf: io.BytesIO) -> str:
 async def extract_document(ctx: dict[str, Any], *, document_id: str) -> None:
     """saq task: load doc, run pdfplumber, persist text, enqueue Meili sync."""
     engine = ctx["engine"]
-    settings: Settings = ctx["settings"]
+    settings: WorkerSettings = ctx["settings"]
     storage: StorageBackend = ctx["storage"]
     SM = async_sessionmaker(engine, expire_on_commit=False)
 

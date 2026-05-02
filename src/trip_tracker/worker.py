@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import trip_tracker.parsers.vendors  # noqa: F401  # register all packs
-from trip_tracker.config import Settings
+from trip_tracker.config import WorkerSettings
 from trip_tracker.documents.extract import extract_document
 from trip_tracker.documents.persist import persist_pdf_attachments
 from trip_tracker.documents.storage import LocalFsStorage
@@ -44,12 +44,12 @@ from trip_tracker.weather.client import fetch_forecast
 logger = logging.getLogger(__name__)
 
 
-def _build_doc_queue(settings: Settings) -> Queue:
+def _build_doc_queue(settings: WorkerSettings) -> Queue:
     """Factory for the saq Queue used by doc-extract enqueuing. Indirected for tests."""
     return Queue.from_url(str(settings.redis_url))
 
 
-async def _enqueue_doc_extracts(settings: Settings, new_doc_ids: list[uuid.UUID]) -> None:
+async def _enqueue_doc_extracts(settings: WorkerSettings, new_doc_ids: list[uuid.UUID]) -> None:
     """Enqueue extract_document for each newly-persisted document id.
 
     Called AFTER db.commit() so the worker picking up the task can see the row.
@@ -79,7 +79,7 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
     raw.headers['X-Tt-Hint']. Pass it through to dispatch_parse here so the
     LLM picks up the user's correction. v0.3.0 ships without this propagation.
     """
-    settings: Settings = ctx["settings"]
+    settings: WorkerSettings = ctx["settings"]
     # Use the engine populated by startup() in production. Tests may inject
     # their own engine via ctx["engine"]. Either way, the engine is owned by
     # the caller — don't dispose it here.
@@ -275,7 +275,7 @@ async def refresh_weather(ctx: dict[str, Any], *, lat: float, lon: float) -> Non
 
 async def startup(ctx: dict[str, Any]) -> None:
     """Build worker-process singletons. saq calls this once when the worker boots."""
-    s = Settings()
+    s = WorkerSettings()
     ctx["settings"] = s
     # Build one engine per worker process (not per task) so the connection
     # pool is reused across thousands of jobs. Disposed in shutdown().
@@ -296,7 +296,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 
 # Read settings once at module import. Worker fails fast if env is incomplete.
-_SETTINGS = Settings()
+_SETTINGS = WorkerSettings()
 queue = Queue.from_url(_SETTINGS.redis_url)
 
 # saq picks up `settings` (a dict) when invoked via `saq trip_tracker.worker.settings`.

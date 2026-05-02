@@ -1,4 +1,18 @@
-"""Application settings loaded from environment variables."""
+"""Application settings loaded from environment variables.
+
+Two-class split:
+
+- `WorkerSettings` — the subset of config the saq worker needs (DB, Redis,
+  LLM, Meili, documents storage, logging). Worker boots with these alone.
+- `Settings(WorkerSettings)` — full app config; adds OIDC/sessions/base URL
+  /webhook/UI-bound fields. App boots with all of them.
+
+The split prevents the "every container needs every secret" deploy footgun:
+the worker no longer requires session/OIDC/webhook env vars to start, since
+it never serves HTTP routes that consume them. `Settings` is a strict
+superset of `WorkerSettings` (covariance via inheritance), so any function
+typed `WorkerSettings` accepts a `Settings` instance — but not vice versa.
+"""
 
 from __future__ import annotations
 
@@ -14,8 +28,9 @@ _RESERVED_HEADER_RE = re.compile(
 )
 
 
-class Settings(BaseSettings):
-    """All runtime configuration. Required values raise on startup if missing."""
+class WorkerSettings(BaseSettings):
+    """Worker-side configuration. Boots with only DB/Redis/LLM/Meili/docs/log
+    env vars set. The full `Settings` class extends this with app-only fields."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -27,24 +42,60 @@ class Settings(BaseSettings):
     # Database
     database_url: str = Field(..., description="postgresql+asyncpg://...")
 
-    # Sessions
+    # Logging (worker uses the same log config as app)
+    log_level: str = "INFO"
+    log_format: str = "json"  # "json" | "console"
+
+    # Phase 3 — parser pipeline (worker runs the parsers)
+    anthropic_api_key: SecretStr
+    redis_url: str
+    llm_daily_budget_cents: int = 100  # $1.00 USD/day soft cap
+    llm_model: str = "claude-haiku-4-5-20251001"
+    llm_confidence_floor: float = 0.7
+
+    # Phase 4 — search (worker syncs to Meili after parse)
+    meili_url: str
+    meili_master_key: SecretStr
+
+    # Phase 5 — documents storage path (worker writes email attachments here)
+    documents_dir: Path = Path("/data/documents")
+
+    @field_validator("database_url")
+    @classmethod
+    def _validate_db_url(cls, v: str) -> str:
+        if not v.startswith("postgresql+asyncpg://"):
+            raise ValueError("DATABASE_URL must use the postgresql+asyncpg:// scheme")
+        return v
+
+    @field_validator("llm_confidence_floor")
+    @classmethod
+    def _floor_in_unit_interval(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError("llm_confidence_floor must be in [0, 1]")
+        return v
+
+
+class Settings(WorkerSettings):
+    """Full application settings. Extends `WorkerSettings` with app-only fields
+    (sessions, OIDC, base URL, webhook secrets, UI bounds). Required values
+    raise on startup if missing."""
+
+    # Sessions (app-only — worker doesn't issue cookies)
     session_secret: SecretStr = Field(..., min_length=32)
     session_cookie_name: str = "tt_session"
     session_max_age_seconds: int = 7 * 24 * 60 * 60  # 7 days
 
-    # OIDC
+    # OIDC (app-only — worker doesn't authenticate users)
     oidc_issuer: str
     oidc_client_id: str
     oidc_client_secret: SecretStr
     oidc_redirect_uri: str
     admin_group: str = "trip-tracker:admin"
 
-    # App
+    # App URL (only used by app for OIDC callback construction)
     base_url: str
-    log_level: str = "INFO"
-    log_format: str = "json"  # "json" | "console"
 
-    # Webhook (forwardemail.net)
+    # Webhook (forwardemail.net) — app-only; only ingest routes consume these
     webhook_secret: SecretStr = Field(...)
     forwardemail_relay_token: SecretStr = Field(
         ...,
@@ -55,12 +106,9 @@ class Settings(BaseSettings):
     webhook_timestamp_tolerance_seconds: int = Field(default=300)
     webhook_max_body_bytes: int = Field(default=26_214_400)  # 25 MiB
 
-    @field_validator("database_url")
-    @classmethod
-    def _validate_db_url(cls, v: str) -> str:
-        if not v.startswith("postgresql+asyncpg://"):
-            raise ValueError("DATABASE_URL must use the postgresql+asyncpg:// scheme")
-        return v
+    # Documents — UI upload bound + X-Accel-Redirect header (app-only)
+    max_upload_bytes: int = 26_214_400  # 25 MiB
+    documents_x_accel_prefix: str | None = None
 
     @field_validator("webhook_signature_header")
     @classmethod
@@ -85,26 +133,3 @@ class Settings(BaseSettings):
         if not 0 < v <= 100 * 1024 * 1024:
             raise ValueError("must be in (0, 100 MiB]")
         return v
-
-    # Phase 3 — parser pipeline
-    anthropic_api_key: SecretStr
-    redis_url: str
-    llm_daily_budget_cents: int = 100  # $1.00 USD/day soft cap
-    llm_model: str = "claude-haiku-4-5-20251001"
-    llm_confidence_floor: float = 0.7
-
-    @field_validator("llm_confidence_floor")
-    @classmethod
-    def _floor_in_unit_interval(cls, v: float) -> float:
-        if not 0.0 <= v <= 1.0:
-            raise ValueError("llm_confidence_floor must be in [0, 1]")
-        return v
-
-    # Phase 4 — search
-    meili_url: str
-    meili_master_key: SecretStr
-
-    # Phase 5 — documents
-    documents_dir: Path = Path("/data/documents")
-    max_upload_bytes: int = 26_214_400  # 25 MiB
-    documents_x_accel_prefix: str | None = None

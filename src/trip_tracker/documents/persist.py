@@ -14,7 +14,7 @@ from sqlalchemy import column, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from trip_tracker.config import Settings
+from trip_tracker.config import WorkerSettings
 from trip_tracker.documents.helpers import is_pdf, sha256_hex
 from trip_tracker.documents.storage import LocalFsStorage
 from trip_tracker.ingest.attachments import extract_attachments
@@ -25,7 +25,7 @@ _logger = logging.getLogger(__name__)
 
 async def persist_pdf_attachments(
     db: AsyncSession,
-    settings: Settings,
+    settings: WorkerSettings,
     *,
     raw_email_id: uuid.UUID,
     owner_user_id: uuid.UUID,

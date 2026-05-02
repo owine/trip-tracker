@@ -75,21 +75,11 @@ services:
         condition: service_healthy
       trip-tracker-redis:
         condition: service_started
-    # Worker needs the SAME env vars as the app even though it doesn't use
-    # the OIDC/session/webhook surface — Settings() validates the full model
-    # at module load and crashes the worker startup if anything's missing.
-    # (A future split into AppSettings + WorkerSettings would let worker run
-    # with only DB/Redis/LLM/Meili creds, but that's a refactor for later.)
+    # Worker uses `WorkerSettings` (not full `Settings`) so it only needs
+    # DB/Redis/LLM/Meili/log/documents env vars — no OIDC/session/webhook
+    # since the worker doesn't serve HTTP routes that consume them.
     environment:
       DATABASE_URL: ${DATABASE_URL}
-      SESSION_SECRET: ${SESSION_SECRET}
-      OIDC_ISSUER: ${OIDC_ISSUER}
-      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
-      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
-      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
-      BASE_URL: ${BASE_URL}
-      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
-      FORWARDEMAIL_RELAY_TOKEN: ${FORWARDEMAIL_RELAY_TOKEN}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       REDIS_URL: ${REDIS_URL:-redis://trip-tracker-redis:6379/0}
       LLM_DAILY_BUDGET_CENTS: ${LLM_DAILY_BUDGET_CENTS:-100}

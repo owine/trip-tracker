@@ -18,7 +18,7 @@ from typing import Any
 
 from anthropic import AsyncAnthropic
 
-from trip_tracker.config import Settings
+from trip_tracker.config import WorkerSettings
 from trip_tracker.parsers.base import ParseResult, SegmentDraft
 from trip_tracker.schemas.llm import EXTRACT_SEGMENTS_TOOL, SYSTEM_PROMPT
 
@@ -30,7 +30,7 @@ HAIKU_CONFIDENCE_CEILING = 0.85
 class LLMClient:
     """Thin Anthropic wrapper. Single call() method to keep mocking trivial."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: WorkerSettings) -> None:
         self._settings = settings
         self._client = AsyncAnthropic(api_key=settings.anthropic_api_key.get_secret_value())
 

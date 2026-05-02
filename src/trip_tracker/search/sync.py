@@ -13,7 +13,7 @@ from saq import Queue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from trip_tracker.config import Settings
+from trip_tracker.config import WorkerSettings
 from trip_tracker.models.document import Document
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
@@ -106,13 +106,13 @@ async def document_to_doc(doc: Document, *, db: AsyncSession) -> dict[str, Any]:
     }
 
 
-def _build_queue(settings: Settings) -> Queue:
+def _build_queue(settings: WorkerSettings) -> Queue:
     """Factory for the saq Queue. Indirected so tests can monkeypatch it."""
     return Queue.from_url(settings.redis_url)
 
 
 async def enqueue_meili_sync(
-    settings: Settings,
+    settings: WorkerSettings,
     *,
     entity: Literal["trip", "segment", "document"],
     entity_id: uuid.UUID,

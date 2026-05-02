@@ -280,6 +280,9 @@ values fail fast.
 
 **Required — stack won't run without these:**
 
+The "Used by" column reflects the `Settings` / `WorkerSettings` split: worker
+boots with only the env vars it actually needs. App needs both columns set.
+
 | Env var | Used by | Notes |
 |---|---|---|
 | `DATABASE_URL` | app + worker | `postgresql+asyncpg://trip:${DB_PASSWORD}@trip-tracker-db:5432/trip` |
@@ -290,8 +293,8 @@ values fail fast.
 | `OIDC_CLIENT_SECRET` | app | Authelia client secret |
 | `OIDC_REDIRECT_URI` | app | e.g. `https://trips.yourdomain.com/auth/callback` |
 | `BASE_URL` | app | e.g. `https://trips.yourdomain.com` |
-| `WEBHOOK_SECRET` | app + worker | HMAC for `/api/ingest/email`. `python -c 'import secrets; print(secrets.token_hex(32))'` |
-| `FORWARDEMAIL_RELAY_TOKEN` | app + worker | Token for `?token=` on `/api/ingest/forwardemail`. `python -c 'import secrets; print(secrets.token_urlsafe(32))'` |
+| `WEBHOOK_SECRET` | app | HMAC for `/api/ingest/email`. `python -c 'import secrets; print(secrets.token_hex(32))'` |
+| `FORWARDEMAIL_RELAY_TOKEN` | app | Token for `?token=` on `/api/ingest/forwardemail`. `python -c 'import secrets; print(secrets.token_urlsafe(32))'` |
 | `ANTHROPIC_API_KEY` | worker | `sk-ant-...` for the Haiku LLM fallback parser |
 | `MEILI_MASTER_KEY` | app + worker + meili | Search index access. `openssl rand -hex 32` |
 
@@ -319,9 +322,12 @@ values fail fast.
 | `MAX_UPLOAD_BYTES` | `26214400` (25 MiB) | Upper bound for `/documents/upload` |
 | `DOCUMENTS_X_ACCEL_PREFIX` | (unset) | Set to e.g. `/protected-files` when fronting with nginx X-Accel-Redirect |
 
-The worker container needs every `app`-required env var even when it doesn't
-functionally use them (`Settings()` validates the full model at module load).
-The repo's `docker-compose.yml` mirrors the env block on both services.
+The worker uses `WorkerSettings` (a strict subset of `Settings`) and only
+needs DB/Redis/LLM/Meili/log/documents env vars. App-only fields
+(`SESSION_SECRET`, `OIDC_*`, `BASE_URL`, `WEBHOOK_SECRET`,
+`FORWARDEMAIL_RELAY_TOKEN`) can be omitted from the worker container's
+environment. See the trimmed `trip-tracker-worker` block in
+`docker-compose.yml`.
 
 ### Authelia OIDC client
 

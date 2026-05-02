@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from trip_tracker.config import Settings
+from trip_tracker.config import Settings, WorkerSettings
 
 
 def test_settings_load_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -68,3 +68,56 @@ def test_session_secret_minimum_length(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MEILI_MASTER_KEY", "meili-key")
     with pytest.raises(ValidationError):
         Settings()
+
+
+def test_worker_settings_loads_without_app_only_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: WorkerSettings boots with only worker-needed env vars set.
+
+    The whole point of the AppSettings/WorkerSettings split is that the worker
+    container doesn't need OIDC/SESSION/BASE_URL/WEBHOOK env vars to start.
+    Verify by deleting those and instantiating WorkerSettings.
+    """
+    for var in (
+        "SESSION_SECRET",
+        "OIDC_ISSUER",
+        "OIDC_CLIENT_ID",
+        "OIDC_CLIENT_SECRET",
+        "OIDC_REDIRECT_URI",
+        "BASE_URL",
+        "WEBHOOK_SECRET",
+        "FORWARDEMAIL_RELAY_TOKEN",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("MEILI_URL", "http://localhost:7700")
+    monkeypatch.setenv("MEILI_MASTER_KEY", "meili-key")
+
+    s = WorkerSettings()
+    assert s.database_url.startswith("postgresql+asyncpg://")
+    assert s.anthropic_api_key.get_secret_value() == "sk-ant-test"
+    # Defaults still apply
+    assert s.llm_daily_budget_cents == 100
+    assert s.llm_confidence_floor == 0.7
+
+
+def test_settings_is_a_worker_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Settings inherits from WorkerSettings — covariance lets functions typed
+    `WorkerSettings` accept full Settings instances. Verify the IS-A relationship."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/db")
+    monkeypatch.setenv("SESSION_SECRET", "x" * 32)
+    monkeypatch.setenv("OIDC_ISSUER", "https://auth.example.com")
+    monkeypatch.setenv("OIDC_CLIENT_ID", "trip-tracker")
+    monkeypatch.setenv("OIDC_CLIENT_SECRET", "secret")
+    monkeypatch.setenv("OIDC_REDIRECT_URI", "https://trips.example.com/auth/callback")
+    monkeypatch.setenv("BASE_URL", "https://trips.example.com")
+    monkeypatch.setenv("WEBHOOK_SECRET", "webhook-secret")
+    monkeypatch.setenv("FORWARDEMAIL_RELAY_TOKEN", "fe-token")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setenv("MEILI_URL", "http://localhost:7700")
+    monkeypatch.setenv("MEILI_MASTER_KEY", "meili-key")
+
+    s = Settings()
+    assert isinstance(s, WorkerSettings)
