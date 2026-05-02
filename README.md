@@ -349,6 +349,8 @@ only via membership in `ADMIN_GROUP`.
 4. Test: forward yourself a confirmation email to `oliver@trips.<your-domain>`. Within seconds it appears at `/admin/raw-emails`.
 5. The parser pipeline (Phase 3) auto-extracts a segment from the email and either auto-attaches it to an existing trip or creates a new one. Low-confidence extractions land in `/inbox` for manual confirmation.
 
+> **ForwardEmail.net free-plan users:** the HMAC signing the steps above assume is **paid-plan only**. If you're on the free plan, use the alternative adapter route `/api/ingest/forwardemail` which accepts FE's webhook JSON directly with a shared-secret token. See [`docs/forwardemail-setup.md`](docs/forwardemail-setup.md).
+
 ## How parsers work (Phase 3)
 
 When a forwarding email arrives at `/api/ingest/email`, a saq worker runs three
