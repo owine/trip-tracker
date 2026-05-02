@@ -177,6 +177,93 @@ async def test_edit_flight_clear_award_removes_key(
 
 
 @pytest.mark.asyncio
+async def test_edit_flight_clear_award_with_prefilled_fields_still_clears(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    """Regression (v0.8.0 smoke): browsers send clear_award=1 ALONG WITH the
+    prefilled award fields (templates pre-populate from existing_award). Helper
+    must short-circuit on the checkbox unconditionally, not fall through to
+    re-create the award from the still-populated fields."""
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user = await _user(db_session)
+
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+
+    seg = Segment(
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="flight",
+        status="confirmed",
+        start_at=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
+        start_tz="America/New_York",
+        end_at=datetime(2026, 6, 1, 22, 0, tzinfo=UTC),
+        end_tz="Europe/Paris",
+        start_location={"iata": "JFK", "city": "New York"},
+        end_location={"iata": "CDG", "city": "Paris"},
+        details={
+            "flight_number": "DL44",
+            "seat": "12A",
+            "award": {
+                "program": "Chase Ultimate Rewards",
+                "points_spent": 75000,
+                "cash_copay_minor": 560,
+                "cash_copay_currency": "USD",
+            },
+        },
+        parse_source="manual",
+        parse_confidence=1.0,
+    )
+    db_session.add(seg)
+    await db_session.commit()
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            cookies=_cookie(user, settings),
+        ) as c,
+    ):
+        r = await c.post(
+            f"/trips/{trip.id}/segments/{seg.id}",
+            data={
+                "type": "flight",
+                "status": "confirmed",
+                "start_local": "2026-06-01T09:00",
+                "start_tz": "America/New_York",
+                "end_local": "2026-06-01T22:00",
+                "end_tz": "Europe/Paris",
+                "origin_iata": "JFK",
+                "origin_city": "New York",
+                "destination_iata": "CDG",
+                "destination_city": "Paris",
+                "flight_number": "DL44",
+                "seat": "12A",
+                "clear_award": "1",
+                # Browser-realistic: award fields ARE submitted (prefilled from existing_award).
+                "award_program": "Chase Ultimate Rewards",
+                "award_points_spent": "75000",
+                "award_cash_copay_minor": "560",
+                "award_cash_copay_currency": "USD",
+            },
+            follow_redirects=False,
+        )
+    assert r.status_code == 303
+
+    await db_session.refresh(seg)
+    assert seg.details is not None
+    assert "award" not in seg.details, "clear_award=1 with prefilled fields must still clear"
+
+
+@pytest.mark.asyncio
 async def test_award_zero_points_rejected_with_form_error(
     db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
 ) -> None:

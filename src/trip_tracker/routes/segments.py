@@ -59,8 +59,14 @@ DESTINATION_FROM_END = {"flight", "train", "transfer"}
 
 
 def _apply_award_from_form(seg: Segment, form: dict[str, str]) -> dict[str, str] | None:
-    """Mutate seg.details based on award fields in form. Returns errors dict or None."""
-    if form.get("clear_award") == "1" and (seg.details or {}).get("award"):
+    """Mutate seg.details based on award fields in form. Returns errors dict or None.
+
+    NB: clear_award is checked unconditionally (not gated on `seg.details` having
+    an award) because update_segment overwrites seg.details with form-shaped details
+    BEFORE this helper runs. The checkbox's semantics are 'user wants no award here',
+    independent of transient internal state.
+    """
+    if form.get("clear_award") == "1":
         seg.details = {k: v for k, v in (seg.details or {}).items() if k != "award"}
         flag_modified(seg, "details")
         return None
