@@ -35,9 +35,20 @@ Set the result as `FORWARDEMAIL_RELAY_TOKEN` in your deployment environment
 ### 2. Create the matching forwarding alias
 
 In trip-tracker, visit `/admin/aliases` and create a `forwarding_aliases` row
-whose `local_part` matches the local-part of your FE alias address. The
-worker lowercases before joining, so case doesn't matter — `me@trips.example.com`
-matches a `local_part = "me"` row.
+whose `local_part` matches the local-part of **whatever address you'll be
+forwarding emails to**. That doesn't have to be on a `trips.*` subdomain —
+it can be your existing personal-domain alias, your work alias, anything
+ForwardEmail is configured to forward.
+
+**The domain is irrelevant — trip-tracker only matches on the local part.**
+If your FE alias is `oliver@yourpersonaldomain.com`, create a row with
+`local_part = "oliver"` and you're set. Forward emails to that address from
+anywhere; trip-tracker reads the MIME's `To:` header, splits on `@`, lowercases
+the local part, and looks up `forwarding_aliases WHERE local_part = 'oliver'`.
+
+(The Phase 2 README's `oliver@trips.<your-domain>` example is one valid
+setup but not the only one. The `trips.` subdomain is convention, not a
+requirement.)
 
 ### 3. Point FE at the adapter URL
 
@@ -106,3 +117,49 @@ adapter is a sibling route that translates FE's JSON into the same internal
 persistence helper (`_persist_raw_email`). Both routes converge into the
 same worker pipeline, alias resolution, and `/inbox` UI — only the
 authentication boundary is different.
+
+## Glossary
+
+**Local part** — Per RFC 5321/5322, everything before the `@` in an email
+address. In `oliver@trips.example.com`, the local part is `oliver`.
+trip-tracker uses this as the routing key.
+
+**Domain** — Everything after the `@`. trip-tracker's worker **ignores the
+domain entirely** when resolving an email to a user; only the local part is
+matched against `forwarding_aliases.local_part`. So `oliver@anything.com` and
+`oliver@somewhere-else.org` both route to the same `oliver` user.
+
+**Alias resolution** — The worker's process for figuring out who a forwarded
+email belongs to:
+
+```
+1. parse_mime(mime_bytes)         → ParsedEmail with .to_address
+2. local_part = to_address.split("@", 1)[0].lower()
+3. SELECT user_id FROM forwarding_aliases WHERE local_part = :local_part
+4. If found → assign as raw_email's owner; if not → mark no_segments
+```
+
+**ForwardEmail (FE)** — `forwardemail.net`, the email-forwarding service this
+adapter is built for. Free tier supports DNS-TXT-based aliases that forward
+to webhooks; paid tier adds a dashboard and HMAC-signed payloads. trip-tracker
+works with both tiers (the adapter only needs the URL to be private).
+
+**Webhook adapter** — The `/api/ingest/forwardemail` route added by this
+phase. Translates FE's JSON envelope into raw MIME bytes for the existing
+worker pipeline. NOT the same as `/api/ingest/email` (which expects raw MIME
+plus an HMAC triple — see the "Why this is a separate route" section above).
+
+**Raw email** — In trip-tracker's database (`raw_emails` table), the full
+RFC-822 MIME bytes of an inbound email, plus parsed headers (`to_address`,
+`from_address`, `subject`, `message_id`). Both ingest routes write into this
+table; the parser worker reads from it.
+
+**Message-ID dedup** — Every email has a unique `Message-ID:` header. The
+INSERT into `raw_emails` is `ON CONFLICT (message_id) DO NOTHING`, so the
+same email forwarded twice produces only one row + one parse attempt.
+
+**Inbox bucket** — `/inbox` shows three buckets per Phase 3 spec: `review`
+(needs your confirmation), `no_segments` (parser couldn't extract anything),
+and `duplicates` (Message-ID matched an existing trip). Forwarded emails
+that successfully attribute to your user but couldn't be parsed land in
+`no_segments`; ones that parsed but with low confidence land in `review`.
