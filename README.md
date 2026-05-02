@@ -160,9 +160,10 @@ access_control:
     - domain: trips.example.com
       policy: bypass
       resources:
-        - "^/api/ingest/email$"        # existing (Phase 2)
-        - "^/healthz$"                 # existing (Phase 1)
-        - "^/ics/[^/]+\\.ics$"          # NEW for Phase 6
+        - "^/api/ingest/email$"             # existing (Phase 2)
+        - "^/api/ingest/forwardemail$"      # NEW for ForwardEmail JSON adapter
+        - "^/healthz$"                      # existing (Phase 1)
+        - "^/ics/[^/]+\\.ics$"              # existing (Phase 6)
 ```
 
 Verify with `curl`:
