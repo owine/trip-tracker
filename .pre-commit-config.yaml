@@ -5,6 +5,8 @@ repos:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: check-yaml
+        # Compose uses non-standard YAML tags like `!override` for list-replacement.
+        args: ["--unsafe"]
       - id: check-added-large-files
         args: ["--maxkb=500"]
         exclude: ^src/trip_tracker/static/data/cities1000\.tsv$

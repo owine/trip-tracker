@@ -32,3 +32,4 @@ src/trip_tracker/static/tailwind.css
 # Environment
 .env
 .env.local
+.env.smoke
