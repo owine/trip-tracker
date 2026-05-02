@@ -1,0 +1,13 @@
+{
+  "source": "rules:trainline",
+  "confidence": 0.85,
+  "segments": [
+    {
+      "type": "train",
+      "confirmation_number": "86FAEY",
+      "provider": "Trainline",
+      "start_location": {"name": "Bordeaux St-Jean"},
+      "details": {"operator": "SNCF Voyageurs TGV INOUI", "train_number": "8536"}
+    }
+  ]
+}

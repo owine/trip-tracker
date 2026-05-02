@@ -1,0 +1,26 @@
+Subject: Your tickets for Bordeaux St-Jean to Paris Montparnasse
+From: auto-confirm@info.thetrainline.com
+To: oliver@trips.example.com
+Content-Type: text/html
+
+<html><head>
+<script type="application/ld+json">
+[{
+  "@context": "https://schema.org",
+  "@type": "TrainReservation",
+  "reservationNumber": "86FAEY",
+  "reservationId": "86FAEY , 06/07/2026 13:52",
+  "reservationStatus": "https://schema.org/ReservationConfirmed",
+  "reservationFor": {
+    "@type": "TrainTrip",
+    "departureStation": {"@type": "TrainStation", "name": "Bordeaux St-Jean"},
+    "departureTime": "2026-06-07T11:52:00+00:00",
+    "arrivalStation": {"@type": "TrainStation", "name": "Paris Montparnasse"},
+    "arrivalTime": "2026-06-07T14:04:00+00:00",
+    "underName": {"@type": "Person", "name": "Oliver Wine"},
+    "trainName": "",
+    "trainNumber": ""
+  }
+}]
+</script>
+</head><body>Trainline marketing HTML.</body></html>

@@ -22,6 +22,7 @@ from . import (  # noqa: F401
     fairmont,
     national,
     sncf,
+    trainline,
     uber,
     united,
 )

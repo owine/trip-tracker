@@ -1,7 +1,7 @@
 """JSON-LD extraction strategy using extruct.
 
-Looks for FlightReservation, LodgingReservation, RentalCarReservation,
-EventReservation. Returns ParseResult with confidence ~0.95 on hit.
+Looks for FlightReservation, LodgingReservation, TrainReservation. Returns
+ParseResult with confidence ~0.95 on hit.
 """
 
 from __future__ import annotations
@@ -83,6 +83,31 @@ def _lodging_from_jsonld(d: dict[str, Any]) -> SegmentDraft | None:
     )
 
 
+def _train_from_jsonld(d: dict[str, Any]) -> SegmentDraft | None:
+    inner = d.get("reservationFor", {}) or {}
+    start = _parse_iso(inner.get("departureTime", ""))
+    if not start:
+        return None
+    end = _parse_iso(inner.get("arrivalTime", ""))
+    dep = inner.get("departureStation", {}) or {}
+    arr = inner.get("arrivalStation", {}) or {}
+    # trainName/trainNumber are often empty in real-world JSON-LD (Trainline,
+    # SNCF) — preserve as None rather than empty string for schema cleanliness.
+    train_name = inner.get("trainName") or None
+    train_number = inner.get("trainNumber") or None
+    return SegmentDraft(
+        type="train",
+        confirmation_number=d.get("reservationNumber"),
+        start_at=start,
+        start_tz=str(start.tzinfo) if start.tzinfo else "UTC",
+        end_at=end,
+        end_tz=str(end.tzinfo) if end and end.tzinfo else None,
+        start_location={"name": dep.get("name")},
+        end_location={"name": arr.get("name")},
+        details={"train_name": train_name, "train_number": train_number},
+    )
+
+
 def parse_jsonld(msg: EmailMessage) -> ParseResult:
     """Run extruct over the email's HTML body, extract reservations."""
     html = _extract_html(msg)
@@ -101,6 +126,8 @@ def parse_jsonld(msg: EmailMessage) -> ParseResult:
             seg = _flight_from_jsonld(item)
         elif t == "LodgingReservation":
             seg = _lodging_from_jsonld(item)
+        elif t == "TrainReservation":
+            seg = _train_from_jsonld(item)
         else:
             continue
         if seg:
