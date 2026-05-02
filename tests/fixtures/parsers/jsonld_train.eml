@@ -11,11 +11,21 @@ Content-Type: text/html
   "reservationNumber": "86FAEY",
   "reservationId": "86FAEY , 06/07/2026 13:52",
   "reservationStatus": "https://schema.org/ReservationConfirmed",
+  "bookingTime": "2026-04-15T10:23:00+00:00",
   "reservationFor": {
     "@type": "TrainTrip",
-    "departureStation": {"@type": "TrainStation", "name": "Bordeaux St-Jean"},
+    "provider": {"@type": "Organization", "name": "SNCF Voyageurs"},
+    "departureStation": {
+      "@type": "TrainStation",
+      "name": "Bordeaux St-Jean",
+      "geo": {"@type": "GeoCoordinates", "latitude": 44.8264, "longitude": -0.5563}
+    },
     "departureTime": "2026-06-07T11:52:00+00:00",
-    "arrivalStation": {"@type": "TrainStation", "name": "Paris Montparnasse"},
+    "arrivalStation": {
+      "@type": "TrainStation",
+      "name": "Paris Montparnasse",
+      "geo": {"@type": "GeoCoordinates", "latitude": "48.8403", "longitude": "2.3209"}
+    },
     "arrivalTime": "2026-06-07T14:04:00+00:00",
     "underName": {"@type": "Person", "name": "Oliver Wine"},
     "trainName": "",

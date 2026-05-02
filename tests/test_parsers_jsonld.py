@@ -147,6 +147,94 @@ def test_reservation_package_recurses_into_subreservation() -> None:
     assert result.segments[1].confirmation_number == "LDG-B2"
 
 
+# ─── enrichment tests ──────────────────────────────────────────────────────
+
+
+def test_pricing_extracted_from_food_reservation() -> None:
+    """totalPrice + priceCurrency lift into details.{total_price, price_currency}.
+
+    Coerces string price '240.00' → float 240.0 because schema.org allows
+    either; downstream expense-tracking expects numeric."""
+    result = parse_jsonld(_msg("jsonld_food.eml"))
+    seg = result.segments[0]
+    assert (seg.details or {}).get("total_price") == 240.0
+    assert (seg.details or {}).get("price_currency") == "USD"
+
+
+def test_passengers_extracted_from_food_reservation() -> None:
+    """underName as a list of Person → details.passengers as flat name list."""
+    result = parse_jsonld(_msg("jsonld_food.eml"))
+    seg = result.segments[0]
+    assert (seg.details or {}).get("passengers") == ["Oliver Wine", "Elise Wine"]
+
+
+def test_geo_coordinates_extracted_from_train_stations() -> None:
+    """Place.geo (GeoCoordinates) → lat/lng on location dicts. Mixed
+    string/number latitude/longitude both coerce to float so the map feature
+    sees one consistent shape."""
+    result = parse_jsonld(_msg("jsonld_train.eml"))
+    seg = result.segments[0]
+    assert (seg.start_location or {}).get("lat") == 44.8264
+    assert (seg.start_location or {}).get("lng") == -0.5563
+    # arrival uses STRING coords in the fixture — must coerce to float too
+    assert (seg.end_location or {}).get("lat") == 48.8403
+    assert (seg.end_location or {}).get("lng") == 2.3209
+
+
+def test_provider_extracted_from_train_organization() -> None:
+    """reservationFor.provider as Organization → SegmentDraft.provider."""
+    result = parse_jsonld(_msg("jsonld_train.eml"))
+    seg = result.segments[0]
+    assert seg.provider == "SNCF Voyageurs"
+
+
+def test_booking_time_extracted_from_train() -> None:
+    """bookingTime is preserved as ISO string in details so downstream can
+    compute 'booked X days in advance' without re-parsing."""
+    result = parse_jsonld(_msg("jsonld_train.eml"))
+    seg = result.segments[0]
+    assert (seg.details or {}).get("booking_time", "").startswith("2026-04-15T10:23:00")
+
+
+def test_program_membership_extracted_from_flight() -> None:
+    """programMembershipUsed → details.{program_name, membership_number}."""
+    result = parse_jsonld(_msg("jsonld_flight.eml"))
+    seg = result.segments[0]
+    assert (seg.details or {}).get("program_name") == "AirExample Elite"
+    assert (seg.details or {}).get("membership_number") == "AE-998877"
+
+
+def test_potential_actions_extracted_from_flight() -> None:
+    """potentialAction with both string-target and EntryPoint-target lands
+    flat in details.actions keyed by view_url / cancel_url / modify_url."""
+    result = parse_jsonld(_msg("jsonld_flight.eml"))
+    seg = result.segments[0]
+    actions = (seg.details or {}).get("actions") or {}
+    assert actions.get("view_url") == "https://airexample.com/booking/ABC123"
+    assert actions.get("cancel_url") == "https://airexample.com/cancel/ABC123"
+
+
+def test_provider_from_airline_organization() -> None:
+    """For flights, inner.airline.name fills SegmentDraft.provider when no
+    top-level reservation provider is present."""
+    result = parse_jsonld(_msg("jsonld_flight.eml"))
+    seg = result.segments[0]
+    assert seg.provider == "AirExample"
+
+
+def test_cancelled_reservation_status() -> None:
+    """ReservationCancelled URL → SegmentDraft.status='cancelled'.
+
+    The segment is still emitted (not silently dropped) so /inbox shows the
+    cancellation and the user can decide whether to delete or keep for
+    record-keeping."""
+    result = parse_jsonld(_msg("jsonld_cancelled.eml"))
+    assert len(result.segments) == 1
+    seg = result.segments[0]
+    assert seg.status == "cancelled"
+    assert seg.confirmation_number == "CANCELLED-1"
+
+
 def test_no_jsonld_returns_empty() -> None:
     """A plain-text email with no JSON-LD returns segments=[] confidence=0."""
     from email.message import EmailMessage

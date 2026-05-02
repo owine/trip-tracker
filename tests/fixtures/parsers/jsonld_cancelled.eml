@@ -1,0 +1,22 @@
+Subject: Your booking has been cancelled
+From: noreply@somehotel.example
+To: oliver@trips.example.com
+Content-Type: text/html
+
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "LodgingReservation",
+  "reservationNumber": "CANCELLED-1",
+  "reservationStatus": "https://schema.org/ReservationCancelled",
+  "checkinTime":  "2026-09-01T15:00:00+02:00",
+  "checkoutTime": "2026-09-04T11:00:00+02:00",
+  "reservationFor": {
+    "@type": "LodgingBusiness",
+    "name": "Some Hotel",
+    "address": {"@type": "PostalAddress", "addressLocality": "Berlin", "addressCountry": "DE"}
+  }
+}
+</script>
+</head><body>Sorry to see you cancel.</body></html>

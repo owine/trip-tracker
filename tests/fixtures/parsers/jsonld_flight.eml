@@ -10,10 +10,25 @@ Content-Type: text/html
   "@type": "FlightReservation",
   "reservationNumber": "ABC123",
   "reservationStatus": "https://schema.org/ReservationConfirmed",
+  "programMembershipUsed": {
+    "@type": "ProgramMembership",
+    "programName": "AirExample Elite",
+    "membershipNumber": "AE-998877"
+  },
+  "potentialAction": [
+    {
+      "@type": "ViewAction",
+      "target": "https://airexample.com/booking/ABC123"
+    },
+    {
+      "@type": "CancelAction",
+      "target": {"@type": "EntryPoint", "urlTemplate": "https://airexample.com/cancel/ABC123"}
+    }
+  ],
   "reservationFor": {
     "@type": "Flight",
     "flightNumber": "EX42",
-    "airline": {"@type": "Airline", "iataCode": "EX"},
+    "airline": {"@type": "Airline", "iataCode": "EX", "name": "AirExample"},
     "departureAirport": {"@type": "Airport", "iataCode": "JFK", "name": "JFK"},
     "arrivalAirport":   {"@type": "Airport", "iataCode": "CDG", "name": "CDG"},
     "departureTime": "2026-06-01T09:00:00-04:00",
