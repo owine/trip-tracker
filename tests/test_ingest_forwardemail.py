@@ -100,4 +100,8 @@ async def test_forwardemail_happy_path_persists_and_enqueues(
     assert rows[0].to_address == "me@trips.example.com"
     assert rows[0].message_id == "<fe-test-001@example.com>"
 
+    # Tighten: not just "was called", but "called with the right args".
+    # First positional arg is the Settings object; second is the inserted RawEmail UUID.
     mock_enqueue_parse.assert_called_once()
+    args, _kwargs = mock_enqueue_parse.call_args
+    assert args[1] == rows[0].id, "enqueue_parse must receive the inserted RawEmail.id"
