@@ -80,4 +80,7 @@ async def ingest_forwardemail(
     if new_id is not None:
         await enqueue_parse(settings, new_id)
 
-    return Response(status_code=202)
+    # JSONResponse (not bare Response) so FE's undici HTTP client has a body
+    # to parse — an empty 202 triggers a spurious UND_ERR_RESPONSE in FE's
+    # dashboard even though the delivery itself succeeded.
+    return JSONResponse({"accepted": True}, status_code=202)

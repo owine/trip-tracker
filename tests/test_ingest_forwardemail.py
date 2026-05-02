@@ -94,6 +94,10 @@ async def test_forwardemail_happy_path_persists_and_enqueues(
     async with client_factory() as client:
         r = await client.post(f"/api/ingest/forwardemail?token={fe_token}", json=_FIXTURE)
     assert r.status_code == 202
+    # Non-empty JSON body so FE's undici HTTP client can parse it without
+    # raising UND_ERR_RESPONSE — empty 202s caused a cosmetic dashboard
+    # error in production smoke even though delivery succeeded.
+    assert r.json() == {"accepted": True}
 
     rows = (await db_session.execute(select(RawEmail))).scalars().all()
     assert len(rows) == 1
