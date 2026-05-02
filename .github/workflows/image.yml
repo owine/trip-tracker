@@ -95,6 +95,9 @@ jobs:
           # Tag-less release model: every push to main produces a fresh image.
           # `:latest` and `:main` both float to current main HEAD; `:sha-<long>`
           # is the immutable per-commit pin for rollback.
+          # `org.opencontainers.image.version` label auto-populates from the
+          # matched tag pattern — currently "main" (branch name fallback), but
+          # will become the semver value once we cut tagged releases again.
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
