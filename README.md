@@ -272,6 +272,57 @@ never silently shift when ECB rates move.
 See `docker-compose.yml` — drop into your existing Traefik + Authelia Docker stack.
 Configure forwardemail.net webhook → `/api/ingest/email` (Phase 2).
 
+### Configuration reference
+
+All runtime configuration is via environment variables. The app/worker validate
+these at startup via `Settings` (`src/trip_tracker/config.py`) — missing required
+values fail fast.
+
+**Required — stack won't run without these:**
+
+| Env var | Used by | Notes |
+|---|---|---|
+| `DATABASE_URL` | app + worker | `postgresql+asyncpg://trip:${DB_PASSWORD}@trip-tracker-db:5432/trip` |
+| `DB_PASSWORD` | postgres init | Compose-only; also feeds into `DATABASE_URL` |
+| `SESSION_SECRET` | app | Min 32 chars. `python -c 'import secrets; print(secrets.token_hex(32))'` |
+| `OIDC_ISSUER` | app | e.g. `https://auth.yourdomain.com` |
+| `OIDC_CLIENT_ID` | app | Authelia client name |
+| `OIDC_CLIENT_SECRET` | app | Authelia client secret |
+| `OIDC_REDIRECT_URI` | app | e.g. `https://trips.yourdomain.com/auth/callback` |
+| `BASE_URL` | app | e.g. `https://trips.yourdomain.com` |
+| `WEBHOOK_SECRET` | app + worker | HMAC for `/api/ingest/email`. `python -c 'import secrets; print(secrets.token_hex(32))'` |
+| `FORWARDEMAIL_RELAY_TOKEN` | app + worker | Token for `?token=` on `/api/ingest/forwardemail`. `python -c 'import secrets; print(secrets.token_urlsafe(32))'` |
+| `ANTHROPIC_API_KEY` | worker | `sk-ant-...` for the Haiku LLM fallback parser |
+| `MEILI_MASTER_KEY` | app + worker + meili | Search index access. `openssl rand -hex 32` |
+
+**Optional — defaults shown; override only if needed:**
+
+| Env var | Default | Notes |
+|---|---|---|
+| `TRIP_TRACKER_IMAGE` | `ghcr.io/REPLACE_OWNER/trip-tracker:latest` | Pin to a specific tag for stability |
+| `TRIP_HOST` | `trips.example.com` | Used in Traefik routing rule |
+| `REDIS_URL` | `redis://trip-tracker-redis:6379/0` | Override only for external Redis |
+| `MEILI_URL` | `http://trip-tracker-search:7700` | Override only for external Meilisearch |
+| `LOG_LEVEL` | `INFO` | `DEBUG`/`WARNING`/`ERROR` |
+| `LOG_FORMAT` | `json` | `console` for human-readable in dev |
+| `TZ` | `UTC` | Container timezone, e.g. `America/Chicago` |
+| `ADMIN_GROUP` | `trip-tracker:admin` | OIDC group claim that grants `/admin/*` access |
+| `SESSION_COOKIE_NAME` | `tt_session` | Don't change unless reverse-proxy needs it |
+| `SESSION_MAX_AGE_SECONDS` | `604800` (7 days) | Idle-logout window |
+| `WEBHOOK_SIGNATURE_HEADER` | `X-Webhook-Signature` | Per FE's docs; override only if FE changes header name |
+| `WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS` | `300` (5 min) | Replay-attack window for `/api/ingest/email` |
+| `WEBHOOK_MAX_BODY_BYTES` | `26214400` (25 MiB) | Upper bound for direct webhook body |
+| `LLM_DAILY_BUDGET_CENTS` | `100` ($1.00/day) | Soft cap on Haiku spend before parser short-circuits |
+| `LLM_MODEL` | `claude-haiku-4-5-20251001` | Pinned per master spec |
+| `LLM_CONFIDENCE_FLOOR` | `0.7` | Below this → segments land in `/inbox` for review |
+| `DOCUMENTS_DIR` | `/data/documents` | Phase 5 storage path; container-internal |
+| `MAX_UPLOAD_BYTES` | `26214400` (25 MiB) | Upper bound for `/documents/upload` |
+| `DOCUMENTS_X_ACCEL_PREFIX` | (unset) | Set to e.g. `/protected-files` when fronting with nginx X-Accel-Redirect |
+
+The worker container needs every `app`-required env var even when it doesn't
+functionally use them (`Settings()` validates the full model at module load).
+The repo's `docker-compose.yml` mirrors the env block on both services.
+
 ### Authelia OIDC client
 
 The app is a confidential OIDC client with PKCE S256. It reads claims directly
