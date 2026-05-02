@@ -10,6 +10,9 @@ permissions:
   security-events: write
   pull-requests: read      # gitleaks/semgrep enumerate PR commits
   actions: read            # semgrep reads workflow-runs API
+  packages: write          # docker-build/manifest-merge push to GHCR (main push only)
+  id-token: write          # cosign keyless signing (main push only)
+  attestations: write      # buildx provenance/sbom attestations (main push only)
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -115,49 +118,137 @@ jobs:
         with:
           sarif_file: semgrep.sarif
 
-  # Build the image on both arches (each on its NATIVE runner — no QEMU emulation)
-  # so we catch any arm64-specific Dockerfile issues before merging. No push to
-  # GHCR; this is just a CI smoke test.
+  # Per-arch native image builds, push-by-digest. Only on main push — PRs skip
+  # this entirely (Dockerfile breakage gets caught post-merge; acceptable for
+  # the project's current pre-production stage with a small contributor pool).
   docker-build:
+    if: github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-24.04
+          - platform: linux/amd64
+            runner: ubuntu-24.04
             arch: amd64
-          - runner: ubuntu-24.04-arm
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
             arch: arm64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
-      - name: Build image natively for ${{ matrix.arch }} (load locally, no push)
+
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf  # v6.0.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+
+      - id: build
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
           context: .
-          load: true
-          tags: trip-tracker:ci-${{ matrix.arch }}
-          cache-from: type=gha,scope=ci-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=ci-${{ matrix.arch }}
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # GIT_SHA bakes the commit identifier into the image's final ENV layer
+          # so /healthz can report which commit is running.
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+          provenance: true
+          sbom: true
 
-  # Trivy CVE scan runs once on amd64 (image contents identical across arches
-  # for vulnerability purposes — same package versions in both manifests).
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # Merge per-arch digests into a multi-arch manifest list and sign it.
+  # Only runs on main push (depends on docker-build which is also gated).
+  manifest-merge:
+    if: github.event_name == 'push'
+    needs: docker-build
+    runs-on: ubuntu-24.04
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
+
+      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@030e881283bb7a6894de51c315a6bfe6a94e05cf  # v6.0.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # Tag-less release model: every push to main produces a fresh image.
+          # `:latest` and `:main` both float to current main HEAD; `:sha-<long>`
+          # is the immutable per-commit pin for rollback.
+          # `org.opencontainers.image.version` label auto-populates from the
+          # matched tag pattern — currently "main" (branch name fallback), but
+          # will become the semver value once we cut tagged releases again.
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha,format=long
+
+      - name: Assemble multi-arch manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
+
+      - id: digest
+        name: Resolve merged manifest list digest
+        run: |
+          digest=$(docker buildx imagetools inspect "ghcr.io/${{ github.repository }}:latest" --format '{{json .Manifest.Digest}}' | jq -r .)
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+
+      - uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003  # v4.1.1
+
+      - name: Cosign sign the multi-arch manifest (keyless OIDC)
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          cosign sign --yes "ghcr.io/${{ github.repository }}@${DIGEST}"
+
+  # Trivy CVE scan against the just-published manifest digest. Only on main
+  # push. Scanning by digest (not local build) means we scan exactly what got
+  # published — no chance of drift between scanned and deployed image.
   trivy-scan:
+    if: github.event_name == 'push'
+    needs: manifest-merge
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-      - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
-      - name: Build amd64 image for Trivy
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
-          context: .
-          load: true
-          tags: trip-tracker:trivy-scan
-          cache-from: type=gha,scope=ci-amd64
-      - name: Trivy image scan
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
-        with:
-          image-ref: trip-tracker:trivy-scan
+          image-ref: ghcr.io/${{ github.repository }}@${{ needs.manifest-merge.outputs.digest }}
           format: sarif
           output: trivy.sarif
           severity: HIGH,CRITICAL
