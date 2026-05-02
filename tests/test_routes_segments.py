@@ -251,6 +251,18 @@ async def test_edit_segment_renders_prefilled_form(
     assert "CDG" in r.text
     # The local datetime display (note: 13:00 UTC → 09:00 in America/New_York):
     assert "2026-06-01T09:00" in r.text
+    # Regression: the edit-form must POST to the update endpoint, not the bare
+    # /segments create endpoint (or every "edit" silently creates a duplicate).
+    # Caught in v0.8.0 smoke.
+    assert f'action="/trips/{trip.id}/segments/{seg.id}"' in r.text
+    assert 'action="/segments"' not in r.text
+    # Title + button reflect edit mode, not "New flight" / "Create".
+    # `r.text` may have whitespace from Jinja's multi-line if/else; collapse before checking.
+    collapsed = " ".join(r.text.split())
+    assert "Edit flight" in collapsed
+    assert "Save changes" in collapsed
+    assert "New flight" not in collapsed
+    assert ">Create<" not in collapsed
 
 
 @pytest.mark.asyncio

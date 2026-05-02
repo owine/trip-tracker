@@ -3,10 +3,8 @@
 <li class="flex items-baseline gap-3 border-b py-2 text-sm">
   <span class="w-24 text-zinc-500">{{ e.incurred_on }}</span>
   <span class="w-28 rounded bg-zinc-100 px-2 dark:bg-zinc-800">{{ category_labels[Category(e.category) ] }}</span>
-  <span class="font-medium">{{ e.currency }} {{ "%.2f"|format(e.amount_minor / 10**minor_digits(e.currency) ) }}</span>
-  <span class="text-zinc-500">
-    ({{ e.home_currency }} {{ "%.2f"|format(e.amount_home_minor / 10**minor_digits(e.home_currency) ) }})
-  </span>
+  <span class="font-medium">{{ e.currency }} {{ money(e.amount_minor, e.currency) }}</span>
+  <span class="text-zinc-500">({{ e.home_currency }} {{ money(e.amount_home_minor, e.home_currency) }})</span>
   {% if e.status == 'paid' %}
     <span title="Paid">&#9989;</span>
   {% else %}
@@ -23,12 +21,10 @@
 </li>
 {% if e.status == 'pending' and e.cancellation_deadline %}
   {% set days_left = (e.cancellation_deadline - today).days %}
+  {% set day_word = 'day' if days_left == 1 else 'days' %}
   {% if days_left >= 0 and days_left <= 30 %}
     <li class="ml-24 text-xs text-amber-700">
-      &#9888; Deposit forfeit after {{ e.cancellation_deadline }}
-      ({{ days_left }} day
-      {% if days_left != 1 %}s{% endif %}
-      )
+      &#9888; Deposit forfeit after {{ e.cancellation_deadline }} ({{ days_left }} {{ day_word }})
     </li>
   {% endif %}
 {% endif %}

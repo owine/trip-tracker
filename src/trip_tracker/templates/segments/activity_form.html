@@ -1,9 +1,25 @@
 {% extends "base.html" %}
-{% block title %}New activity · trip-tracker{% endblock %}
+{% block title %}
+  {% if edit_segment_id %}
+    Edit
+  {% else %}
+    New
+  {% endif %}
+  activity · trip-tracker
+{% endblock %}
 {% block content %}
-  <h1 class="text-3xl font-semibold">New activity</h1>
+  <h1 class="text-3xl font-semibold">
+    {% if edit_segment_id %}
+      Edit
+    {% else %}
+      New
+    {% endif %}
+    activity
+  </h1>
   {% if errors %}<p class="mt-2 text-red-600">{{ errors._form }}</p>{% endif %}
-  <form method="post" action="/segments" class="mt-6 space-y-4">
+  <form method="post"
+        action="{% if edit_segment_id %}/trips/{{ edit_trip_id }}/segments/{{ edit_segment_id }}{% else %}/segments{% endif %}"
+        class="mt-6 space-y-4">
     {% include "segments/_common_fields.html" %}
     <label class="block text-sm">
       Venue name
@@ -24,6 +40,12 @@
              name="city"
              value="{{ values.get('city', '') }}">
     </label>
-    <button class="rounded bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">Create</button>
+    <button class="rounded bg-zinc-900 px-4 py-2 text-white dark:bg-zinc-100 dark:text-zinc-900">
+      {% if edit_segment_id %}
+        Save changes
+      {% else %}
+        Create
+      {% endif %}
+    </button>
   </form>
 {% endblock %}
