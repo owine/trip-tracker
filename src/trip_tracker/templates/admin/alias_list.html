@@ -6,6 +6,13 @@
     <a href="/admin/aliases/new"
        class="rounded bg-zinc-900 px-3 py-1.5 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">+ New</a>
   </div>
+  <p class="mt-2 text-sm text-zinc-500">
+    Maps the local part of an inbound email's <code>To:</code> address to a
+    user. The domain is ignored — only the part before the <code>@</code>
+    matters. Example: a row with local part <code>plans</code> matches emails
+    forwarded to <code>plans@owine.wtf</code>, <code>plans@trips.example.com</code>,
+    or any other domain.
+  </p>
   <table class="mt-6 w-full text-sm">
     <thead class="text-left text-zinc-500">
       <tr>
