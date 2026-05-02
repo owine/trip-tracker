@@ -1,0 +1,25 @@
+Subject: Your taxi pickup is confirmed
+From: dispatch@taxico.example
+To: oliver@trips.example.com
+Content-Type: text/html
+
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "TaxiReservation",
+  "reservationNumber": "TAX-558811",
+  "reservationStatus": "https://schema.org/ReservationConfirmed",
+  "pickupTime": "2026-08-15T06:30:00-04:00",
+  "partySize": 2,
+  "pickupLocation": {
+    "@type": "Place",
+    "name": "Hotel Lobby"
+  },
+  "reservationFor": {
+    "@type": "Taxi",
+    "name": "Standard sedan"
+  }
+}
+</script>
+</head><body>We'll see you out front.</body></html>

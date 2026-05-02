@@ -1,0 +1,27 @@
+Subject: Your reservation at Le Bistro
+From: noreply@opentable.example
+To: oliver@trips.example.com
+Content-Type: text/html
+
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FoodEstablishmentReservation",
+  "reservationNumber": "OPT-77713",
+  "reservationStatus": "https://schema.org/ReservationConfirmed",
+  "startTime": "2026-07-13T19:30:00-04:00",
+  "endTime":   "2026-07-13T21:30:00-04:00",
+  "partySize": 4,
+  "reservationFor": {
+    "@type": "FoodEstablishment",
+    "name": "Le Bistro",
+    "address": {
+      "@type": "PostalAddress",
+      "addressLocality": "Boston",
+      "addressCountry": "US"
+    }
+  }
+}
+</script>
+</head><body>Your table for 4 awaits.</body></html>

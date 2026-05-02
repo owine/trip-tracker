@@ -1,0 +1,22 @@
+Subject: Your Stena Line ferry booking — Holyhead to Dublin
+From: bookings@stenaline.example
+To: oliver@trips.example.com
+Content-Type: text/html
+
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BoatReservation",
+  "reservationNumber": "STL-66501",
+  "reservationStatus": "https://schema.org/ReservationConfirmed",
+  "reservationFor": {
+    "@type": "BoatTrip",
+    "departureBoatTerminal": {"@type": "BoatTerminal", "name": "Holyhead"},
+    "arrivalBoatTerminal":   {"@type": "BoatTerminal", "name": "Dublin Port"},
+    "departureTime": "2026-10-04T09:00:00+01:00",
+    "arrivalTime":   "2026-10-04T12:15:00+01:00"
+  }
+}
+</script>
+</head><body>Bon voyage.</body></html>

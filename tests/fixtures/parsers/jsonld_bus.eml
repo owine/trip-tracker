@@ -1,0 +1,29 @@
+Subject: Your FlixBus ticket — Berlin to Hamburg
+From: noreply@flixbus.example
+To: oliver@trips.example.com
+Content-Type: text/html
+
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BusReservation",
+  "reservationNumber": "FLX-22918",
+  "reservationStatus": "https://schema.org/ReservationConfirmed",
+  "reservedTicket": {
+    "@type": "Ticket",
+    "ticketNumber": "FLX-T-981",
+    "ticketedSeat": {"@type": "Seat", "seatNumber": "12A"}
+  },
+  "reservationFor": {
+    "@type": "BusTrip",
+    "busName": "FlixBus 045",
+    "busNumber": "045",
+    "departureBusStop": {"@type": "BusStation", "name": "Berlin ZOB"},
+    "arrivalBusStop":   {"@type": "BusStation", "name": "Hamburg ZOB"},
+    "departureTime": "2026-09-10T08:30:00+02:00",
+    "arrivalTime":   "2026-09-10T12:15:00+02:00"
+  }
+}
+</script>
+</head><body>Have a great trip.</body></html>

@@ -1,0 +1,31 @@
+Subject: Your Hertz reservation confirmation
+From: confirmations@hertz.example
+To: oliver@trips.example.com
+Content-Type: text/html
+
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "RentalCarReservation",
+  "reservationNumber": "HRT-44210",
+  "reservationStatus": "https://schema.org/ReservationConfirmed",
+  "pickupTime":  "2026-08-01T14:00:00-07:00",
+  "dropoffTime": "2026-08-05T10:00:00-07:00",
+  "pickupLocation": {
+    "@type": "Place",
+    "name": "LAX Hertz Counter",
+    "address": {"@type": "PostalAddress", "addressLocality": "Los Angeles"}
+  },
+  "dropoffLocation": {
+    "@type": "Place",
+    "name": "SFO Hertz Counter",
+    "address": {"@type": "PostalAddress", "addressLocality": "San Francisco"}
+  },
+  "reservationFor": {
+    "@type": "Car",
+    "name": "Toyota Camry or similar"
+  }
+}
+</script>
+</head><body>Drive safe.</body></html>

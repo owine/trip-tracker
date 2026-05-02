@@ -1,0 +1,30 @@
+Subject: Your tickets — Symphony in C Major
+From: tickets@symphonyhall.example
+To: oliver@trips.example.com
+Content-Type: text/html
+
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "EventReservation",
+  "reservationNumber": "EVT-9921",
+  "reservationStatus": "https://schema.org/ReservationConfirmed",
+  "reservationFor": {
+    "@type": "MusicEvent",
+    "name": "Symphony in C Major",
+    "startDate": "2026-07-12T20:00:00-04:00",
+    "endDate":   "2026-07-12T22:30:00-04:00",
+    "location": {
+      "@type": "Place",
+      "name": "Symphony Hall",
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "Boston",
+        "addressCountry": "US"
+      }
+    }
+  }
+}
+</script>
+</head><body>Get ready for an amazing show.</body></html>

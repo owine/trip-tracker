@@ -1,0 +1,39 @@
+Subject: Your trip package: Boston → Paris
+From: itineraries@packagetravel.example
+To: oliver@trips.example.com
+Content-Type: text/html
+
+<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ReservationPackage",
+  "reservationNumber": "PKG-001",
+  "subReservation": [
+    {
+      "@type": "FlightReservation",
+      "reservationNumber": "FL-A1",
+      "reservationFor": {
+        "@type": "Flight",
+        "flightNumber": "AA101",
+        "departureAirport": {"@type": "Airport", "iataCode": "BOS"},
+        "arrivalAirport":   {"@type": "Airport", "iataCode": "CDG"},
+        "departureTime": "2026-11-01T18:00:00-04:00",
+        "arrivalTime":   "2026-11-02T07:30:00+01:00"
+      }
+    },
+    {
+      "@type": "LodgingReservation",
+      "reservationNumber": "LDG-B2",
+      "checkinTime":  "2026-11-02T15:00:00+01:00",
+      "checkoutTime": "2026-11-05T11:00:00+01:00",
+      "reservationFor": {
+        "@type": "LodgingBusiness",
+        "name": "Hotel Le Marais",
+        "address": {"@type": "PostalAddress", "addressLocality": "Paris", "addressCountry": "FR"}
+      }
+    }
+  ]
+}
+</script>
+</head><body>Your package is confirmed.</body></html>
