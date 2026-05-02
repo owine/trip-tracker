@@ -10,16 +10,10 @@ import pytest_asyncio
 from pytest_postgresql import factories
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-# pytest-postgresql: connect to the already-running system Postgres instance
-# (pg_ctl initdb fails when running as root, so we use postgresql_noproc which
-# connects to an existing server instead of spawning one).
-_postgresql_proc = factories.postgresql_noproc(
-    host="127.0.0.1",
-    port=5432,
-    user="root",
-    password="test",
-    dbname="testtemplate",
-)
+# pytest-postgresql provides a real ephemeral PG per test session.
+# CI provides Postgres via service container; locally it falls back to
+# whatever 'pg_ctl' / 'postgres' is on PATH.
+_postgresql_proc = factories.postgresql_proc(port=None, unixsocketdir="/tmp")
 postgresql = factories.postgresql("_postgresql_proc")
 
 
