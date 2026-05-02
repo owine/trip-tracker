@@ -1,0 +1,15 @@
+{
+  "raw": "From: forwarder@example.com\r\nTo: me@trips.example.com\r\nSubject: Fwd: Test\r\nMessage-ID: <fe-test-001@example.com>\r\nContent-Type: text/plain\r\n\r\nbody\r\n",
+  "headers": {},
+  "headerLines": [],
+  "html": "",
+  "text": "body",
+  "from": {"value": [{"address": "forwarder@example.com"}]},
+  "messageId": "<fe-test-001@example.com>",
+  "recipients": ["me@trips.example.com"],
+  "session": {
+    "recipient": "me@trips.example.com",
+    "sender": "forwarder@example.com",
+    "arrivalDate": "2026-05-01T12:00:00.000Z"
+  }
+}

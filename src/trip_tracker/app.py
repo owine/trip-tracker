@@ -15,6 +15,7 @@ from trip_tracker import __version__
 from trip_tracker.auth.routes import router as auth_router
 from trip_tracker.config import Settings
 from trip_tracker.db import dispose_db, init_db
+from trip_tracker.ingest.forwardemail import router as forwardemail_router
 from trip_tracker.ingest.webhook import router as ingest_router
 from trip_tracker.logging_setup import configure_logging
 from trip_tracker.routes.admin import router as admin_router
@@ -79,6 +80,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_router)
     app.include_router(auth_router)
     app.include_router(ingest_router)
+    app.include_router(forwardemail_router)
     app.include_router(home_router)
     app.include_router(trips_router)
     app.include_router(segments_router)
