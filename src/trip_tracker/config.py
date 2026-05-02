@@ -46,6 +46,11 @@ class Settings(BaseSettings):
 
     # Webhook (forwardemail.net)
     webhook_secret: SecretStr = Field(...)
+    forwardemail_relay_token: SecretStr = Field(
+        ...,
+        description="Shared secret for the ForwardEmail webhook adapter. "
+        "Compared with the ?token= query param via hmac.compare_digest.",
+    )
     webhook_signature_header: str = Field(default="X-Webhook-Signature")
     webhook_timestamp_tolerance_seconds: int = Field(default=300)
     webhook_max_body_bytes: int = Field(default=26_214_400)  # 25 MiB
