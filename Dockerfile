@@ -46,6 +46,13 @@ ENV PYTHONUNBUFFERED=1 \
 RUN groupadd -r app && useradd -r -g app -d /app app
 WORKDIR /app
 
+# Pre-create the documents storage dir with `app` ownership. When a named
+# volume mounts at /data, Docker initializes it from this directory's
+# contents + perms — so the mounted volume is owned by `app` and writable.
+# Without this, the worker (running as `app`) can't `mkdir /data/documents`
+# at startup because root owns the volume's mount point by default.
+RUN mkdir -p /data/documents && chown -R app:app /data
+
 # Pull in just the venv + source from builder.
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src

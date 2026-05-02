@@ -22,6 +22,10 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       MEILI_URL: ${MEILI_URL:-http://trip-tracker-search:7700}
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
+      FORWARDEMAIL_RELAY_TOKEN: ${FORWARDEMAIL_RELAY_TOKEN}
+    volumes:
+      - trip-tracker-data:/data
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.trip.rule=Host(`${TRIP_HOST:-trips.example.com}`)"
@@ -71,8 +75,21 @@ services:
         condition: service_healthy
       trip-tracker-redis:
         condition: service_started
+    # Worker needs the SAME env vars as the app even though it doesn't use
+    # the OIDC/session/webhook surface — Settings() validates the full model
+    # at module load and crashes the worker startup if anything's missing.
+    # (A future split into AppSettings + WorkerSettings would let worker run
+    # with only DB/Redis/LLM/Meili creds, but that's a refactor for later.)
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      SESSION_SECRET: ${SESSION_SECRET}
+      OIDC_ISSUER: ${OIDC_ISSUER}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
+      BASE_URL: ${BASE_URL}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET}
+      FORWARDEMAIL_RELAY_TOKEN: ${FORWARDEMAIL_RELAY_TOKEN}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       REDIS_URL: ${REDIS_URL:-redis://trip-tracker-redis:6379/0}
       LLM_DAILY_BUDGET_CENTS: ${LLM_DAILY_BUDGET_CENTS:-100}
@@ -82,11 +99,14 @@ services:
       LOG_FORMAT: ${LOG_FORMAT:-json}
       MEILI_URL: ${MEILI_URL:-http://trip-tracker-search:7700}
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+    volumes:
+      - trip-tracker-data:/data
     networks: [internal]
 
 volumes:
   trip-tracker-pg:
   trip-tracker-meili:
+  trip-tracker-data:
 
 networks:
   proxy:
