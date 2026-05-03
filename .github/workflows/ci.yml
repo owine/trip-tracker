@@ -162,9 +162,13 @@ jobs:
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
           # GIT_SHA bakes the commit identifier into the image's final ENV layer
-          # so /healthz can report which commit is running.
+          # so /healthz and the page footer can report which commit is running.
+          # VERSION is github.ref_name: a semver tag like "v0.8.1" on tagged
+          # releases, or the branch name (e.g. "main") on branch pushes — same
+          # source the org.opencontainers.image.version label uses.
           build-args: |
             GIT_SHA=${{ github.sha }}
+            VERSION=${{ github.ref_name }}
           outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
