@@ -17,7 +17,7 @@ class RawEmail(Base):
     __tablename__ = "raw_emails"
     __table_args__ = (
         CheckConstraint(
-            "parse_status IN ('pending', 'parsed', 'failed', 'no_segments', 'review')",
+            "parse_status IN ('pending', 'parsed', 'failed', 'no_segments', 'review', 'duplicate')",
             name="ck_raw_emails_parse_status",
         ),
     )
