@@ -100,6 +100,31 @@ async def test_inbox_list_shows_three_buckets(
 
 
 @pytest.mark.asyncio
+async def test_inbox_surfaces_duplicate_rows(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    """A RawEmail with parse_status='duplicate' surfaces in the inbox UI."""
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user, raw = await _setup_user_with_raw(db_session, parse_status="duplicate")
+    raw.headers = {"X-Tt-Dedup-Against": [str(uuid.uuid4())]}
+    await db_session.commit()
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+        ) as c,
+    ):
+        r = await c.get("/inbox")
+    assert r.status_code == 200
+    assert raw.from_address in r.text
+    assert "Duplicates" in r.text
+
+
+@pytest.mark.asyncio
 async def test_inbox_confirm_action(
     db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
 ) -> None:

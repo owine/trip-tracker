@@ -106,6 +106,18 @@ async def inbox_list(
         .scalars()
         .all()
     )
+    duplicate_rows = (
+        (
+            await db.execute(
+                select(RawEmail)
+                .where(RawEmail.parse_status == "duplicate", own)
+                .order_by(RawEmail.received_at.desc())
+                .limit(50)
+            )
+        )
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         request,
         "inbox/list.html",
@@ -113,7 +125,7 @@ async def inbox_list(
             "user": user,
             "review_rows": review_rows,
             "no_seg_rows": no_seg_rows,
-            "duplicate_rows": [],  # Phase 3.5: duplicate detection deferred
+            "duplicate_rows": duplicate_rows,
         },
     )
 
