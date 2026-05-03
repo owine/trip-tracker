@@ -511,6 +511,33 @@ async def award_programs_autocomplete(
     return seen
 
 
+# Declared AFTER /segments/award-programs.json so the literal path wins over
+# the {segment_id} parameter capture (FastAPI matches in declaration order).
+@router.get("/segments/{segment_id}", response_model=None)
+async def view_segment(
+    segment_id: uuid.UUID,
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> Response:
+    """Resolve a bare segment id to its canonical edit URL.
+
+    There is no standalone segment detail page; segments live under their
+    parent trip. The inbox duplicates bucket links here with just the
+    segment id (because the dedup record only stores the id), so this
+    redirect looks up the trip and 303s to the edit page.
+    """
+    stmt = (
+        select(Segment)
+        .join(Trip, Trip.id == Segment.trip_id)
+        .join(TripTraveler, TripTraveler.trip_id == Trip.id)
+        .where(Segment.id == segment_id, TripTraveler.user_id == user.id)
+    )
+    seg = (await db.execute(stmt)).scalar_one_or_none()
+    if seg is None:
+        raise HTTPException(404)
+    return RedirectResponse(f"/trips/{seg.trip_id}/segments/{seg.id}/edit", status_code=303)
+
+
 async def _load_segment_for_user(
     db: AsyncSession, trip_id: uuid.UUID, segment_id: uuid.UUID, user_id: uuid.UUID
 ) -> Segment:
