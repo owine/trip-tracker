@@ -124,18 +124,23 @@ for d in drafts:
 
 if drafts and not fresh:                        # all drafts deduped
     raw.parse_status = "duplicate"
-    raw.headers["X-Tt-Dedup-Against"] = [str(s.id) for _, s in matched]
+    raw.headers = {**(raw.headers or {}), "X-Tt-Dedup-Against": [str(s.id) for _, s in matched]}
     # NO segments persisted, NO auto-Expense
 elif matched:                                   # mixed — partial dedup
     raw.parse_status = "review"
-    raw.headers["X-Tt-Dedup-Partial"] = [
+    raw.headers = {**(raw.headers or {}), "X-Tt-Dedup-Partial": [
         {"draft": d.summary(), "existing": str(s.id)} for d, s in matched
-    ]
+    ]}
     persist_segments(fresh)
 else:
     raw.parse_status = "review"                 # current behavior
     persist_segments(fresh)
 ```
+
+Note: `raw.headers` is rebound to a new dict (rather than mutated in place)
+because SQLAlchemy's JSONB change-tracking does not detect in-place mutation
+without `flag_modified()`. Whole-dict reassignment is the simpler convention
+already used elsewhere in the codebase (see `routes/inbox.py::reask`).
 
 The mixed-drafts path matters: a multi-segment forward where one leg is already
 known and one is new should preserve the new leg, not reject the whole email.
@@ -164,17 +169,46 @@ top city IF its share ≥ 30% of all endpoints; else `None`.
 
 The 30% floor handles digital-nomad cases — if no city dominates, geometric
 fallback takes over rather than picking a wrong "home." Recomputed on every
-consolidation query (cached per-request, not per-user-day; correctness > caching).
+consolidation query. No persisted cache. Within a single
+`consolidation_candidates` call, the `home` value is computed once locally and
+reused — there is no cross-request cache (correctness > caching; the query is
+already cheap given the partial index in §4.2).
 
 New module `src/trip_tracker/trips/consolidation.py`:
 
 ```python
+@dataclass(frozen=True)
+class ConsolidationTarget:
+    """Normalized view of either an existing Trip or in-flight drafts.
+
+    Both surfaces (trip-detail page + inbox-confirm preview) need the same
+    shape: a date range and the set of endpoint cities/IATAs. This adapter
+    lets `consolidation_candidates` stay agnostic to which surface is calling.
+    """
+    start_date: date
+    end_date:   date
+    start_city: str | None
+    end_city:   str | None
+    endpoint_iatas: frozenset[str]
+    trip_id: uuid.UUID | None  # None for in-flight drafts (no Trip row yet)
+
+    @classmethod
+    def from_trip(cls, trip: Trip, segments: Sequence[Segment]) -> "ConsolidationTarget": ...
+
+    @classmethod
+    def from_drafts(cls, drafts: Sequence[SegmentDraft]) -> "ConsolidationTarget": ...
+
+
 async def consolidation_candidates(
     db: AsyncSession,
     user: User,
-    target: Trip | list[SegmentDraft],
+    target: ConsolidationTarget,
 ) -> list[ConsolidationCandidate]:
 ```
+
+Both call-sites (`routes/trips.py::trip_detail` and the inbox-confirm preview)
+build the `ConsolidationTarget` themselves and pass it in. The function never
+sees raw drafts or Trip rows directly.
 
 ```
 home = infer_home(user)
@@ -223,10 +257,10 @@ Per-pair dismissal stored in `trip_merge_dismissals` (§4).
 `POST /trips/<source_id>/merge-into/<target_id>` in `routes/trips.py`.
 
 **Validation:**
-- `require_user`; `source.created_by == user.id` AND `target.created_by == user.id`, else 403.
-- `source_id != target_id`, else 400.
-- Either trip already merged (`merged_into_id IS NOT NULL`), else 400.
-- Both rows must exist, else 404.
+- `require_user`; `source.created_by == user.id` AND `target.created_by == user.id`, else **403**.
+- Both rows must exist, else **404**. (Order: existence check before ownership check, so non-existent IDs don't leak ownership info.)
+- `source_id != target_id`, else **400**.
+- If *either* trip is already merged (`merged_into_id IS NOT NULL`), return **400**.
 
 **Single-transaction reassignment:**
 
@@ -266,13 +300,47 @@ it's grep-able. The user-facing `/trips/<id>` GET returns **410 Gone** if
 immediately if the trip is soft-deleted. No redirect, no grace period.
 Subscribers fix their subscription. This is the explicit contract.
 
+**Merge audit (for lossless undo of trip_travelers).** The merge transaction
+inserts trip_traveler rows into the target via `ON CONFLICT DO NOTHING`, then
+deletes them from the source. By the time undo runs, we cannot tell which
+target rows were *added by this merge* versus which pre-existed — undo would
+either leave them attached (lossy: collaborators of the source remain on
+target) or remove all matching rows (lossy in the other direction: removes
+collaborators who were independently on the target).
+
+Resolution: store the merge audit on the soft-deleted source row itself.
+Add `trips.merge_audit JSONB NULL` (column added in §4.2). At merge time,
+populate it with the rows actually moved/added:
+
+```python
+merge_audit = {
+    "source_segment_ids":   [...],
+    "source_expense_ids":   [...],
+    "source_document_ids":  [...],
+    "added_traveler_user_ids": [...],   # rows actually inserted into target
+    "source_start_date": "...",         # for target date recomputation on undo
+    "source_end_date":   "...",
+    "schema_version": 1,
+}
+```
+
+The `added_traveler_user_ids` list captures the diff: for each source
+trip_traveler row, include `user_id` only if it was NOT already present on
+target (i.e., it was actually inserted, not skipped via `ON CONFLICT`).
+
+When the source is hard-deleted by the sweeper after 7 days, the audit goes
+with it — no garbage collection needed.
+
 **Undo route.** `POST /trips/<target_id>/undo-merge/<source_id>`:
 - Auth: target owned by user.
 - Window: `now() - source.merged_at <= 7 days`, else 410.
 - Refused (409) if the *target* itself has been merged since.
-- Reverses FK reassignment, removes added trip_traveler rows, nulls
-  `merged_into_id` and `merged_at` on source, recomputes target's start/end_date
-  excluding what just left.
+- Reverses FK reassignment using `source_segment_ids`, `source_expense_ids`,
+  `source_document_ids` from `merge_audit` (idempotent: `WHERE id = ANY(...)`).
+- Removes target trip_traveler rows where `user_id IN added_traveler_user_ids`.
+- Re-inserts the source's original trip_traveler rows.
+- Nulls `merged_into_id`, `merged_at`, `merge_audit` on source.
+- Recomputes target's `start_date`/`end_date` excluding the source span.
 
 **Hard-delete sweeper.** New saq cron task
 `trip_tracker.workers.cleanup.purge_merged_trips` running daily at 04:00 UTC:
@@ -315,22 +383,25 @@ exists during migration authoring, extend it to allow `'duplicate'`.
 Single Alembic revision combining all of these:
 
 ```sql
--- 1. Trip soft-delete columns
+-- 1. Trip soft-delete columns + merge audit (for lossless undo, see §3.3)
 ALTER TABLE trips
-  ADD COLUMN merged_into_id uuid NULL REFERENCES trips(id) ON DELETE SET NULL,
-  ADD COLUMN merged_at      timestamptz NULL;
+  ADD COLUMN merged_into_id uuid        NULL REFERENCES trips(id) ON DELETE SET NULL,
+  ADD COLUMN merged_at      timestamptz NULL,
+  ADD COLUMN merge_audit    jsonb       NULL;
 -- Self-FK uses SET NULL (not CASCADE): if the target of a merge is later
 -- hard-deleted, the source row should survive with a null pointer rather
 -- than vanish in a cascade.
+-- merge_audit is populated only on soft-deleted source rows; null elsewhere.
+-- Schema documented in §3.3 ("Merge audit"); schema_version=1 initially.
 
--- 2. Partial index for the active-trips filter
-CREATE INDEX ix_trips_active ON trips (id) WHERE merged_into_id IS NULL;
-
--- 3. Index for the consolidation candidate query
+-- 2. Index for the consolidation candidate query
+-- Also serves as the only index needed for the WHERE merged_into_id IS NULL
+-- filter clause everywhere — no separate ix_trips_active. Postgres uses this
+-- partial index for both the candidate range query and active-only listings.
 CREATE INDEX ix_trips_owner_dates ON trips (created_by, start_date, end_date)
   WHERE merged_into_id IS NULL;
 
--- 4. Per-pair dismissal table
+-- 3. Per-pair dismissal table
 CREATE TABLE trip_merge_dismissals (
   user_id      uuid        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   trip_a_id    uuid        NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
@@ -368,7 +439,7 @@ existing rows, which is correct.
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/inbox` | Existing handler; populates `duplicate_rows` from `parse_status='duplicate'` (auth-scoped, ordered desc, limit 50). |
-| `POST` | `/inbox/<raw_id>/not-a-duplicate` | New. Sets `parse_status='pending'`, removes `X-Tt-Dedup-Against`, enqueues parse. CSRF + ownership check. |
+| `POST` | `/inbox/<raw_id>/not-a-duplicate` | New. Sets `parse_status='pending'`, removes `X-Tt-Dedup-Against`, enqueues parse. CSRF + ownership check. **404 on non-owner** to match existing inbox convention (`_load_owned` raises 404, deliberately not leaking owned-but-different-user vs nonexistent). The trips routes (§5.2) use 403 — the inconsistency is a deliberate codebase convention split: inbox routes don't leak ownership, trips routes do. |
 
 ### 5.2 v0.9.0
 
@@ -448,9 +519,11 @@ soft-delete + date recomputation; 403 on non-owner (source); 403 on non-owner
 already merged; 404 on nonexistent ids; source `/trips/<id>` returns 410;
 source ICS returns 410; trip listings exclude soft-deleted.
 
-`tests/test_routes_trips_undo_merge.py` (~5 tests): within-window restore;
+`tests/test_routes_trips_undo_merge.py` (~7 tests): within-window restore;
 after-window 410; 409 on chain (target re-merged); source 410 lifted post-undo;
-ICS live again post-undo.
+ICS live again post-undo; **trip_travelers undo restores source-only rows
+without removing target's pre-existing collaborators** (audit-driven);
+**target trip_travelers added by merge are removed on undo** (audit-driven).
 
 `tests/test_workers_cleanup.py` (~3 tests): sweeper deletes past-window;
 preserves in-window; cascades clean shell on hard-delete.
@@ -462,7 +535,7 @@ existing new-Trip behavior.
 ### 6.3 Targets
 
 - v0.8.1: ~19 new tests, repo total ~526.
-- v0.9.0: ~38 new tests, repo total ~564.
+- v0.9.0: ~40 new tests, repo total ~566.
 - Coverage ≥88% maintained both releases.
 
 ### 6.4 Manual end-to-end smoke
