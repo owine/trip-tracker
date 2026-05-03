@@ -1,1 +1,36 @@
-{# Bucket 3: duplicate detection lands in Phase 3.5 (not v0.3.0). #}
+<ul class="mt-4 divide-y divide-zinc-200 dark:divide-zinc-800">
+  {% for raw in duplicate_rows %}
+    <li class="py-3">
+      <div class="flex items-baseline justify-between">
+        <div>
+          <div class="font-medium">{{ raw.subject or "(no subject)" }}</div>
+          <div class="text-sm text-zinc-500">{{ raw.from_address }} · {{ raw.received_at.strftime("%Y-%m-%d %H:%M") }}</div>
+          {% set dedup_ids = (raw.headers or {}).get("X-Tt-Dedup-Against", []) %}
+          {% if dedup_ids %}
+            <div class="text-sm text-zinc-500">
+              Matches existing:
+              {% for sid in dedup_ids %}
+                <a class="underline" href="/segments/{{ sid }}">{{ sid[:8] }}</a>
+                {% if not loop.last %},{% endif %}
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+        <div class="space-x-2 text-sm">
+          <a class="underline" href="/admin/raw-emails/{{ raw.id }}">View raw</a>
+          <form method="post"
+                action="/inbox/{{ raw.id }}/not-a-duplicate"
+                class="inline">
+            <button class="underline">Not a duplicate</button>
+          </form>
+          <form method="post"
+                action="/inbox/{{ raw.id }}/discard"
+                class="inline"
+                onsubmit="return confirm('Discard?')">
+            <button class="text-red-600 underline">Discard</button>
+          </form>
+        </div>
+      </div>
+    </li>
+  {% endfor %}
+</ul>
