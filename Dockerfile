@@ -65,10 +65,15 @@ USER app
 EXPOSE 8000
 
 # Build-time identification. Placed AFTER all heavy COPY layers so a changing
-# GIT_SHA only invalidates this tiny ENV layer, not the venv or source layers
-# above. Default "unknown" lets local builds work without needing to pass it.
+# GIT_SHA / VERSION only invalidates this tiny ENV layer, not the venv or
+# source layers above. Defaults let local builds work without needing args.
+# VERSION is `github.ref_name` from CI: a semver tag like "v0.8.1" on tagged
+# releases, or the branch name (e.g. "main") on branch pushes. Empty on local
+# dev builds → Python falls back to trip_tracker.__version__ from pyproject.
 ARG GIT_SHA=unknown
+ARG VERSION=
 ENV TRIP_TRACKER_GIT_SHA=$GIT_SHA
+ENV TRIP_TRACKER_VERSION=$VERSION
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD python -c "import httpx; r = httpx.get('http://127.0.0.1:8000/healthz', timeout=3); raise SystemExit(0 if r.status_code == 200 else 1)"
