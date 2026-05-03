@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
 from trip_tracker.models.user import User
+from trip_tracker.trips.home import infer_home
 
 # ---------------------------------------------------------------------------
 # Inline helpers
@@ -83,7 +84,6 @@ async def _seed_segments(
 @pytest.mark.asyncio
 async def test_top_endpoint_at_30pct_returns_city(db_session: AsyncSession) -> None:
     """6 out of 20 endpoints being 'NYC' (30 %) satisfies the dominance floor."""
-    from trip_tracker.trips.home import infer_home
 
     user, trip = await _seed_user_and_trip(db_session)
 
@@ -129,7 +129,6 @@ async def test_top_endpoint_at_30pct_returns_city(db_session: AsyncSession) -> N
 @pytest.mark.asyncio
 async def test_below_30pct_returns_none(db_session: AsyncSession) -> None:
     """4 out of 20 endpoint observations (20 %) is below the dominance floor."""
-    from trip_tracker.trips.home import infer_home
 
     user, trip = await _seed_user_and_trip(db_session)
 
@@ -160,7 +159,6 @@ async def test_below_30pct_returns_none(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_last_20_window_respected(db_session: AsyncSession) -> None:
     """Only the 20 most-recent segments count; older NYC-heavy history is ignored."""
-    from trip_tracker.trips.home import infer_home
 
     user, trip = await _seed_user_and_trip(db_session)
 
@@ -195,7 +193,6 @@ async def test_last_20_window_respected(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_cancelled_excluded(db_session: AsyncSession) -> None:
     """Cancelled segments must not contribute to the home inference."""
-    from trip_tracker.trips.home import infer_home
 
     user, trip = await _seed_user_and_trip(db_session)
 
@@ -229,7 +226,6 @@ async def test_cancelled_excluded(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_empty_history_returns_none(db_session: AsyncSession) -> None:
     """A user with no segments at all should get None."""
-    from trip_tracker.trips.home import infer_home
 
     user, _ = await _seed_user_and_trip(db_session)
 
@@ -240,7 +236,6 @@ async def test_empty_history_returns_none(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_both_endpoints_contribute(db_session: AsyncSession) -> None:
     """Both start_location and end_location city values count toward home."""
-    from trip_tracker.trips.home import infer_home
 
     user, trip = await _seed_user_and_trip(db_session)
 
