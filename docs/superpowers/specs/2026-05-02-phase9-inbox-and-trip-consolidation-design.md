@@ -375,8 +375,29 @@ visible during the 7-day window.
 
 Single Alembic revision. No new tables, no new columns. The
 `X-Tt-Dedup-Against` and `X-Tt-Dedup-Partial` payloads live in the existing
-`raw_emails.headers` JSONB. If a CHECK constraint on `raw_emails.parse_status`
-exists during migration authoring, extend it to allow `'duplicate'`.
+`raw_emails.headers` JSONB.
+
+Schema change required: `raw_emails.parse_status` carries a CHECK constraint
+`ck_raw_emails_parse_status` (defined in initial Phase 2 migration
+`bbf3bbe09be9_phase2_ingestion`) that allows
+`'pending', 'parsed', 'failed', 'no_segments', 'review'`. The migration
+drops and recreates this constraint with `'duplicate'` appended. The
+SQLAlchemy `CheckConstraint` declared on `RawEmail` must be updated in the
+same commit to keep ORM and DB in sync.
+
+Note on naming-convention drift: the ORM declares `CheckConstraint(...,
+name="ck_raw_emails_parse_status")` (the full literal name including the
+`ck_raw_emails_` prefix). Combined with `MetaData.naming_convention`'s
+`ck = "ck_%(table_name)s_%(constraint_name)s"`, calls to
+`Base.metadata.create_all` would emit
+`ck_raw_emails_ck_raw_emails_parse_status` — a different name from what's
+in the DB. This pre-existing drift does NOT bite in current tests
+(no `create_all` path is exercised against a real Postgres in the suite).
+The migration uses raw `op.execute(sa.text("ALTER TABLE ... DROP/ADD
+CONSTRAINT ..."))` rather than `op.drop_constraint(...)` to bypass the
+convention prefix and target the actual DB-side name. A follow-up debt
+item is tracked to rename the ORM `name=` argument to `"parse_status"`
+so the convention prefixes correctly.
 
 ### 4.2 v0.9.0 migration
 
