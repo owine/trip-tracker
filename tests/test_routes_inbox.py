@@ -248,6 +248,57 @@ async def test_inbox_404_for_other_users_raw(
     assert r.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_not_a_duplicate_resets_to_pending_and_clears_header(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user, raw = await _setup_user_with_raw(db_session, parse_status="duplicate")
+    raw.headers = {"X-Tt-Dedup-Against": ["abc-123"]}
+    await db_session.commit()
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    with patch("trip_tracker.routes.inbox.enqueue_parse", new=AsyncMock()) as mock_enqueue:
+        async with (
+            app.router.lifespan_context(app),
+            httpx.AsyncClient(
+                transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+            ) as c,
+        ):
+            r = await c.post(f"/inbox/{raw.id}/not-a-duplicate", follow_redirects=False)
+    assert r.status_code == 303
+    assert r.headers["location"] == "/inbox"
+    await db_session.refresh(raw)
+    assert raw.parse_status == "pending"
+    assert "X-Tt-Dedup-Against" not in (raw.headers or {})
+    mock_enqueue.assert_awaited_once_with(settings, raw.id)
+
+
+@pytest.mark.asyncio
+async def test_not_a_duplicate_other_user_returns_404(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    _user_a, raw = await _setup_user_with_raw(db_session, parse_status="duplicate")
+    user_b = User(oidc_subject="b", email="b@x.com", display_name="B")
+    db_session.add(user_b)
+    await db_session.commit()
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user_b, settings)
+        ) as c,
+    ):
+        r = await c.post(f"/inbox/{raw.id}/not-a-duplicate", follow_redirects=False)
+    assert r.status_code == 404
+
+
 # ---------------------------------------------------------------------------
 # JSON-LD pricing → auto Expense tests
 # ---------------------------------------------------------------------------
