@@ -18,6 +18,8 @@ async def test_healthz_ok() -> None:
     body = r.json()
     assert body["status"] == "ok"
     assert "version" in body
+    assert body["version"]  # never empty
     # git_sha is "unknown" outside a CI-built image, but the key must be present
     # so deploy-side health probes can rely on it for verification.
     assert "git_sha" in body
+    assert "git_sha_short" in body

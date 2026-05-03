@@ -1,17 +1,15 @@
 """Health check endpoint. Used by Traefik + Docker healthcheck.
 
-Reports `git_sha` from the `TRIP_TRACKER_GIT_SHA` env var, baked into the image
-at build time by CI (see Dockerfile + .github/workflows/image.yml). Defaults to
-"unknown" when running outside a CI-built image (local dev, tests).
+Reports the same ``version`` / ``git_sha`` / ``git_sha_short`` triple that
+the page footer renders (see ``trip_tracker.build_info``), so a deploy-side
+probe can confirm the running image without scraping HTML.
 """
 
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter
 
-from trip_tracker import __version__
+from trip_tracker.build_info import GIT_SHA, GIT_SHA_SHORT, VERSION
 
 router = APIRouter()
 
@@ -20,6 +18,7 @@ router = APIRouter()
 async def healthz() -> dict[str, str]:
     return {
         "status": "ok",
-        "version": __version__,
-        "git_sha": os.environ.get("TRIP_TRACKER_GIT_SHA", "unknown"),
+        "version": VERSION,
+        "git_sha": GIT_SHA,
+        "git_sha_short": GIT_SHA_SHORT,
     }
