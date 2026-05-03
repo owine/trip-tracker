@@ -18,7 +18,11 @@ class RawEmail(Base):
     __table_args__ = (
         CheckConstraint(
             "parse_status IN ('pending', 'parsed', 'failed', 'no_segments', 'review', 'duplicate')",
-            name="ck_raw_emails_parse_status",
+            # `name` is the constraint_name token for naming_convention substitution
+            # (see models/base.py: ck = "ck_%(table_name)s_%(constraint_name)s").
+            # Final constraint name resolves to "ck_raw_emails_parse_status",
+            # matching what Alembic created in the initial migration.
+            name="parse_status",
         ),
     )
 

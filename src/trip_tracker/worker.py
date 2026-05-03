@@ -213,10 +213,13 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
                 db.add(TripTraveler(trip_id=trip.id, user_id=owner.user_id, role="owner"))
                 trip_id = trip.id
                 trips_to_sync.add(trip.id)
-            elif decision.kind == "attach":
-                trip_id = decision.trip_id
             else:
-                trip_id = None
+                # decision.kind in {"attach", "ambiguous"}: both carry a trip_id
+                # for the best-scoring candidate. Ambiguous cases land on that
+                # candidate but with parse_status='review' (set later from the
+                # confidence floor or partial-dedup path) so the user can
+                # reassign in /inbox if the auto-pick was wrong.
+                trip_id = decision.trip_id
 
             seg = Segment(
                 trip_id=trip_id,
