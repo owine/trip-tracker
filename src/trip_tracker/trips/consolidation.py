@@ -70,11 +70,14 @@ class ConsolidationTarget:
         iatas: set[str] = set()
         for d in ordered:
             for loc in (d.start_location, d.end_location):
-                iata = (loc or {}).get("iata") if loc else None
+                iata = (loc or {}).get("iata")
                 if iata:
                     iatas.add(iata)
         start_date = ordered[0].start_at.date() if ordered else date.today()
-        end_date = (ordered[-1].end_at or ordered[-1].start_at).date() if ordered else start_date
+        # max() across all drafts: a later-starting flight may have an earlier
+        # end_at than a longer-running lodging draft. Picking ordered[-1] would
+        # silently shrink the window and miss consolidation candidates.
+        end_date = max((d.end_at or d.start_at) for d in ordered).date() if ordered else start_date
         return cls(
             start_date=start_date,
             end_date=end_date,
