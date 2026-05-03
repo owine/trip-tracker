@@ -505,6 +505,98 @@ async def test_parse_raw_email_attaches_to_existing_trip(
 
 
 @pytest.mark.asyncio
+async def test_parse_raw_email_ambiguous_decision_attaches_to_best_trip(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    """Ambiguous cluster decisions carry a trip_id (the best-scoring candidate)
+    just like 'attach' does. The worker must use it, not fall back to None —
+    Segment.trip_id is NOT NULL, and a None there used to crash the parse.
+    Regression for the worker.py 'else: trip_id = None' bug present from
+    project init through v0.8.0.
+    """
+    from datetime import date
+
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from trip_tracker.models.segment import Segment
+    from trip_tracker.models.trip import Trip
+    from trip_tracker.models.trip_traveler import TripTraveler
+    from trip_tracker.parsers.cluster import ClusterDecision
+    from trip_tracker.parsers.dispatch import ParseOutcome
+    from trip_tracker.worker import parse_raw_email
+
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    user = User(oidc_subject="amb", email="amb@x.com", display_name="AMB")
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
+
+    trip = Trip(
+        title="Paris June 2026",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 5),
+        primary_destination="Paris",
+        created_by=user.id,
+    )
+    db_session.add(trip)
+    await db_session.flush()
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
+
+    raw = RawEmail(
+        id=uuid.uuid4(),
+        received_at=datetime.now(tz=UTC),
+        to_address="oliver@trips.example.com",
+        from_address="x@y.com",
+        subject="t",
+        message_id=f"<{uuid.uuid4()}@x>",
+        mime_blob=_FIXTURE_MIME,
+        headers={},
+        parse_status="pending",
+    )
+    db_session.add(raw)
+    await db_session.commit()
+
+    fake_outcome = ParseOutcome(
+        result=ParseResult(
+            segments=[
+                SegmentDraft(
+                    type="flight",
+                    start_at=datetime(2026, 6, 3, 9, tzinfo=UTC),
+                    start_tz="UTC",
+                    start_location={"city": "Paris"},
+                    end_location={"city": "Paris"},
+                )
+            ],
+            confidence=0.9,
+            source="rules:test",
+        ),
+    )
+    fake_dispatch = AsyncMock(return_value=fake_outcome)
+    fake_cluster = AsyncMock(return_value=ClusterDecision(kind="ambiguous", trip_id=trip.id))
+    engine = create_async_engine(db_url)
+    with (
+        patch("trip_tracker.worker.dispatch_parse", new=fake_dispatch),
+        patch("trip_tracker.worker.cluster_for_user", new=fake_cluster),
+    ):
+        await parse_raw_email(
+            {"settings": Settings(), "engine": engine},
+            raw_email_id=str(raw.id),
+        )
+    await engine.dispose()
+
+    from sqlalchemy import select
+
+    seg = (
+        await db_session.execute(select(Segment).where(Segment.raw_email_id == raw.id))
+    ).scalar_one()
+    assert seg.trip_id == trip.id, (
+        "ambiguous decisions must inherit decision.trip_id; previously the "
+        "worker would set trip_id=None and the INSERT would fail under "
+        "Segment.trip_id NOT NULL"
+    )
+
+
+@pytest.mark.asyncio
 async def test_worker_startup_creates_engine(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """startup() populates ctx['engine'] and ctx['settings']."""
     monkeypatch.setenv("DATABASE_URL", db_url)
