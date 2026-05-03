@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from fastapi.templating import Jinja2Templates
 
+from trip_tracker.build_info import GIT_SHA, GIT_SHA_SHORT, VERSION
 from trip_tracker.expenses.awards import k_format, program_short
 from trip_tracker.expenses.categories import CATEGORY_LABELS, Category
 from trip_tracker.expenses.currencies import minor_digits
@@ -26,3 +27,6 @@ def register_globals(templates: Jinja2Templates) -> None:
     templates.env.globals["money"] = format_money
     templates.env.globals["Category"] = Category
     templates.env.globals["category_labels"] = CATEGORY_LABELS
+    templates.env.globals["app_version"] = VERSION
+    templates.env.globals["git_sha"] = GIT_SHA
+    templates.env.globals["git_sha_short"] = GIT_SHA_SHORT
