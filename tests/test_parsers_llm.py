@@ -81,6 +81,49 @@ async def test_parse_with_hint_appends_to_user_message() -> None:
 
 
 @pytest.mark.asyncio
+async def test_parse_lifts_pricing_into_segment_details() -> None:
+    """When Haiku populates `details.total_price` + `details.price_currency`
+    (per the prompt rules), those flow through SegmentDraft validation
+    unchanged and downstream auto-Expense creation sees them. This is the
+    LLM-side mirror of the JSON-LD parser's _extract_price helper.
+
+    The system prompt instructs Haiku to use the same key names + shapes
+    the JSON-LD parser produces, so the auto-Expense flow in routes/inbox.py
+    fires identically regardless of which strategy populated details.
+    """
+    client = MagicMock(spec=LLMClient)
+    client.call = AsyncMock(
+        return_value=_fake_response(
+            tool_input={
+                "segments": [
+                    {
+                        "type": "flight",
+                        "status": "confirmed",
+                        "start_at": "2026-06-04T16:55:00+02:00",
+                        "start_tz": "Europe/Paris",
+                        "confirmation_number": "XM8SK3",
+                        "provider": "Air France",
+                        "details": {
+                            "flight_number": "AF7666",
+                            "total_price": 351.76,
+                            "price_currency": "USD",
+                            "booking_time": "2026-04-09T14:58:00-05:00",
+                        },
+                    }
+                ],
+                "confidence": 0.78,
+            },
+        )
+    )
+    outcome = await parse_with_llm(client, _msg(), hint=None)
+    assert len(outcome.result.segments) == 1
+    seg = outcome.result.segments[0]
+    assert seg.details["total_price"] == 351.76
+    assert seg.details["price_currency"] == "USD"
+    assert seg.details["booking_time"] == "2026-04-09T14:58:00-05:00"
+
+
+@pytest.mark.asyncio
 async def test_parse_no_tool_use_returns_empty() -> None:
     """Model that doesn't invoke the tool returns an empty result with a warning."""
     client = MagicMock(spec=LLMClient)
