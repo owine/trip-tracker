@@ -135,16 +135,17 @@ Revises: <auto>
 Create Date: 2026-05-03 ...
 """
 from alembic import op
+import sqlalchemy as sa
 
 
 def upgrade() -> None:
     # No-op DDL. Documented vocabulary extension only.
     # Verify no CHECK constraint exists at upgrade time.
     bind = op.get_bind()
-    result = bind.execute(
+    result = bind.execute(sa.text(
         "SELECT 1 FROM information_schema.check_constraints "
         "WHERE constraint_name LIKE 'ck_raw_emails_parse_status%'"
-    ).first()
+    )).first()
     assert result is None, (
         "A CHECK constraint exists on raw_emails.parse_status. "
         "Update this migration to extend it to include 'duplicate'."
@@ -1077,6 +1078,12 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["trip_a_id"], ["trips.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["trip_b_id"], ["trips.id"], ondelete="CASCADE"),
+        # Composite PK matches the ORM's primary_key=True declarations on
+        # all three columns. Pair-uniqueness across LEAST/GREATEST is layered
+        # on top via the UNIQUE INDEX below — the PK is plain (A,B) order,
+        # the unique index canonicalizes pair order.
+        sa.PrimaryKeyConstraint("user_id", "trip_a_id", "trip_b_id",
+                                name="pk_trip_merge_dismissals"),
     )
     # Pair-uniqueness via expression UNIQUE INDEX. Postgres allows this
     # in a UNIQUE INDEX even though it can't be used as a PRIMARY KEY
@@ -1547,15 +1554,20 @@ async def _user_trips_within_window(
     db: AsyncSession, user: User, target: ConsolidationTarget,
 ) -> list[Trip]:
     window = timedelta(days=_GAP_DAYS_FALLBACK)
+    clauses = [
+        Trip.created_by == user.id,
+        Trip.merged_into_id.is_(None),
+        Trip.start_date - window <= target.end_date,
+        Trip.end_date + window >= target.start_date,
+    ]
+    # Conditional: only exclude the target trip when calling from trip-detail
+    # (where we have a Trip already). For the inbox-confirm preview path,
+    # target.trip_id is None and there's nothing to exclude.
+    if target.trip_id is not None:
+        clauses.append(Trip.id != target.trip_id)
     stmt = (
         select(Trip)
-        .where(
-            Trip.created_by == user.id,
-            Trip.merged_into_id.is_(None),
-            Trip.id != target.trip_id if target.trip_id else True,
-            Trip.start_date - window <= target.end_date,
-            Trip.end_date + window >= target.start_date,
-        )
+        .where(*clauses)
         .order_by(Trip.start_date.desc())
         .limit(50)
     )
@@ -1898,8 +1910,15 @@ async def merge_into(
     if source.merged_into_id is not None or target.merged_into_id is not None:
         raise HTTPException(400, detail="One of the trips has already been merged")
 
-    async with db.begin():
-        await merge_trip_into(db, source, target)
+    # Transaction handling: check the existing route pattern in this file.
+    # FastAPI's `get_session` dependency in this codebase typically yields a
+    # session whose transaction is implicit (autocommit-style with explicit
+    # `await db.commit()` at the end). If `async with db.begin()` raises
+    # "transaction already begun", drop the explicit `begin()` block and
+    # call `await db.commit()` at the end instead — match the pattern used
+    # by `routes/inbox.py::confirm` (auto-Expense flow).
+    await merge_trip_into(db, source, target)
+    await db.commit()
 
     return RedirectResponse(f"/trips/{target.id}?merged_from={source.id}", status_code=303)
 ```
@@ -2128,8 +2147,14 @@ async def test_sweeper_cascades_dismissals(...):
 
 - [ ] **Step 2: Implement task**
 
+Mirror the session-acquire pattern used by the existing saq tasks
+(`parse_raw_email`, `sync_meili`, `refresh_weather`) in `worker.py` — read
+those first to find how `ctx` exposes the AsyncSession factory, then copy
+that idiom. The shape is roughly:
+
 ```python
-# src/trip_tracker/worker.py — add
+# src/trip_tracker/worker.py — add (adjust to match the existing
+# session-acquire idiom in this file; do NOT invent a new pattern)
 
 async def purge_merged_trips(ctx: dict[str, Any]) -> None:
     """Hard-delete trips that have been soft-merged for >= 7 days.
@@ -2138,7 +2163,8 @@ async def purge_merged_trips(ctx: dict[str, Any]) -> None:
     be empty / pointed at the target).
     """
     cutoff = datetime.now(UTC) - timedelta(days=7)
-    async with ctx["db_factory"]() as db:
+    # Use the same async-session pattern as parse_raw_email above.
+    async with _session_for_task(ctx) as db:  # placeholder: match existing
         result = await db.execute(
             delete(Trip).where(
                 Trip.merged_into_id.is_not(None),
