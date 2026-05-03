@@ -161,3 +161,206 @@ async def test_cancelled_segments_excluded(db_session: AsyncSession) -> None:
 
     hit = await find_existing_segment(db_session, user.id, _draft())
     assert hit is None
+
+
+# ---------- Medium match (Task A3) ----------
+
+
+@pytest.mark.asyncio
+async def test_medium_flight_within_30min_iata_match(db_session: AsyncSession) -> None:
+    user = await _make_user(db_session)
+    trip = await _make_trip(db_session, user)
+    seeded = await _seed_segment(
+        db_session,
+        user,
+        trip,
+        provider=None,
+        confirmation=None,
+        start_at=datetime(2026, 6, 4, 16, 55, tzinfo=UTC),
+        start_iata="JFK",
+        end_iata="CDG",
+    )
+
+    hit = await find_existing_segment(
+        db_session,
+        user.id,
+        _draft(
+            provider=None,
+            confirmation=None,
+            start_at=datetime(2026, 6, 4, 17, 10, tzinfo=UTC),
+            start_iata="JFK",
+            end_iata="CDG",
+        ),
+    )
+    assert hit is not None
+    assert hit.id == seeded.id
+
+
+@pytest.mark.asyncio
+async def test_medium_flight_31min_apart_returns_none(db_session: AsyncSession) -> None:
+    user = await _make_user(db_session)
+    trip = await _make_trip(db_session, user)
+    await _seed_segment(
+        db_session,
+        user,
+        trip,
+        provider=None,
+        confirmation=None,
+        start_at=datetime(2026, 6, 4, 16, 55, tzinfo=UTC),
+        start_iata="JFK",
+        end_iata="CDG",
+    )
+
+    hit = await find_existing_segment(
+        db_session,
+        user.id,
+        _draft(
+            provider=None,
+            confirmation=None,
+            start_at=datetime(2026, 6, 4, 17, 26, tzinfo=UTC),
+            start_iata="JFK",
+            end_iata="CDG",
+        ),
+    )
+    assert hit is None
+
+
+@pytest.mark.asyncio
+async def test_medium_flight_different_iata_returns_none(db_session: AsyncSession) -> None:
+    user = await _make_user(db_session)
+    trip = await _make_trip(db_session, user)
+    await _seed_segment(
+        db_session,
+        user,
+        trip,
+        provider=None,
+        confirmation=None,
+        start_at=datetime(2026, 6, 4, 16, 55, tzinfo=UTC),
+        start_iata="JFK",
+        end_iata="CDG",
+    )
+
+    hit = await find_existing_segment(
+        db_session,
+        user.id,
+        _draft(
+            provider=None,
+            confirmation=None,
+            start_at=datetime(2026, 6, 4, 17, 10, tzinfo=UTC),
+            start_iata="JFK",
+            end_iata="ORY",
+        ),
+    )
+    assert hit is None
+
+
+@pytest.mark.asyncio
+async def test_medium_lodging_same_hotel_same_date(db_session: AsyncSession) -> None:
+    user = await _make_user(db_session)
+    trip = await _make_trip(db_session, user)
+    seeded = Segment(
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="lodging",
+        status="confirmed",
+        confirmation_number=None,
+        provider=None,
+        start_at=datetime(2026, 6, 5, 15, 0, tzinfo=UTC),
+        start_tz="UTC",
+        start_location={"name": "Hotel des Grands Boulevards"},
+        end_location=None,
+        details={},
+        parse_source="test",
+        parse_confidence=0.9,
+    )
+    db_session.add(seeded)
+    await db_session.flush()
+
+    draft = SegmentDraft(
+        type="lodging",  # type: ignore[arg-type]
+        confirmation_number=None,
+        provider=None,
+        start_at=datetime(2026, 6, 5, 17, 30, tzinfo=UTC),
+        start_tz="UTC",
+        start_location={"name": "HOTEL DES GRANDS BOULEVARDS"},
+        end_location=None,
+    )
+
+    hit = await find_existing_segment(db_session, user.id, draft)
+    assert hit is not None
+    assert hit.id == seeded.id
+
+
+@pytest.mark.asyncio
+async def test_medium_lodging_different_date_returns_none(db_session: AsyncSession) -> None:
+    user = await _make_user(db_session)
+    trip = await _make_trip(db_session, user)
+    seeded = Segment(
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="lodging",
+        status="confirmed",
+        confirmation_number=None,
+        provider=None,
+        start_at=datetime(2026, 6, 5, 15, 0, tzinfo=UTC),
+        start_tz="UTC",
+        start_location={"name": "Hotel des Grands Boulevards"},
+        end_location=None,
+        details={},
+        parse_source="test",
+        parse_confidence=0.9,
+    )
+    db_session.add(seeded)
+    await db_session.flush()
+
+    draft = SegmentDraft(
+        type="lodging",  # type: ignore[arg-type]
+        confirmation_number=None,
+        provider=None,
+        start_at=datetime(2026, 6, 6, 15, 0, tzinfo=UTC),
+        start_tz="UTC",
+        start_location={"name": "Hotel des Grands Boulevards"},
+        end_location=None,
+    )
+
+    hit = await find_existing_segment(db_session, user.id, draft)
+    assert hit is None
+
+
+@pytest.mark.asyncio
+async def test_cross_type_strong_match_still_hits(db_session: AsyncSession) -> None:
+    """Spec §3.1 rule 1 does not include `type` in the strong match key.
+
+    Documenting current spec-as-written behavior: a flight draft with the same
+    provider+confirmation as a seeded lodging segment IS treated as a match.
+    Flagged for spec follow-up if the team decides this should change.
+    """
+    user = await _make_user(db_session)
+    trip = await _make_trip(db_session, user)
+    seeded = Segment(
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="lodging",
+        status="confirmed",
+        confirmation_number="ABC123",
+        provider="Marriott",
+        start_at=datetime(2026, 6, 5, 15, 0, tzinfo=UTC),
+        start_tz="UTC",
+        start_location={"name": "Marriott Paris"},
+        end_location=None,
+        details={},
+        parse_source="test",
+        parse_confidence=0.9,
+    )
+    db_session.add(seeded)
+    await db_session.flush()
+
+    draft = _draft(
+        type_="flight",
+        provider="Marriott",
+        confirmation="ABC123",
+    )
+
+    hit = await find_existing_segment(db_session, user.id, draft)
+    assert hit is not None
+    assert hit.id == seeded.id
