@@ -287,6 +287,25 @@ async def reparse(
     return RedirectResponse("/inbox", status_code=303)
 
 
+@router.post("/{raw_id}/not-a-duplicate", response_model=None)
+async def not_a_duplicate(
+    raw_id: uuid.UUID,
+    request: Request,
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> Response:
+    """User overrides the dedup verdict. Clear the header, requeue parse."""
+    raw = await _load_owned(db, user, raw_id)
+    raw.parse_status = "pending"
+    new_headers = dict(raw.headers or {})
+    new_headers.pop("X-Tt-Dedup-Against", None)
+    raw.headers = new_headers
+    await db.commit()
+    settings: Settings = request.app.state.settings
+    await enqueue_parse(settings, raw.id)
+    return RedirectResponse("/inbox", status_code=303)
+
+
 @router.post("/{raw_id}/reask", response_model=None)
 async def reask(
     raw_id: uuid.UUID,
