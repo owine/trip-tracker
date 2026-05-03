@@ -88,6 +88,36 @@ def test_from_drafts_extracts_endpoints() -> None:
     assert target.end_date == date(2026, 6, 7)
 
 
+def test_from_drafts_end_date_uses_max_end_at() -> None:
+    """end_date must be max(end_at) across drafts, not last-by-start_at.
+
+    A return flight starting after a long lodging draft can have an earlier
+    end_at than the lodging's check-out — picking ordered[-1] would shrink
+    the consolidation window.
+    """
+    lodging = SegmentDraft(
+        type="lodging",
+        start_at=datetime(2026, 8, 10, 14, 0, tzinfo=UTC),
+        start_tz="Europe/Paris",
+        end_at=datetime(2026, 8, 20, 11, 0, tzinfo=UTC),
+        end_tz="Europe/Paris",
+        start_location={"city": "Paris"},
+        end_location={"city": "Paris"},
+    )
+    return_flight = SegmentDraft(
+        type="flight",
+        start_at=datetime(2026, 8, 17, 9, 0, tzinfo=UTC),
+        start_tz="Europe/Paris",
+        end_at=datetime(2026, 8, 17, 13, 0, tzinfo=UTC),
+        end_tz="America/New_York",
+        start_location={"city": "CDG", "iata": "CDG"},
+        end_location={"city": "JFK", "iata": "JFK"},
+    )
+
+    target = ConsolidationTarget.from_drafts([lodging, return_flight])
+    assert target.end_date == date(2026, 8, 20)
+
+
 def test_from_drafts_empty_returns_today_dates() -> None:
     """Empty draft list falls back to today for both dates; cities and IATAs empty."""
     today = date.today()
@@ -163,3 +193,21 @@ async def test_from_trip_extracts_endpoints(db_session: AsyncSession) -> None:
     # Dates come from Trip row, not segments
     assert target.start_date == trip_start
     assert target.end_date == trip_end
+
+
+@pytest.mark.asyncio
+async def test_from_trip_empty_segments(db_session: AsyncSession) -> None:
+    """from_trip with an empty segment list still returns a valid target."""
+    user, trip = await _seed_user_and_trip(
+        db_session, start_date=date(2026, 9, 1), end_date=date(2026, 9, 5)
+    )
+    _ = user
+
+    target = ConsolidationTarget.from_trip(trip, [])
+
+    assert target.start_city is None
+    assert target.end_city is None
+    assert target.endpoint_iatas == frozenset()
+    assert target.trip_id == trip.id
+    assert target.start_date == date(2026, 9, 1)
+    assert target.end_date == date(2026, 9, 5)
