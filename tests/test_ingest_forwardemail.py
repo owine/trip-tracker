@@ -93,10 +93,13 @@ async def test_forwardemail_happy_path_persists_and_enqueues(
     """POST with valid token + fixture persists RawEmail and enqueues parse."""
     async with client_factory() as client:
         r = await client.post(f"/api/ingest/forwardemail?token={fe_token}", json=_FIXTURE)
-    assert r.status_code == 202
-    # Non-empty JSON body so FE's undici HTTP client can parse it without
-    # raising UND_ERR_RESPONSE — empty 202s caused a cosmetic dashboard
-    # error in production smoke even though delivery succeeded.
+    # FE requires HTTP 200 from webhook endpoints; 202 is treated as a
+    # delivery failure and bounces the email back to the sender (verified
+    # in production: emails persisted server-side but FE rejected at the
+    # SMTP envelope, so users got "Address not found" bounces). The body
+    # remains JSON so undici has something to parse — that part of the
+    # earlier UND_ERR_RESPONSE fix was correct; the status code wasn't.
+    assert r.status_code == 200
     assert r.json() == {"accepted": True}
 
     rows = (await db_session.execute(select(RawEmail))).scalars().all()

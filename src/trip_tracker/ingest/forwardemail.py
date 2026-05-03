@@ -27,7 +27,7 @@ router = APIRouter(prefix="/api/ingest", tags=["ingest"])
 log = get_logger()
 
 
-@router.post("/forwardemail", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/forwardemail", status_code=status.HTTP_200_OK)
 async def ingest_forwardemail(
     request: Request,
     db: AsyncSession = Depends(get_session),  # noqa: B008
@@ -68,7 +68,7 @@ async def ingest_forwardemail(
 
     log.info(
         "ingest_forwardemail",
-        status=202,
+        status=200,
         to_address=parsed.to_address,
         from_address=parsed.from_address,
         message_id=parsed.message_id[:64],
@@ -80,7 +80,11 @@ async def ingest_forwardemail(
     if new_id is not None:
         await enqueue_parse(settings, new_id)
 
-    # JSONResponse (not bare Response) so FE's undici HTTP client has a body
-    # to parse — an empty 202 triggers a spurious UND_ERR_RESPONSE in FE's
-    # dashboard even though the delivery itself succeeded.
-    return JSONResponse({"accepted": True}, status_code=202)
+    # FE requires 200 from webhook endpoints; any other status (including 202
+    # "Accepted") is treated as a delivery failure and bounces the email back
+    # to the sender. A previous "fix" that returned 202 with a JSON body was
+    # wrong: it solved the empty-response symptom (UND_ERR_RESPONSE in FE's
+    # undici client) but kept the bouncing-by-status-code root cause. The
+    # delivery would persist server-side but FE bounced it from the SMTP
+    # envelope so the user thought their email vanished.
+    return JSONResponse({"accepted": True}, status_code=200)
