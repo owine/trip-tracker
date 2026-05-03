@@ -89,4 +89,27 @@ Rules:
   return segments=[] with confidence ≥0.85.
 - Cap your self-rated confidence at 0.85 even when very sure — vendor-specific
   rules will override your output if they later cover this sender.
+
+Pricing (when present, populate the segment's `details` object):
+- `details.total_price` — number, the total amount the user actually paid for
+  THIS segment (or the full booking if it's a single segment). Examples:
+  "Total amount: $351.76" → 351.76; "Total: USD 1,250.00" → 1250.0;
+  "Vous avez payé 89,90 EUR" → 89.90 (note European decimal comma).
+- `details.price_currency` — uppercase 3-letter ISO 4217 code: "USD", "EUR",
+  "GBP", "JPY", etc. Even if the email shows "$" with no explicit code, infer
+  from country context (e.g. an Air France email almost always means EUR
+  unless it's a US domestic itinerary).
+- ONLY populate pricing when there is a clearly-stated total. Do NOT extract:
+    * marketing prices ("from $99")
+    * per-passenger or per-component breakdowns when the total isn't given
+    * estimates or "you saved $X" callouts
+  When in doubt, omit pricing rather than guess.
+- For multi-segment bookings (a ReservationPackage with flight + hotel for
+  one total amount), put the total_price ONLY on the FIRST segment, not all.
+
+Booking timestamp (when present):
+- `details.booking_time` — ISO 8601 string, when the user actually paid for
+  the booking (not when they travel). Look for "Booked on", "Date of purchase",
+  "Order date", or "Confirmation sent at". Used downstream to set the
+  expense's incurred_on date correctly. If absent, omit the field.
 """
