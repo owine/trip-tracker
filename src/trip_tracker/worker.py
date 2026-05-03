@@ -32,8 +32,10 @@ from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
 from trip_tracker.models.trip_traveler import TripTraveler
+from trip_tracker.parsers.base import SegmentDraft
 from trip_tracker.parsers.budget import cost_cents_for_usage, record_usage
 from trip_tracker.parsers.cluster import cluster_for_user, derive_destination
+from trip_tracker.parsers.dedup import find_existing_segment
 from trip_tracker.parsers.dispatch import dispatch_parse
 from trip_tracker.parsers.llm import LLMClient
 from trip_tracker.search.client import MeiliClientProtocol, build_client
@@ -153,10 +155,49 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
             await _enqueue_doc_extracts(settings, new_doc_ids)
             return
 
+        # Phase 9 Track A: dedup gate. Partition drafts into matched (existing
+        # segment found via strong/medium rules) and fresh. All-matched →
+        # 'duplicate' + early return; partial → 'review' + persist fresh only.
+        matched: list[tuple[SegmentDraft, Segment]] = []
+        fresh: list[SegmentDraft] = []
+        for d in outcome.result.segments:
+            existing = await find_existing_segment(db, owner.user_id, d)
+            if existing is not None:
+                matched.append((d, existing))
+            else:
+                fresh.append(d)
+
+        if not fresh:
+            # All drafts were duplicates — no segments to persist, no auto-Expense.
+            raw.parse_status = "duplicate"
+            # JSONB columns: rebind, don't mutate in place (SQLAlchemy needs a new
+            # dict reference to mark the column dirty).
+            raw.headers = {
+                **(raw.headers or {}),
+                "X-Tt-Dedup-Against": [str(s.id) for _, s in matched],
+            }
+            await db.commit()
+            # Re-forwarded boarding-pass PDFs should still extract their text.
+            await _enqueue_doc_extracts(settings, new_doc_ids)
+            return
+
+        if matched:
+            raw.headers = {
+                **(raw.headers or {}),
+                "X-Tt-Dedup-Partial": [
+                    {
+                        "existing_id": str(s.id),
+                        "draft_type": d.type,
+                        "draft_start_at": d.start_at.isoformat(),
+                    }
+                    for d, s in matched
+                ],
+            }
+
         created_segments: list[Segment] = []
         trips_to_sync: set[uuid.UUID] = set()
 
-        for draft in outcome.result.segments:
+        for draft in fresh:
             decision = await cluster_for_user(db, owner.user_id, draft)
             trip_id: uuid.UUID | None
             if decision.kind == "create_new":
@@ -198,7 +239,10 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
             db.add(seg)
             created_segments.append(seg)
 
-        if outcome.result.confidence < settings.llm_confidence_floor:
+        if matched:
+            # Partial dedup → always review so the user sees the partial.
+            raw.parse_status = "review"
+        elif outcome.result.confidence < settings.llm_confidence_floor:
             raw.parse_status = "review"
         else:
             raw.parse_status = "parsed"
