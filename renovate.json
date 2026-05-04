@@ -16,6 +16,7 @@
   "prConcurrentLimit": 20,
   "rebaseWhen": "behind-base-branch",
   "configMigration": true,
+  "rangeStrategy": "pin",
   "osvVulnerabilityAlerts": true,
   "separateMajorMinor": true,
   "separateMultipleMajor": true,
