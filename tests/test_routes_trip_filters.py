@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from trip_tracker.app import create_app
 from trip_tracker.auth.session import SessionPayload, encode_session
 from trip_tracker.config import Settings
+from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
 from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
@@ -175,3 +176,61 @@ async def test_documents_list_soft_deleted_returns_404(
         r = await c.get(f"/trips/{merged.id}/documents")
 
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_lifetime_atlas_excludes_soft_deleted_segments(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    """`GET /map` lifetime atlas must not include segments from soft-deleted trips."""
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user, active, merged = await _seed(db_session)
+
+    base = datetime(2026, 7, 1, 9, tzinfo=UTC)
+    db_session.add(
+        Segment(
+            trip_id=active.id,
+            owner_user_id=user.id,
+            type="flight",
+            status="confirmed",
+            start_at=base,
+            start_tz="UTC",
+            start_location={"city": "ActiveStart", "iata": "JFK"},
+            end_location={"city": "ActiveEnd", "iata": "LHR"},
+            details={},
+            parse_source="test",
+            parse_confidence=0.9,
+        )
+    )
+    db_session.add(
+        Segment(
+            trip_id=merged.id,
+            owner_user_id=user.id,
+            type="flight",
+            status="confirmed",
+            start_at=base,
+            start_tz="UTC",
+            start_location={"city": "MergedStart", "iata": "CDG"},
+            end_location={"city": "MergedEnd", "iata": "AMS"},
+            details={},
+            parse_source="test",
+            parse_confidence=0.9,
+        )
+    )
+    await db_session.commit()
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+        ) as c,
+    ):
+        r = await c.get("/map")
+
+    assert r.status_code == 200
+    # Markers/arcs are JSON-injected; trip IDs appear in the payload.
+    assert str(active.id) in r.text
+    assert str(merged.id) not in r.text
