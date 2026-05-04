@@ -530,7 +530,7 @@ async def test_undo_traveler_audit_restores_source_only_rows(
 
 
 @pytest.mark.asyncio
-async def test_undo_404_on_non_owner(
+async def test_undo_403_on_non_owner(
     db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
 ) -> None:
     """User B cannot undo a merge on a target trip owned by user A (403)."""
