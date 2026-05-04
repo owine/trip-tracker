@@ -1,0 +1,18 @@
+{% set raw_candidates = consolidation_by_raw.get(raw.id, []) %}
+{% if raw_candidates %}
+  <div class="mt-2 rounded border border-amber-300 bg-amber-50 p-2 text-sm dark:border-amber-700 dark:bg-amber-900/30">
+    <span class="text-xs text-zinc-500">Looks like part of an existing trip — add to:</span>
+    <div class="mt-1 flex flex-wrap gap-2">
+      {% for candidate in raw_candidates %}
+        <form method="post"
+              action="/inbox/{{ raw.id }}/confirm?target_trip={{ candidate.trip.id }}"
+              class="inline">
+          <button class="rounded border px-2 py-0.5 text-xs underline">
+            {{ candidate.trip.title }}
+            <span class="text-zinc-500">({{ candidate.weight.name.lower() }})</span>
+          </button>
+        </form>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
