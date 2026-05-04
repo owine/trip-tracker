@@ -336,6 +336,9 @@ async def merge_into(
     target = (await db.execute(select(Trip).where(Trip.id == target_id))).scalar_one_or_none()
     if source is None or target is None:
         raise HTTPException(status_code=404)
+    # Creator-only: merge is irreversible after 7 days, so non-creator
+    # collaborators (TripTraveler members) may not initiate it. This is a
+    # deliberate divergence from `require_traveler` (which is membership-based).
     if source.created_by != user.id or target.created_by != user.id:
         raise HTTPException(status_code=403)
     if source.id == target.id:
