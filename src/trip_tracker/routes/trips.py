@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 import zoneinfo
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pydantic
@@ -30,7 +30,7 @@ from trip_tracker.models.user import User
 from trip_tracker.schemas.trip_forms import TripForm
 from trip_tracker.search.sync import enqueue_meili_sync
 from trip_tracker.templating import register_globals
-from trip_tracker.trips.merge import merge_trip_into
+from trip_tracker.trips.merge import merge_trip_into, undo_merge_trip
 
 router = APIRouter(prefix="/trips", tags=["trips"])
 logger = logging.getLogger(__name__)
@@ -318,6 +318,45 @@ async def delete_trip(
     await db.commit()
     await enqueue_meili_sync(request.app.state.settings, entity="trip", entity_id=trip_id)
     return RedirectResponse("/trips", status_code=303)
+
+
+_UNDO_WINDOW = timedelta(days=7)
+
+
+@router.post("/{target_id}/undo-merge/{source_id}", response_model=None)
+async def undo_merge(
+    target_id: uuid.UUID,
+    source_id: uuid.UUID,
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> RedirectResponse:
+    """Undo a recent merge. 7-day window. Audit-driven for losslessness."""
+    target = (await db.execute(select(Trip).where(Trip.id == target_id))).scalar_one_or_none()
+    source = (await db.execute(select(Trip).where(Trip.id == source_id))).scalar_one_or_none()
+    if target is None or source is None:
+        raise HTTPException(status_code=404)
+    if target.created_by != user.id:
+        raise HTTPException(status_code=403)
+    # Source must be soft-deleted INTO this target (not some other target).
+    if source.merged_into_id != target.id:
+        raise HTTPException(status_code=400, detail="Source was not merged into this target")
+    # Target itself must not have been re-merged since (chain rule).
+    if target.merged_into_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Target trip has been merged into another trip; unwind from the top first",
+        )
+    # Window check. source.merged_at is set when the merge happened.
+    if source.merged_at is None:
+        raise HTTPException(status_code=410, detail="Merge audit missing")
+    elapsed = datetime.now(UTC) - source.merged_at
+    if elapsed > _UNDO_WINDOW:
+        raise HTTPException(status_code=410, detail="Undo window has expired")
+
+    await undo_merge_trip(db, source, target)
+    await db.commit()
+
+    return RedirectResponse(f"/trips/{source.id}", status_code=303)
 
 
 @router.post("/{source_id}/merge-into/{target_id}", response_model=None)
