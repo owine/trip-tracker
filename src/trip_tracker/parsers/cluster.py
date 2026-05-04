@@ -133,7 +133,7 @@ async def cluster_for_user(
             await db.execute(
                 select(Trip)
                 .join(TripTraveler, TripTraveler.trip_id == Trip.id)
-                .where(TripTraveler.user_id == user_id)
+                .where(TripTraveler.user_id == user_id, Trip.merged_into_id.is_(None))
             )
         )
         .scalars()

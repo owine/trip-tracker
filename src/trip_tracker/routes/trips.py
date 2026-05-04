@@ -108,7 +108,7 @@ async def list_trips(
     stmt = (
         select(Trip)
         .join(TripTraveler, TripTraveler.trip_id == Trip.id)
-        .where(TripTraveler.user_id == user.id)
+        .where(TripTraveler.user_id == user.id, Trip.merged_into_id.is_(None))
         .order_by(
             is_past.asc(),
             case((Trip.end_date >= today, Trip.start_date), else_=None).asc(),
