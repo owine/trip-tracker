@@ -10,13 +10,18 @@ from pathlib import Path
 
 import pydantic
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from trip_tracker.auth.deps import get_settings, require_traveler, require_user
+from trip_tracker.auth.deps import (
+    get_settings,
+    require_traveler,
+    require_traveler_including_merged,
+    require_user,
+)
 from trip_tracker.config import Settings
 from trip_tracker.db import get_session
 from trip_tracker.models.trip import Trip
@@ -119,14 +124,22 @@ async def list_trips(
     return templates.TemplateResponse(request, "trips/list.html", {"trips": trips, "user": user})
 
 
-@router.get("/{trip_id}", response_class=HTMLResponse)
+@router.get("/{trip_id}", response_class=HTMLResponse, response_model=None)
 async def trip_detail(
     request: Request,
-    trip: Trip = Depends(require_traveler),  # noqa: B008
+    trip: Trip = Depends(require_traveler_including_merged),  # noqa: B008
     user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
     redis: AsyncRedis = Depends(_redis),  # noqa: B008
-) -> HTMLResponse:
+) -> HTMLResponse | Response:
+    if trip.merged_into_id is not None:
+        target_url = f"/trips/{trip.merged_into_id}"
+        return Response(
+            status_code=410,
+            content=(f"This trip was merged into another trip. Visit {target_url} instead."),
+            media_type="text/plain",
+        )
+
     from collections import defaultdict
     from datetime import date as _date_cls
 
