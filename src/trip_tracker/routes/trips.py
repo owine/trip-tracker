@@ -327,6 +327,7 @@ _UNDO_WINDOW = timedelta(days=7)
 async def undo_merge(
     target_id: uuid.UUID,
     source_id: uuid.UUID,
+    request: Request,
     user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> RedirectResponse:
@@ -356,6 +357,11 @@ async def undo_merge(
     await undo_merge_trip(db, source, target)
     await db.commit()
 
+    # Re-sync both trips to Meilisearch: source is freshly visible again,
+    # target's date range / traveler list may have shrunk back.
+    await enqueue_meili_sync(request.app.state.settings, entity="trip", entity_id=source.id)
+    await enqueue_meili_sync(request.app.state.settings, entity="trip", entity_id=target.id)
+
     return RedirectResponse(f"/trips/{source.id}", status_code=303)
 
 
@@ -363,6 +369,7 @@ async def undo_merge(
 async def merge_into(
     source_id: uuid.UUID,
     target_id: uuid.UUID,
+    request: Request,
     user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> RedirectResponse:
@@ -387,6 +394,11 @@ async def merge_into(
 
     await merge_trip_into(db, source, target)
     await db.commit()
+
+    # Re-sync both trips: source is now soft-deleted (B6 filter excludes it),
+    # target's date range / traveler list may have widened.
+    await enqueue_meili_sync(request.app.state.settings, entity="trip", entity_id=source.id)
+    await enqueue_meili_sync(request.app.state.settings, entity="trip", entity_id=target.id)
 
     return RedirectResponse(
         f"/trips/{target.id}?merged_from={source.id}",
