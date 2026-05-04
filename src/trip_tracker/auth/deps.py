@@ -59,7 +59,11 @@ async def require_traveler(
     stmt = (
         select(Trip)
         .join(TripTraveler, TripTraveler.trip_id == Trip.id)
-        .where(Trip.id == trip_id, TripTraveler.user_id == user.id)
+        .where(
+            Trip.id == trip_id,
+            TripTraveler.user_id == user.id,
+            Trip.merged_into_id.is_(None),
+        )
     )
     trip = (await db.execute(stmt)).scalar_one_or_none()
     if trip is None:
