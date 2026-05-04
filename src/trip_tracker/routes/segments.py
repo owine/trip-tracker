@@ -552,6 +552,7 @@ async def _load_segment_for_user(
         .join(TripTraveler, TripTraveler.trip_id == Trip.id)
         .where(
             Trip.id == trip_id,
+            Trip.merged_into_id.is_(None),
             Segment.id == segment_id,
             TripTraveler.user_id == user_id,
         )
