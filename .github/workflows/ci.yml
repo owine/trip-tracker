@@ -118,33 +118,80 @@ jobs:
         with:
           sarif_file: semgrep.sarif
 
-  # Per-arch native image builds, push-by-digest. Only on main push — PRs skip
-  # this entirely (Dockerfile breakage gets caught post-merge; acceptable for
-  # the project's current pre-production stage with a small contributor pool).
+  # Detect whether image-relevant files changed (PR-only) and compute the
+  # docker-build matrix:
+  #   - push to main: build both amd64 and arm64 (full release pipeline)
+  #   - pull_request: build amd64 only (validation; arm64 caught post-merge)
+  # Always runs so its outputs are available to docker-build's strategy.
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.filter.outputs.image }}
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+      - if: github.event_name == 'pull_request'
+        id: filter
+        uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d  # v4.0.1
+        with:
+          filters: |
+            image:
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'src/**'
+              - 'migrations/**'
+              - 'alembic.ini'
+              - 'scripts/build-tailwind.sh'
+              - 'README.md'
+              - '.github/workflows/ci.yml'
+      - id: set-matrix
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "push" ]; then
+            echo 'matrix=[{"platform":"linux/amd64","runner":"ubuntu-24.04","arch":"amd64"},{"platform":"linux/arm64","runner":"ubuntu-24.04-arm","arch":"arm64"}]' >> "$GITHUB_OUTPUT"
+          else
+            echo 'matrix=[{"platform":"linux/amd64","runner":"ubuntu-24.04","arch":"amd64"}]' >> "$GITHUB_OUTPUT"
+          fi
+
+  # Per-arch native image builds.
+  # - main push: full pipeline — both arches, push-by-digest to GHCR, provenance
+  #   + sbom + cosign signing + Trivy scan via downstream jobs.
+  # - pull_request: validation-only — single-arch (amd64 via detect-changes
+  #   matrix), push=false, skip provenance/sbom for speed. Catches Dockerfile
+  #   breakage before merge. Gated by paths-filter so docs/test-only PRs skip
+  #   the build entirely.
   #
   # Gated on ALL code-quality + security jobs so a failing lint, typecheck,
-  # test, or security scan blocks image push. Sequential cost ~4 min on the
-  # slowest job (test); savings on failure are the full ~3 min image pipeline.
+  # test, or security scan blocks image push.
   docker-build:
-    if: github.event_name == 'push'
-    needs: [lint, typecheck, test, security-python, security-secrets, security-semgrep]
+    needs: [lint, typecheck, test, security-python, security-secrets, security-semgrep, detect-changes]
+    if: |
+      !cancelled() &&
+      needs.lint.result == 'success' &&
+      needs.typecheck.result == 'success' &&
+      needs.test.result == 'success' &&
+      needs.security-python.result == 'success' &&
+      needs.security-secrets.result == 'success' &&
+      needs.security-semgrep.result == 'success' &&
+      needs.detect-changes.result == 'success' &&
+      (github.event_name == 'push' || needs.detect-changes.outputs.image == 'true')
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: linux/amd64
-            runner: ubuntu-24.04
-            arch: amd64
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-            arch: arm64
+        include: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd  # v4.0.0
 
-      - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+      # Login only needed for push (main). PRs build with push=false; the gha
+      # cache backend doesn't need GHCR credentials.
+      - if: github.event_name == 'push'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -169,19 +216,27 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             VERSION=${{ github.ref_name }}
-          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
+          # push=true on main, push=false on PRs (validation only).
+          # push-by-digest is only meaningful when actually pushing; harmless otherwise.
+          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=${{ github.event_name == 'push' }}
           cache-from: type=gha,scope=${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
-          provenance: true
-          sbom: true
+          # PRs READ main's cache but don't WRITE — avoids polluting main's
+          # cache scope with PR-only state.
+          cache-to: ${{ github.event_name == 'push' && format('type=gha,mode=max,scope={0}', matrix.arch) || '' }}
+          # Provenance + SBOM are slow and only meaningful for published images.
+          provenance: ${{ github.event_name == 'push' }}
+          sbom: ${{ github.event_name == 'push' }}
 
-      - name: Export digest
+      # Digest export + upload feed manifest-merge, which only runs on main push.
+      - if: github.event_name == 'push'
+        name: Export digest
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - if: github.event_name == 'push'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: digests-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -229,6 +284,8 @@ jobs:
       - name: Assemble multi-arch manifest list and push
         working-directory: /tmp/digests
         run: |
+          # shellcheck disable=SC2046  # intentional word-splitting: jq and
+          # printf each emit multiple shell args (one per tag, one per digest).
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
