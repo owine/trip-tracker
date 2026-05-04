@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy import case, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.auth.deps import (
@@ -25,6 +26,7 @@ from trip_tracker.auth.deps import (
 from trip_tracker.config import Settings
 from trip_tracker.db import get_session
 from trip_tracker.models.trip import Trip
+from trip_tracker.models.trip_merge_dismissal import TripMergeDismissal
 from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 from trip_tracker.schemas.trip_forms import TripForm
@@ -404,3 +406,47 @@ async def merge_into(
         f"/trips/{target.id}?merged_from={source.id}",
         status_code=303,
     )
+
+
+@router.post("/{trip_id}/dismiss-merge/{other_id}", response_model=None)
+async def dismiss_merge(
+    trip_id: uuid.UUID,
+    other_id: uuid.UUID,
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> RedirectResponse:
+    """Dismiss the consolidation suggestion between two trips.
+
+    Idempotent (ON CONFLICT DO NOTHING). Pair-order-agnostic (canonicalized
+    via sorted order before insert; the DB's expression UNIQUE INDEX is the
+    defensive layer in case someone bypasses canonicalization).
+
+    Validation order: 404 (existence) → 403 (ownership both sides) → 400
+    (self-pair). We check existence first so non-existent IDs don't leak
+    ownership information via the status code (consistent with merge-into /
+    undo-merge). Self-pair is last because it's a logical constraint that only
+    applies once we know both trips exist.
+    """
+    trip = (await db.execute(select(Trip).where(Trip.id == trip_id))).scalar_one_or_none()
+    other = (await db.execute(select(Trip).where(Trip.id == other_id))).scalar_one_or_none()
+    if trip is None or other is None:
+        raise HTTPException(status_code=404)
+    # Creator-only: same auth model as merge-into.
+    if trip.created_by != user.id or other.created_by != user.id:
+        raise HTTPException(status_code=403)
+    # Self-pair check after existence/ownership — prevents storing a degenerate row.
+    if trip_id == other_id:
+        raise HTTPException(status_code=400, detail="Cannot dismiss a trip with itself")
+
+    # Canonicalize pair order (LEAST, GREATEST by string repr) so the
+    # composite PK acts as the primary dedup key. The DB's expression UNIQUE
+    # INDEX (uq_trip_merge_dismissals_pair) is the defensive layer.
+    a, b = sorted([trip_id, other_id], key=str)
+    await db.execute(
+        pg_insert(TripMergeDismissal)
+        .values({"user_id": user.id, "trip_a_id": a, "trip_b_id": b})
+        .on_conflict_do_nothing(index_elements=["user_id", "trip_a_id", "trip_b_id"])
+    )
+    await db.commit()
+
+    return RedirectResponse(f"/trips/{trip_id}", status_code=303)
