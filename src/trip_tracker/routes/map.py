@@ -65,7 +65,7 @@ async def map_lifetime(
             select(Segment, Trip)
             .join(Trip, Trip.id == Segment.trip_id)
             .join(TripTraveler, TripTraveler.trip_id == Segment.trip_id)
-            .where(TripTraveler.user_id == user.id)
+            .where(TripTraveler.user_id == user.id, Trip.merged_into_id.is_(None))
             .order_by(Trip.start_date, Segment.start_at)
         )
     ).all()
