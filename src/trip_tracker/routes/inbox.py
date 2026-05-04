@@ -36,6 +36,11 @@ from trip_tracker.models.trip import Trip
 from trip_tracker.models.user import User
 from trip_tracker.search.sync import enqueue_meili_sync
 from trip_tracker.templating import register_globals
+from trip_tracker.trips.consolidation import (
+    ConsolidationCandidate,
+    ConsolidationTarget,
+    consolidation_candidates,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +124,26 @@ async def inbox_list(
         .scalars()
         .all()
     )
+    # Build per-raw-email consolidation candidates for the review bucket.
+    # TODO(perf): this is N+1 across review_rows (≤ 50 per page); batch/cache in a future pass.
+    consolidation_by_raw: dict[uuid.UUID, list[ConsolidationCandidate]] = {}
+    for raw in review_rows:
+        raw_segments = (
+            (await db.execute(select(Segment).where(Segment.raw_email_id == raw.id)))
+            .scalars()
+            .all()
+        )
+        if not raw_segments:
+            continue
+        # Segment.trip_id is non-optional (Mapped[UUID]); load the Trip row.
+        auto_trip = (
+            await db.execute(select(Trip).where(Trip.id == raw_segments[0].trip_id))
+        ).scalar_one_or_none()
+        if auto_trip is None:
+            continue
+        target = ConsolidationTarget.from_trip(auto_trip, list(raw_segments))
+        consolidation_by_raw[raw.id] = await consolidation_candidates(db, user, target)
+
     return templates.TemplateResponse(
         request,
         "inbox/list.html",
@@ -127,6 +152,7 @@ async def inbox_list(
             "review_rows": review_rows,
             "no_seg_rows": no_seg_rows,
             "duplicate_rows": duplicate_rows,
+            "consolidation_by_raw": consolidation_by_raw,
         },
     )
 

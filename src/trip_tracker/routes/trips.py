@@ -153,6 +153,10 @@ async def trip_detail(
     from trip_tracker.models.document import Document
     from trip_tracker.models.expense import Expense
     from trip_tracker.models.segment import Segment
+    from trip_tracker.trips.consolidation import (
+        ConsolidationTarget,
+        consolidation_candidates,
+    )
 
     segments = (
         (
@@ -202,6 +206,10 @@ async def trip_detail(
     for e in expenses:
         if e.status == "paid":
             by_category[e.category] += e.amount_home_minor
+
+    # Consolidation candidates — suggest merging with nearby trips.
+    _target = ConsolidationTarget.from_trip(trip, list(segments))
+    candidates = await consolidation_candidates(db, user, _target)
 
     # Saved-by-points rollup with FxError swallow.
     total_saved_home: int | None = 0
@@ -255,6 +263,7 @@ async def trip_detail(
             "Category": Category,
             "minor_digits": minor_digits,
             "today": _date_cls.today(),
+            "consolidation_candidates": candidates,
         },
     )
 
