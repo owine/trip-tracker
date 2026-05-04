@@ -339,12 +339,17 @@ async def test_merge_happy_path_reassigns_segments_expenses_documents_and_widens
         "added_traveler_user_ids",
         "source_start_date",
         "source_end_date",
+        "target_start_date_pre_merge",
+        "target_end_date_pre_merge",
         "schema_version",
     }
     assert audit["schema_version"] == 1
     assert str(seg_id) in audit["source_segment_ids"]
     assert str(exp_id) in audit["source_expense_ids"]
     assert str(doc_id) in audit["source_document_ids"]
+    # Pre-merge target dates (Jul 10-15 from _c1_seed_two_trips)
+    assert audit["target_start_date_pre_merge"] == date(2026, 7, 10).isoformat()
+    assert audit["target_end_date_pre_merge"] == date(2026, 7, 15).isoformat()
 
 
 @pytest.mark.asyncio
