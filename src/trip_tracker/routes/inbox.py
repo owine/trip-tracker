@@ -9,15 +9,15 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import sqlalchemy as sa
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from redis.asyncio import Redis as AsyncRedis
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.auth.deps import require_user
@@ -32,6 +32,7 @@ from trip_tracker.models.expense import Expense
 from trip_tracker.models.forwarding_alias import ForwardingAlias
 from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.segment import Segment
+from trip_tracker.models.trip import Trip
 from trip_tracker.models.user import User
 from trip_tracker.search.sync import enqueue_meili_sync
 from trip_tracker.templating import register_globals
@@ -228,9 +229,80 @@ async def confirm(
     request: Request,
     user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
+    target_trip: uuid.UUID | None = Query(default=None),  # noqa: B008
 ) -> Response:
     raw = await _load_owned(db, user, raw_id)
     raw.parse_status = "parsed"
+
+    if target_trip is not None:
+        # Validate the target trip.
+        target = (await db.execute(select(Trip).where(Trip.id == target_trip))).scalar_one_or_none()
+        if target is None:
+            raise HTTPException(status_code=404)
+        if target.created_by != user.id:
+            raise HTTPException(status_code=403)
+        if target.merged_into_id is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Target trip has been merged; choose an active trip",
+            )
+
+        # Snapshot the segment trip_ids BEFORE reassignment so we can clean
+        # up newly-empty trips after.
+        old_trip_ids = list(
+            (
+                await db.execute(
+                    select(Segment.trip_id).where(Segment.raw_email_id == raw_id).distinct()
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        # Reassign segments to target_trip.
+        await db.execute(
+            update(Segment).where(Segment.raw_email_id == raw_id).values(trip_id=target_trip)
+        )
+
+        # Widen target's date range to span the moved segments.
+        seg_date_extents = (
+            await db.execute(
+                select(
+                    func.min(Segment.start_at),
+                    func.max(Segment.end_at),
+                    func.max(Segment.start_at),
+                ).where(Segment.trip_id == target_trip)
+            )
+        ).one()
+        seg_min_start, seg_max_end, seg_max_start = seg_date_extents
+        if seg_min_start is not None:
+            target.start_date = min(target.start_date, seg_min_start.date())
+            seg_latest = seg_max_end or seg_max_start
+            if seg_latest is not None:
+                target.end_date = max(target.end_date, seg_latest.date())
+            target.updated_at = datetime.now(UTC)
+
+        # Clean up trips that are now empty (had only segments from this raw_email).
+        # Only delete if the trip is owned by this user (defensive).
+        for old_trip_id in old_trip_ids:
+            if old_trip_id is None or old_trip_id == target_trip:
+                continue
+            remaining = (
+                await db.execute(
+                    select(func.count(Segment.id)).where(Segment.trip_id == old_trip_id)
+                )
+            ).scalar_one()
+            if remaining == 0:
+                old_trip = (
+                    await db.execute(
+                        select(Trip).where(
+                            Trip.id == old_trip_id,
+                            Trip.created_by == user.id,
+                        )
+                    )
+                ).scalar_one_or_none()
+                if old_trip is not None:
+                    await db.delete(old_trip)
 
     # Auto-create Expense rows from JSON-LD pricing data on each approved segment.
     segments = (
@@ -246,6 +318,12 @@ async def confirm(
             await redis.aclose()
 
     await db.commit()
+
+    # Enqueue meili sync for the target trip after commit (deleted trips no-op cleanly).
+    if target_trip is not None:
+        settings_for_sync: Settings = request.app.state.settings
+        await enqueue_meili_sync(settings_for_sync, entity="trip", entity_id=target_trip)
+
     return RedirectResponse("/inbox", status_code=303)
 
 
