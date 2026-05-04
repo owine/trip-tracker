@@ -9,7 +9,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 import pydantic
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from redis.asyncio import Redis as AsyncRedis
@@ -30,6 +30,7 @@ from trip_tracker.models.user import User
 from trip_tracker.schemas.trip_forms import TripForm
 from trip_tracker.search.sync import enqueue_meili_sync
 from trip_tracker.templating import register_globals
+from trip_tracker.trips.merge import merge_trip_into
 
 router = APIRouter(prefix="/trips", tags=["trips"])
 logger = logging.getLogger(__name__)
@@ -317,3 +318,35 @@ async def delete_trip(
     await db.commit()
     await enqueue_meili_sync(request.app.state.settings, entity="trip", entity_id=trip_id)
     return RedirectResponse("/trips", status_code=303)
+
+
+@router.post("/{source_id}/merge-into/{target_id}", response_model=None)
+async def merge_into(
+    source_id: uuid.UUID,
+    target_id: uuid.UUID,
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> RedirectResponse:
+    """Merge source trip into target. Single transaction. Soft-deletes source.
+
+    Validation order is deliberate: existence (404) BEFORE ownership (403)
+    so non-existent IDs don't leak ownership info via the status code.
+    """
+    source = (await db.execute(select(Trip).where(Trip.id == source_id))).scalar_one_or_none()
+    target = (await db.execute(select(Trip).where(Trip.id == target_id))).scalar_one_or_none()
+    if source is None or target is None:
+        raise HTTPException(status_code=404)
+    if source.created_by != user.id or target.created_by != user.id:
+        raise HTTPException(status_code=403)
+    if source.id == target.id:
+        raise HTTPException(status_code=400, detail="Cannot merge a trip into itself")
+    if source.merged_into_id is not None or target.merged_into_id is not None:
+        raise HTTPException(status_code=400, detail="One of the trips has already been merged")
+
+    await merge_trip_into(db, source, target)
+    await db.commit()
+
+    return RedirectResponse(
+        f"/trips/{target.id}?merged_from={source.id}",
+        status_code=303,
+    )
