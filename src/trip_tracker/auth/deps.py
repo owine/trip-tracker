@@ -69,3 +69,28 @@ async def require_traveler(
     if trip is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return trip
+
+
+async def require_traveler_including_merged(
+    trip_id: _uuid.UUID = Path(...),  # noqa: B008
+    user: User = Depends(require_user),  # noqa: B008
+    db: AsyncSession = Depends(get_session),  # noqa: B008
+) -> Trip:
+    """Like require_traveler but does NOT filter soft-deleted trips.
+
+    Used by handlers that must distinguish 'soft-deleted trip' from
+    'never-existed trip' (e.g. /trips/{id} returns 410 for the former, 404
+    for the latter).
+    """
+    stmt = (
+        select(Trip)
+        .join(TripTraveler, TripTraveler.trip_id == Trip.id)
+        .where(
+            Trip.id == trip_id,
+            TripTraveler.user_id == user.id,
+        )
+    )
+    trip = (await db.execute(stmt)).scalar_one_or_none()
+    if trip is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return trip

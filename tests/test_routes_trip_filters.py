@@ -89,10 +89,10 @@ async def test_trip_list_excludes_soft_deleted(
 
 
 @pytest.mark.asyncio
-async def test_trip_detail_soft_deleted_returns_404(
+async def test_trip_detail_soft_deleted_returns_410(
     db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
 ) -> None:
-    """/trips/<soft-deleted-id> must return 404 (not 200 with stale data)."""
+    """/trips/<soft-deleted-id> must return 410 Gone (not 200 with stale data)."""
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
     user, _active, merged = await _seed(db_session)
@@ -107,7 +107,7 @@ async def test_trip_detail_soft_deleted_returns_404(
     ):
         r = await c.get(f"/trips/{merged.id}")
 
-    assert r.status_code == 404
+    assert r.status_code == 410
 
 
 @pytest.mark.asyncio
