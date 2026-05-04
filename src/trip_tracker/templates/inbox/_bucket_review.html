@@ -34,7 +34,9 @@
           <button class="rounded bg-zinc-900 px-3 py-1.5 text-sm text-white dark:bg-zinc-100 dark:text-zinc-900">Re-ask</button>
         </form>
       </details>
-      {% include "inbox/_confirm_preview_banner.html" %}
+      {% if consolidation_by_raw is defined %}
+        {% include "inbox/_confirm_preview_banner.html" %}
+      {% endif %}
     </li>
   {% endfor %}
 </ul>
