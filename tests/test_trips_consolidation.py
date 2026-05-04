@@ -302,8 +302,10 @@ async def _seed_home_history(
 ) -> None:
     """Seed ≥30% endpoint dominance for *home_city* so infer_home returns it.
 
-    Strategy: 5 segments A->HOME (HOME appears as end only, A-E are unique).
-    HOME = 5/10 = 50% ≥ 30% → wins.
+    Strategy: 5 segments <unique>->HOME (HOME as end only, starts unique).
+    In isolation that's 5/10 = 50% endpoint share. In test contexts that
+    seed extra trip-specific segments, the real share is lower (~35-43%
+    observed) but still well above the 30% floor.
     """
     now = datetime(2025, 1, 1, 0, 0, tzinfo=UTC)
     for i, prefix in enumerate(["A_", "B_", "C_", "D_", "E_"]):
@@ -837,15 +839,8 @@ async def test_sort_order_high_then_medium_then_low(db_session: AsyncSession) ->
         )
     )
 
-    # LOW trip: JFK→LHR — no shared city but LHR is ~358km from CDG … hmm.
-    # Use a trip with IATA endpoints that are within 500km but share no city name.
-    # CDG is ~358km from LHR; target has no CDG/LHR so there's no shared city.
-    # But target cities are PARIS/ROME — lookup_city("ROME") and lookup_city("PARIS")
-    # would resolve to real coordinates. CDG (51.48, -0.46) vs PARIS (~48.8, 2.35)
-    # is ~340km → that would be LOW for trip JFK→LHR too.
-    # Use JFK→LHR for the LOW candidate; target has PARIS/ROME.
-    # JFK (40.6, -73.8) vs PARIS(48.9, 2.3) ≈ 5830km — no LOW there.
-    # LHR (51.5, -0.5) vs PARIS(48.9, 2.3) ≈ 340km → LOW fires on PARIS vs LHR.
+    # LOW trip: JFK→LHR vs target PARIS/ROME — no shared city.
+    # LHR (51.5°N, -0.5°W) ↔ Paris city (~48.9°N, 2.3°E) ≈ 340 km → LOW fires.
     low = await _make_trip(
         db_session, user=user, start_date=date(2026, 3, 8), end_date=date(2026, 3, 9)
     )

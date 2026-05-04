@@ -197,7 +197,15 @@ def _shared_endpoint_city(a: ConsolidationTarget, b: ConsolidationTarget) -> boo
 
 
 def _coords_for(target: ConsolidationTarget) -> list[tuple[float, float]]:
-    """Resolve (lat, lon) for each endpoint via IATA first, city-name fallback."""
+    """Resolve (lat, lon) for each endpoint via IATA first, city-name fallback.
+
+    Note: when both an IATA and a city name resolve for the same endpoint
+    (e.g. iata='CDG' + city='Paris'), both points are appended. The min()
+    in `_min_endpoint_distance_km` then picks the closest pair, which can
+    score LOW slightly more permissively than airport-to-airport alone
+    (~20 km drift between an airport and its city centroid). Accepted for
+    v0.9.0 — fix if real data shows false-positive LOW matches.
+    """
     coords: list[tuple[float, float]] = []
     # Airport lookup is most precise — collect for all known IATAs.
     for iata in target.endpoint_iatas:
@@ -236,6 +244,15 @@ async def consolidation_candidates(
     - LOW  — nearest endpoint pair ≤ 500 km (geometric fallback)
 
     Sorted by (weight DESC, start_date DESC).
+
+    Spec deviation (deferred to v0.9.1): per spec §3.2 prose, home-anchored
+    matching is meant to be gap-agnostic. This implementation runs everything
+    through the same ±3-day window as geometric fallback (matching the spec
+    pseudocode, not the prose). Long-gap home-anchored chains will not
+    surface until this is widened.
+
+    Performance note: N+1 SELECTs across the windowed trips (≤ 50 via LIMIT).
+    Bounded and runs per-user-action, not in a hot loop.
     """
     home = await infer_home(db, user.id)
     dismissed = await _dismissed_pair_ids(db, user, target.trip_id)
