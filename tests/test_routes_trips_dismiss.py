@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from trip_tracker.app import create_app
 from trip_tracker.auth.session import SessionPayload, encode_session
 from trip_tracker.config import Settings
+from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
 from trip_tracker.models.trip_merge_dismissal import TripMergeDismissal
 from trip_tracker.models.trip_traveler import TripTraveler
@@ -306,6 +307,17 @@ async def test_dismiss_400_on_self_pair(
         r = await c.post(f"/trips/{trip_a.id}/dismiss-merge/{trip_a.id}")
 
     assert r.status_code == 400
+    # Side-effect check: the 400 guard must NOT have inserted a row.
+    rows = (
+        (
+            await db_session.execute(
+                select(TripMergeDismissal).where(TripMergeDismissal.user_id == user_a.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert rows == []
 
 
 @pytest.mark.asyncio
@@ -314,13 +326,63 @@ async def test_consolidation_candidates_excludes_dismissed_pair(
 ) -> None:
     """After dismissing a pair, consolidation_candidates no longer returns it.
 
-    Seeds two overlapping trips (WOULD be candidates), dismisses them via HTTP,
-    then calls consolidation_candidates directly to verify the dismissed candidate
-    is absent from results.
+    Seeds two overlapping trips with a shared endpoint city so they WOULD
+    score MEDIUM via the geometric fallback. Verify the candidate appears
+    pre-dismissal, then drops post-dismissal.
     """
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
     user_a, _, trip_a, trip_b = await _seed_two_trips(db_session, sub_a="c3-integ-excl")
+
+    # Seed a segment on each trip so the consolidation scorer has cities to
+    # compare. Both end in "PARIS" → shared endpoint city → MEDIUM weight
+    # absent any dismissal.
+    base = datetime(2026, 6, 5, 9, tzinfo=UTC)
+    db_session.add(
+        Segment(
+            trip_id=trip_a.id,
+            owner_user_id=user_a.id,
+            type="flight",
+            status="confirmed",
+            start_at=base,
+            start_tz="UTC",
+            start_location={"city": "JFK", "iata": "JFK"},
+            end_location={"city": "PARIS", "iata": "CDG"},
+            details={},
+            parse_source="test",
+            parse_confidence=0.9,
+        )
+    )
+    db_session.add(
+        Segment(
+            trip_id=trip_b.id,
+            owner_user_id=user_a.id,
+            type="flight",
+            status="confirmed",
+            start_at=base + timedelta(days=2),
+            start_tz="UTC",
+            start_location={"city": "BOSTON", "iata": "BOS"},
+            end_location={"city": "PARIS", "iata": "CDG"},
+            details={},
+            parse_source="test",
+            parse_confidence=0.9,
+        )
+    )
+    await db_session.commit()
+
+    # Re-load trip_a so it has its segment for from_trip().
+    trip_a_segments = (
+        (await db_session.execute(select(Segment).where(Segment.trip_id == trip_a.id)))
+        .scalars()
+        .all()
+    )
+    target_a = ConsolidationTarget.from_trip(trip_a, list(trip_a_segments))
+
+    # Pre-dismissal sanity check: trip_b SHOULD appear as a candidate.
+    pre_candidates = await consolidation_candidates(db_session, user_a, target_a)
+    assert trip_b.id in {c.trip.id for c in pre_candidates}, (
+        "Sanity check failed: trip_b should be a MEDIUM candidate via shared 'PARIS' endpoint"
+    )
 
     # Dismiss via HTTP so we go through the real route + DB insert.
     app = create_app(settings=settings)
@@ -337,10 +399,6 @@ async def test_consolidation_candidates_excludes_dismissed_pair(
         r = await c.post(f"/trips/{trip_a.id}/dismiss-merge/{trip_b.id}")
     assert r.status_code == 303
 
-    # Now call consolidation_candidates directly.
-    target_a = ConsolidationTarget.from_trip(trip_a, [])
-    candidates = await consolidation_candidates(db_session, user_a, target_a)
-
-    # trip_b must not appear in the returned candidates.
-    candidate_ids = {c.trip_id for c in candidates}
-    assert trip_b.id not in candidate_ids
+    # Post-dismissal: trip_b must drop from the candidate set.
+    post_candidates = await consolidation_candidates(db_session, user_a, target_a)
+    assert trip_b.id not in {c.trip.id for c in post_candidates}
