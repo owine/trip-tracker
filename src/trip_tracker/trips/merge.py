@@ -102,7 +102,10 @@ async def merge_trip_into(
     target.end_date = max(target.end_date, source.end_date)
     target.updated_at = datetime.now(UTC)
 
-    # 6. Soft-delete source + populate audit
+    # 6. Soft-delete source + populate audit.
+    # source_start_date / source_end_date are NOT used by undo (which restores
+    # via target_*_pre_merge instead); they're kept for UI flash display in C6
+    # and as potential reference data for future analytics.
     audit: dict[str, Any] = {
         "source_segment_ids": [str(i) for i in moved_segment_ids],
         "source_expense_ids": [str(i) for i in moved_expense_ids],
@@ -220,5 +223,6 @@ async def undo_merge_trip(
     source.merged_into_id = None
     source.merged_at = None
     source.merge_audit = None
+    source.updated_at = datetime.now(UTC)
 
     await db.flush()
