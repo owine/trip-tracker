@@ -125,7 +125,9 @@ async def inbox_list(
         .all()
     )
     # Build per-raw-email consolidation candidates for the review bucket.
-    # TODO(perf): this is N+1 across review_rows (≤ 50 per page); batch/cache in a future pass.
+    # TODO(v0.9.1-perf): N+1 across review_rows (≤ 50/page, ~5 selects each → ~250
+    # queries on a busy /inbox). Replace with a single JOIN/CTE keyed by
+    # raw_email_id. Bounded for v0.9.0 — runs per-render, not in a hot loop.
     consolidation_by_raw: dict[uuid.UUID, list[ConsolidationCandidate]] = {}
     for raw in review_rows:
         raw_segments = (
