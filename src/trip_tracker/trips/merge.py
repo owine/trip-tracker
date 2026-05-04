@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.models.document import Document
@@ -61,7 +62,11 @@ async def merge_trip_into(
         update(Document).where(Document.trip_id == source.id).values(trip_id=target.id)
     )
 
-    # 4. Trip travelers: insert added rows on target, then delete all source rows.
+    # 4. Trip travelers: INSERT...SELECT...ON CONFLICT DO NOTHING per spec §3.3.
+    # The Python diff above (`added_traveler_user_ids`) drives the audit; the
+    # ON CONFLICT clause is the race-safety net for concurrent merges to the
+    # same target — without it, two near-simultaneous merges would hit a
+    # composite-PK IntegrityError on overlapping users.
     if added_traveler_user_ids:
         added_rows = (
             (
@@ -75,8 +80,17 @@ async def merge_trip_into(
             .scalars()
             .all()
         )
-        for r in added_rows:
-            db.add(TripTraveler(trip_id=target.id, user_id=r.user_id, role=r.role))
+        if added_rows:
+            await db.execute(
+                pg_insert(TripTraveler)
+                .values(
+                    [
+                        {"trip_id": target.id, "user_id": r.user_id, "role": r.role}
+                        for r in added_rows
+                    ]
+                )
+                .on_conflict_do_nothing(index_elements=["trip_id", "user_id"])
+            )
     await db.execute(delete(TripTraveler).where(TripTraveler.trip_id == source.id))
 
     # 5. Widen target dates

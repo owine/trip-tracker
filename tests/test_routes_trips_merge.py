@@ -233,16 +233,6 @@ async def _c1_seed_two_trips(
     return user_a, user_b, source, target
 
 
-def _c1_cookie(user: User, settings: Settings) -> dict[str, str]:
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
-
-
 # ---------------------------------------------------------------------------
 # C1 tests
 # ---------------------------------------------------------------------------
@@ -315,7 +305,7 @@ async def test_merge_happy_path_reassigns_segments_expenses_documents_and_widens
         httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            cookies=_c1_cookie(user_a, settings),
+            cookies=_cookie(user_a, settings),
             follow_redirects=False,
         ) as c,
     ):
@@ -378,7 +368,7 @@ async def test_merge_403_on_non_owner_source(
         httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            cookies=_c1_cookie(user_b, settings),
+            cookies=_cookie(user_b, settings),
             follow_redirects=False,
         ) as c,
     ):
@@ -408,7 +398,7 @@ async def test_merge_403_on_non_owner_target(
         httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            cookies=_c1_cookie(user_a, settings),
+            cookies=_cookie(user_a, settings),
             follow_redirects=False,
         ) as c,
     ):
@@ -434,7 +424,7 @@ async def test_merge_400_on_self_merge(
         httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            cookies=_c1_cookie(user_a, settings),
+            cookies=_cookie(user_a, settings),
             follow_redirects=False,
         ) as c,
     ):
@@ -465,7 +455,7 @@ async def test_merge_400_if_source_already_merged(
         httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            cookies=_c1_cookie(user_a, settings),
+            cookies=_cookie(user_a, settings),
             follow_redirects=False,
         ) as c,
     ):
@@ -496,7 +486,7 @@ async def test_merge_400_if_target_already_merged(
         httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            cookies=_c1_cookie(user_a, settings),
+            cookies=_cookie(user_a, settings),
             follow_redirects=False,
         ) as c,
     ):
@@ -524,7 +514,7 @@ async def test_merge_404_on_nonexistent_source(
         httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            cookies=_c1_cookie(user_a, settings),
+            cookies=_cookie(user_a, settings),
             follow_redirects=False,
         ) as c,
     ):
@@ -552,7 +542,7 @@ async def test_merge_404_on_nonexistent_target(
         httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            cookies=_c1_cookie(user_a, settings),
+            cookies=_cookie(user_a, settings),
             follow_redirects=False,
         ) as c,
     ):
@@ -608,7 +598,7 @@ async def test_merge_audit_added_traveler_user_ids_diffs_correctly(
         httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            cookies=_c1_cookie(user_a, settings),
+            cookies=_cookie(user_a, settings),
             follow_redirects=False,
         ) as c,
     ):
@@ -628,7 +618,7 @@ async def test_merge_audit_added_traveler_user_ids_diffs_correctly(
         .scalars()
         .all()
     )
-    traveler_user_ids = {r.user_id for r in rows}
+    traveler_user_ids = {tt.user_id for tt in rows}
     assert traveler_user_ids == {user_a.id, user_b.id}
 
 
@@ -652,7 +642,7 @@ async def test_merge_listings_exclude_soft_deleted_after_merge(
         httpx.AsyncClient(
             transport=transport,
             base_url="http://test",
-            cookies=_c1_cookie(user_a, settings),
+            cookies=_cookie(user_a, settings),
             follow_redirects=False,
         ) as c,
     ):
