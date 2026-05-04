@@ -234,3 +234,41 @@ async def test_lifetime_atlas_excludes_soft_deleted_segments(
     # Markers/arcs are JSON-injected; trip IDs appear in the payload.
     assert str(active.id) in r.text
     assert str(merged.id) not in r.text
+
+
+@pytest.mark.asyncio
+async def test_segment_edit_form_soft_deleted_trip_returns_404(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    """GET /trips/<soft-deleted-id>/segments/<seg_id>/edit must 404."""
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    user, _active, merged = await _seed(db_session)
+
+    seg = Segment(
+        trip_id=merged.id,
+        owner_user_id=user.id,
+        type="flight",
+        status="confirmed",
+        start_at=datetime(2026, 7, 5, 9, tzinfo=UTC),
+        start_tz="UTC",
+        start_location={"city": "X", "iata": "JFK"},
+        end_location={"city": "Y", "iata": "LHR"},
+        details={},
+        parse_source="test",
+        parse_confidence=0.9,
+    )
+    db_session.add(seg)
+    await db_session.commit()
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+        ) as c,
+    ):
+        r = await c.get(f"/trips/{merged.id}/segments/{seg.id}/edit")
+
+    assert r.status_code == 404
