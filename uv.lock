@@ -1,6 +1,6 @@
 version = 1
 revision = 3
-requires-python = "==3.14.*"
+requires-python = "==3.14.4"
 
 [[package]]
 name = "aiofiles"
@@ -1996,44 +1996,44 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "alembic", specifier = ">=1.18.4" },
-    { name = "anthropic", specifier = ">=0.97,<0.98" },
-    { name = "asyncpg", specifier = ">=0.31.0" },
-    { name = "authlib", specifier = ">=1.7.0" },
-    { name = "extruct", specifier = ">=0.18,<0.19" },
-    { name = "fastapi", specifier = ">=0.136.1" },
-    { name = "httpx", specifier = ">=0.28.1" },
-    { name = "itsdangerous", specifier = ">=2.2.0" },
-    { name = "jinja2", specifier = ">=3.1.6" },
-    { name = "joserfc", specifier = ">=1.6.4" },
-    { name = "meilisearch-python-sdk", specifier = ">=7,<8" },
-    { name = "pdfplumber", specifier = ">=0.11,<0.12" },
-    { name = "pydantic", specifier = ">=2.13.3" },
-    { name = "pydantic-settings", specifier = ">=2.14.0" },
-    { name = "python-multipart", specifier = ">=0.0.27" },
-    { name = "redis", specifier = ">=7,<8" },
-    { name = "saq", extras = ["hiredis"], specifier = ">=0.26,<0.27" },
-    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.49" },
-    { name = "structlog", specifier = ">=25.5.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.46.0" },
+    { name = "alembic", specifier = "==1.18.4" },
+    { name = "anthropic", specifier = "==0.97.0" },
+    { name = "asyncpg", specifier = "==0.31.0" },
+    { name = "authlib", specifier = "==1.7.1" },
+    { name = "extruct", specifier = "==0.18.0" },
+    { name = "fastapi", specifier = "==0.136.1" },
+    { name = "httpx", specifier = "==0.28.1" },
+    { name = "itsdangerous", specifier = "==2.2.0" },
+    { name = "jinja2", specifier = "==3.1.6" },
+    { name = "joserfc", specifier = "==1.6.4" },
+    { name = "meilisearch-python-sdk", specifier = "==7.1.4" },
+    { name = "pdfplumber", specifier = "==0.11.9" },
+    { name = "pydantic", specifier = "==2.13.3" },
+    { name = "pydantic-settings", specifier = "==2.14.0" },
+    { name = "python-multipart", specifier = "==0.0.27" },
+    { name = "redis", specifier = "==7.4.0" },
+    { name = "saq", extras = ["hiredis"], specifier = "==0.26.3" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = "==2.0.49" },
+    { name = "structlog", specifier = "==25.5.0" },
+    { name = "uvicorn", extras = ["standard"], specifier = "==0.46.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "bandit", extras = ["toml"], specifier = ">=1.9.4" },
-    { name = "djlint", specifier = ">=1.36.4" },
-    { name = "icalendar", specifier = ">=6.0,<7" },
-    { name = "mypy", specifier = ">=1.20.2" },
-    { name = "pip-audit", specifier = ">=2.10.0" },
-    { name = "pre-commit", specifier = ">=4.6.0" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.3" },
-    { name = "pytest", specifier = ">=9.0.3" },
-    { name = "pytest-asyncio", specifier = ">=1.3.0" },
-    { name = "pytest-cov", specifier = ">=7.1.0" },
-    { name = "pytest-postgresql", specifier = ">=8.0.0" },
-    { name = "respx", specifier = ">=0.23.1" },
-    { name = "ruff", specifier = ">=0.15.12" },
-    { name = "types-passlib", specifier = ">=1.7.7.20260211" },
+    { name = "bandit", extras = ["toml"], specifier = "==1.9.4" },
+    { name = "djlint", specifier = "==1.36.4" },
+    { name = "icalendar", specifier = "==6.3.2" },
+    { name = "mypy", specifier = "==1.20.2" },
+    { name = "pip-audit", specifier = "==2.10.0" },
+    { name = "pre-commit", specifier = "==4.6.0" },
+    { name = "psycopg", extras = ["binary"], specifier = "==3.3.4" },
+    { name = "pytest", specifier = "==9.0.3" },
+    { name = "pytest-asyncio", specifier = "==1.3.0" },
+    { name = "pytest-cov", specifier = "==7.1.0" },
+    { name = "pytest-postgresql", specifier = "==8.0.0" },
+    { name = "respx", specifier = "==0.23.1" },
+    { name = "ruff", specifier = "==0.15.12" },
+    { name = "types-passlib", specifier = "==1.7.7.20260211" },
 ]
 
 [[package]]
