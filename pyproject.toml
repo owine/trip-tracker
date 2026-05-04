@@ -3,53 +3,53 @@ name = "trip-tracker"
 version = "0.8.1"
 description = "Self-hosted itinerary aggregator (TripIt replacement)."
 readme = "README.md"
-requires-python = ">=3.14.0,<3.15.0"
+requires-python = "==3.14.4"
 dependencies = [
-    "fastapi>=0.136.1",
-    "uvicorn[standard]>=0.46.0",
-    "jinja2>=3.1.6",
-    "pydantic>=2.13.3",
-    "pydantic-settings>=2.14.0",
-    "sqlalchemy[asyncio]>=2.0.49",
-    "asyncpg>=0.31.0",
-    "alembic>=1.18.4",
-    "authlib>=1.7.0",
-    "httpx>=0.28.1",
-    "itsdangerous>=2.2.0",
-    "structlog>=25.5.0",
-    "python-multipart>=0.0.27",
-    "anthropic>=0.97,<0.98",
-    "redis>=7,<8",
-    "extruct>=0.18,<0.19",
-    "saq[hiredis]>=0.26,<0.27",
-    "meilisearch-python-sdk>=7,<8",
-    "pdfplumber>=0.11,<0.12",
-    "joserfc>=1.6.4",
+    "fastapi==0.136.1",
+    "uvicorn[standard]==0.46.0",
+    "jinja2==3.1.6",
+    "pydantic==2.13.3",
+    "pydantic-settings==2.14.0",
+    "sqlalchemy[asyncio]==2.0.49",
+    "asyncpg==0.31.0",
+    "alembic==1.18.4",
+    "authlib==1.7.1",
+    "httpx==0.28.1",
+    "itsdangerous==2.2.0",
+    "structlog==25.5.0",
+    "python-multipart==0.0.27",
+    "anthropic==0.97.0",
+    "redis==7.4.0",
+    "extruct==0.18.0",
+    "saq[hiredis]==0.26.3",
+    "meilisearch-python-sdk==7.1.4",
+    "pdfplumber==0.11.9",
+    "joserfc==1.6.4",
 ]
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.3",
-    "pytest-asyncio>=1.3.0",
-    "pytest-cov>=7.1.0",
-    "pytest-postgresql>=8.0.0",
-    "psycopg[binary]>=3.3.3",          # used by pytest-postgresql
-    "respx>=0.23.1",                   # mock httpx
-    "ruff>=0.15.12",
-    "mypy>=1.20.2",
-    "types-passlib>=1.7.7.20260211",
-    "pre-commit>=4.6.0",
-    "djlint>=1.36.4",
-    "bandit[toml]>=1.9.4",
-    "pip-audit>=2.10.0",
-    "icalendar>=6.0,<7",
+    "pytest==9.0.3",
+    "pytest-asyncio==1.3.0",
+    "pytest-cov==7.1.0",
+    "pytest-postgresql==8.0.0",
+    "psycopg[binary]==3.3.4",          # used by pytest-postgresql
+    "respx==0.23.1",                   # mock httpx
+    "ruff==0.15.12",
+    "mypy==1.20.2",
+    "types-passlib==1.7.7.20260211",
+    "pre-commit==4.6.0",
+    "djlint==1.36.4",
+    "bandit[toml]==1.9.4",
+    "pip-audit==2.10.0",
+    "icalendar==6.3.2",
 ]
 
 [tool.uv]
 package = true
 
 [build-system]
-requires = ["hatchling>=1.27.0"]
+requires = ["hatchling==1.29.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
