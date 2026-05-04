@@ -155,7 +155,11 @@ async def map_per_trip(
     if not is_traveler:
         raise HTTPException(status_code=404, detail="Not found")
 
-    trip = (await db.execute(select(Trip).where(Trip.id == trip_id))).scalar_one()
+    trip = (
+        await db.execute(select(Trip).where(Trip.id == trip_id, Trip.merged_into_id.is_(None)))
+    ).scalar_one_or_none()
+    if trip is None:
+        raise HTTPException(status_code=404, detail="Not found")
     segments = (
         (
             await db.execute(

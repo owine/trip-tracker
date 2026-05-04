@@ -108,7 +108,7 @@ def _user_trips(
     return (
         select(Trip)
         .join(TripTraveler, TripTraveler.trip_id == Trip.id)
-        .where(TripTraveler.user_id == user_id)
+        .where(TripTraveler.user_id == user_id, Trip.merged_into_id.is_(None))
         .order_by(Trip.start_date.desc())
     )
 
@@ -192,6 +192,7 @@ async def create_segment(
                 .where(
                     Trip.id == form.trip_selector.existing_trip_id,
                     TripTraveler.user_id == user.id,
+                    Trip.merged_into_id.is_(None),
                 )
             )
         ).scalar_one_or_none()
@@ -386,7 +387,11 @@ async def update_segment(
     """
     seg = await _load_segment_for_user(db, trip_id, segment_id, user.id)
     # Re-load the trip so we can widen its dates after recomputing.
-    trip = (await db.execute(select(Trip).where(Trip.id == trip_id))).scalar_one()
+    trip = (
+        await db.execute(select(Trip).where(Trip.id == trip_id, Trip.merged_into_id.is_(None)))
+    ).scalar_one_or_none()
+    if trip is None:
+        raise HTTPException(404)
 
     form_data = await request.form()
     seg_type = form_data.get("type")
