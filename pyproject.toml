@@ -42,7 +42,7 @@ dev = [
     "djlint==1.36.4",
     "bandit[toml]==1.9.4",
     "pip-audit==2.10.0",
-    "icalendar==7.0.3",
+    "icalendar==7.1.0",
 ]
 
 [tool.uv]
