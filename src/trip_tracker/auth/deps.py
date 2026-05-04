@@ -81,6 +81,10 @@ async def require_traveler_including_merged(
     Used by handlers that must distinguish 'soft-deleted trip' from
     'never-existed trip' (e.g. /trips/{id} returns 410 for the former, 404
     for the latter).
+
+    DO NOT use on mutation endpoints (edit, delete, merge-into, undo-merge,
+    dismiss-merge). Mutations on soft-deleted trips must 404 — use the
+    strict `require_traveler` instead.
     """
     stmt = (
         select(Trip)
