@@ -277,13 +277,19 @@ async def confirm(
         seg_min_start, seg_max_end, seg_max_start = seg_date_extents
         if seg_min_start is not None:
             target.start_date = min(target.start_date, seg_min_start.date())
-            seg_latest = seg_max_end or seg_max_start
-            if seg_latest is not None:
-                target.end_date = max(target.end_date, seg_latest.date())
+            # Use max() across both end_at and start_at maxima — `or` would
+            # short-circuit on the truthy max(end_at) and miss a later
+            # start_at from a no-end_at segment (e.g. one-way flight after
+            # a hotel that already ended).
+            latest_candidates = [d for d in (seg_max_end, seg_max_start) if d is not None]
+            if latest_candidates:
+                target.end_date = max(target.end_date, max(latest_candidates).date())
             target.updated_at = datetime.now(UTC)
 
         # Clean up trips that are now empty (had only segments from this raw_email).
-        # Only delete if the trip is owned by this user (defensive).
+        # Only delete if the trip is owned by this user (defensive). Capture
+        # deleted IDs so we can enqueue meili removals after commit.
+        deleted_trip_ids: list[uuid.UUID] = []
         for old_trip_id in old_trip_ids:
             if old_trip_id is None or old_trip_id == target_trip:
                 continue
@@ -303,6 +309,7 @@ async def confirm(
                 ).scalar_one_or_none()
                 if old_trip is not None:
                     await db.delete(old_trip)
+                    deleted_trip_ids.append(old_trip_id)
 
     # Auto-create Expense rows from JSON-LD pricing data on each approved segment.
     segments = (
@@ -319,10 +326,13 @@ async def confirm(
 
     await db.commit()
 
-    # Enqueue meili sync for the target trip after commit (deleted trips no-op cleanly).
+    # Enqueue meili sync for the target + each deleted old trip (worker
+    # removes from index when the row is gone post-commit).
     if target_trip is not None:
         settings_for_sync: Settings = request.app.state.settings
         await enqueue_meili_sync(settings_for_sync, entity="trip", entity_id=target_trip)
+        for deleted_id in deleted_trip_ids:
+            await enqueue_meili_sync(settings_for_sync, entity="trip", entity_id=deleted_id)
 
     return RedirectResponse("/inbox", status_code=303)
 
