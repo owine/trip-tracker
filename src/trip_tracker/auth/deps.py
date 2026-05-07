@@ -17,6 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.auth.session import decode_session_cookie
 from trip_tracker.config import Settings
+
+# Explicit PEP 484 re-export — several route modules (ics.py, settings.py, map.py,
+# documents.py, expenses.py) historically imported `get_settings` from auth.deps when
+# this module defined its own. T4 dropped the local def in favor of config.get_settings;
+# this alias preserves the legacy import path until T17 migrates the call sites to
+# `from trip_tracker.config import get_settings` directly. Don't remove — see the importers.
 from trip_tracker.config import get_settings as get_settings
 from trip_tracker.db import get_session
 from trip_tracker.models.trip import Trip
