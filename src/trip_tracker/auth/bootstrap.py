@@ -28,5 +28,5 @@ async def bootstrap(
     if not secrets.compare_digest(token, settings.owner_session_token.get_secret_value()):
         raise HTTPException(status_code=401, detail="invalid token")
     response = RedirectResponse(url="/", status_code=302)
-    set_session_cookie(response, user_id=OWNER_USER_ID)
+    set_session_cookie(response, user_id=OWNER_USER_ID, settings=settings)
     return response
