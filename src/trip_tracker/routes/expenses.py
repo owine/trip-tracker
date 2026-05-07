@@ -22,7 +22,7 @@ from trip_tracker.expenses.categories import CATEGORY_LABELS
 from trip_tracker.expenses.freeze import freeze_fx, recompute_home_minor
 from trip_tracker.expenses.fx import FxError
 from trip_tracker.models.expense import Expense
-from trip_tracker.models.trip_traveler import TripTraveler
+from trip_tracker.models.trip import Trip
 from trip_tracker.models.user import User
 from trip_tracker.schemas.expense_forms import ExpenseForm
 from trip_tracker.templating import register_globals
@@ -39,12 +39,8 @@ async def _redis(settings: Settings = Depends(get_settings)) -> AsyncRedis:  # n
     return AsyncRedis.from_url(str(settings.redis_url))
 
 
-async def _user_can_access_trip(db: AsyncSession, user: User, trip_id: uuid.UUID) -> bool:
-    res = await db.execute(
-        select(TripTraveler.user_id).where(
-            TripTraveler.trip_id == trip_id, TripTraveler.user_id == user.id
-        )
-    )
+async def _user_can_access_trip(db: AsyncSession, user: User, trip_id: uuid.UUID) -> bool:  # noqa: ARG001
+    res = await db.execute(select(Trip.id).where(Trip.id == trip_id))
     return res.scalar_one_or_none() is not None
 
 

@@ -22,7 +22,6 @@ from trip_tracker.db import get_session
 from trip_tracker.expenses.awards import AwardDetails
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 from trip_tracker.schemas.segment_forms import (
     ActivitySegmentForm,
@@ -103,14 +102,9 @@ def _to_utc(local: datetime, tz: str) -> datetime:
 
 def _user_trips(
     db: AsyncSession,  # noqa: ARG001
-    user_id: uuid.UUID,
+    user_id: uuid.UUID,  # noqa: ARG001
 ) -> Any:
-    return (
-        select(Trip)
-        .join(TripTraveler, TripTraveler.trip_id == Trip.id)
-        .where(TripTraveler.user_id == user_id, Trip.merged_into_id.is_(None))
-        .order_by(Trip.start_date.desc())
-    )
+    return select(Trip).where(Trip.merged_into_id.is_(None)).order_by(Trip.start_date.desc())
 
 
 @router.get("/segments/new", response_class=HTMLResponse)
@@ -187,11 +181,8 @@ async def create_segment(
     if form.trip_selector.existing_trip_id is not None:
         trip = (
             await db.execute(
-                select(Trip)
-                .join(TripTraveler, TripTraveler.trip_id == Trip.id)
-                .where(
+                select(Trip).where(
                     Trip.id == form.trip_selector.existing_trip_id,
-                    TripTraveler.user_id == user.id,
                     Trip.merged_into_id.is_(None),
                 )
             )
@@ -218,7 +209,6 @@ async def create_segment(
         )
         db.add(trip)
         await db.flush()
-        db.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
 
     seg = Segment(
         trip_id=trip.id,
@@ -521,7 +511,7 @@ async def award_programs_autocomplete(
 @router.get("/segments/{segment_id}", response_model=None)
 async def view_segment(
     segment_id: uuid.UUID,
-    user: User = Depends(require_user),  # noqa: B008
+    user: User = Depends(require_user),  # noqa: ARG001, B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> Response:
     """Resolve a bare segment id to its canonical edit URL.
@@ -531,12 +521,7 @@ async def view_segment(
     segment id (because the dedup record only stores the id), so this
     redirect looks up the trip and 303s to the edit page.
     """
-    stmt = (
-        select(Segment)
-        .join(Trip, Trip.id == Segment.trip_id)
-        .join(TripTraveler, TripTraveler.trip_id == Trip.id)
-        .where(Segment.id == segment_id, TripTraveler.user_id == user.id)
-    )
+    stmt = select(Segment).join(Trip, Trip.id == Segment.trip_id).where(Segment.id == segment_id)
     seg = (await db.execute(stmt)).scalar_one_or_none()
     if seg is None:
         raise HTTPException(404)
@@ -544,17 +529,18 @@ async def view_segment(
 
 
 async def _load_segment_for_user(
-    db: AsyncSession, trip_id: uuid.UUID, segment_id: uuid.UUID, user_id: uuid.UUID
+    db: AsyncSession,
+    trip_id: uuid.UUID,
+    segment_id: uuid.UUID,
+    user_id: uuid.UUID,  # noqa: ARG001
 ) -> Segment:
     stmt = (
         select(Segment)
         .join(Trip, Trip.id == Segment.trip_id)
-        .join(TripTraveler, TripTraveler.trip_id == Trip.id)
         .where(
             Trip.id == trip_id,
             Trip.merged_into_id.is_(None),
             Segment.id == segment_id,
-            TripTraveler.user_id == user_id,
         )
     )
     seg = (await db.execute(stmt)).scalar_one_or_none()

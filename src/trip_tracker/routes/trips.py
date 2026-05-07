@@ -23,7 +23,6 @@ from trip_tracker.auth.deps import (
 from trip_tracker.config import Settings
 from trip_tracker.db import get_session
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 from trip_tracker.templating import register_globals
 
@@ -58,8 +57,7 @@ async def list_trips(
     is_past = case((Trip.end_date < today, 1), else_=0)
     stmt = (
         select(Trip)
-        .join(TripTraveler, TripTraveler.trip_id == Trip.id)
-        .where(TripTraveler.user_id == user.id, Trip.merged_into_id.is_(None))
+        .where(Trip.merged_into_id.is_(None))
         .order_by(
             is_past.asc(),
             case((Trip.end_date >= today, Trip.start_date), else_=None).asc(),

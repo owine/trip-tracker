@@ -19,7 +19,6 @@ from trip_tracker.ics.render import render_calendar
 from trip_tracker.ics.tokens import hash_token, resolve_token
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 
 router = APIRouter(tags=["ics"])
 _logger = logging.getLogger(__name__)
@@ -42,11 +41,7 @@ async def ics_feed(
                 # Join Trip to exclude soft-deleted trips' segments from subscribers'
                 # feeds immediately on merge (spec §3.3: 410 Gone, no grace period).
                 .join(Trip, Trip.id == Segment.trip_id)
-                .join(TripTraveler, TripTraveler.trip_id == Segment.trip_id)
-                .where(
-                    TripTraveler.user_id == user.id,
-                    Trip.merged_into_id.is_(None),
-                )
+                .where(Trip.merged_into_id.is_(None))
                 .order_by(Segment.start_at)
             )
         )

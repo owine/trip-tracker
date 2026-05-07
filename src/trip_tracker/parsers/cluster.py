@@ -20,7 +20,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.parsers.base import SegmentDraft
 from trip_tracker.parsers.enrich import get_airport
 
@@ -125,20 +124,12 @@ def _score(draft: SegmentDraft, trip: Trip) -> float:
 
 
 async def cluster_for_user(
-    db: AsyncSession, user_id: uuid.UUID, draft: SegmentDraft
+    db: AsyncSession,
+    user_id: uuid.UUID,  # noqa: ARG001
+    draft: SegmentDraft,
 ) -> ClusterDecision:
     """Find the best Trip for `draft` among `user_id`'s trips, or signal a new one."""
-    rows = (
-        (
-            await db.execute(
-                select(Trip)
-                .join(TripTraveler, TripTraveler.trip_id == Trip.id)
-                .where(TripTraveler.user_id == user_id, Trip.merged_into_id.is_(None))
-            )
-        )
-        .scalars()
-        .all()
-    )
+    rows = (await db.execute(select(Trip).where(Trip.merged_into_id.is_(None)))).scalars().all()
 
     candidates: list[tuple[Trip, float]] = []
     for trip in rows:

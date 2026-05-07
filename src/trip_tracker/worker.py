@@ -31,7 +31,6 @@ from trip_tracker.models.forwarding_alias import ForwardingAlias
 from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.parsers.base import SegmentDraft
 from trip_tracker.parsers.budget import cost_cents_for_usage, record_usage
 from trip_tracker.parsers.cluster import cluster_for_user, derive_destination
@@ -210,7 +209,6 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
                 )
                 db.add(trip)
                 await db.flush()
-                db.add(TripTraveler(trip_id=trip.id, user_id=owner.user_id, role="owner"))
                 trip_id = trip.id
                 trips_to_sync.add(trip.id)
             else:

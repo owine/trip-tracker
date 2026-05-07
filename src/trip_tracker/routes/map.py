@@ -26,7 +26,6 @@ from trip_tracker.geo.arcs import great_circle_points
 from trip_tracker.geo.resolve import resolve_point
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 from trip_tracker.parsers.enrich import get_airport, haversine_km
 from trip_tracker.templating import register_globals
@@ -64,8 +63,7 @@ async def map_lifetime(
         await db.execute(
             select(Segment, Trip)
             .join(Trip, Trip.id == Segment.trip_id)
-            .join(TripTraveler, TripTraveler.trip_id == Segment.trip_id)
-            .where(TripTraveler.user_id == user.id, Trip.merged_into_id.is_(None))
+            .where(Trip.merged_into_id.is_(None))
             .order_by(Trip.start_date, Segment.start_at)
         )
     ).all()
@@ -145,16 +143,6 @@ async def map_per_trip(
     settings: Settings = Depends(get_settings),  # noqa: B008
 ) -> HTMLResponse:
     """Per-trip map view: numbered markers + flight arcs + weather popups."""
-    is_traveler = (
-        await db.execute(
-            select(TripTraveler.user_id).where(
-                TripTraveler.trip_id == trip_id, TripTraveler.user_id == user.id
-            )
-        )
-    ).scalar_one_or_none() is not None
-    if not is_traveler:
-        raise HTTPException(status_code=404, detail="Not found")
-
     trip = (
         await db.execute(select(Trip).where(Trip.id == trip_id, Trip.merged_into_id.is_(None)))
     ).scalar_one_or_none()

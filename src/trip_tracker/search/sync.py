@@ -10,25 +10,20 @@ from datetime import date
 from typing import Any, Literal
 
 from saq import Queue
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from trip_tracker.auth.session import OWNER_USER_ID
 from trip_tracker.config import WorkerSettings
 from trip_tracker.models.document import Document
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 
 _EPOCH = date(1970, 1, 1)
 
 
-async def _trip_traveler_ids(db: AsyncSession, trip_id: uuid.UUID) -> list[str]:
-    rows = (
-        (await db.execute(select(TripTraveler.user_id).where(TripTraveler.trip_id == trip_id)))
-        .scalars()
-        .all()
-    )
-    return [str(uid) for uid in rows]
+async def _trip_traveler_ids(db: AsyncSession, trip_id: uuid.UUID) -> list[str]:  # noqa: ARG001
+    """Return the single owner's user ID (single-user mode; trip_id unused)."""
+    return [str(OWNER_USER_ID)]
 
 
 async def trip_to_doc(trip: Trip, *, db: AsyncSession) -> dict[str, Any]:
@@ -77,22 +72,9 @@ async def segment_to_doc(seg: Segment, *, db: AsyncSession) -> dict[str, Any]:
     }
 
 
-async def document_to_doc(doc: Document, *, db: AsyncSession) -> dict[str, Any]:
+async def document_to_doc(doc: Document, *, db: AsyncSession) -> dict[str, Any]:  # noqa: ARG001
     """Render a Document as a Meili index payload. Spec §9.2."""
-    if doc.trip_id is not None:
-        traveler_ids = [
-            str(uid)
-            for uid in (
-                await db.execute(
-                    select(TripTraveler.user_id).where(TripTraveler.trip_id == doc.trip_id)
-                )
-            )
-            .scalars()
-            .all()
-        ]
-    else:
-        # Orphan: surface only to the owner.
-        traveler_ids = [str(doc.owner_user_id)]
+    traveler_ids = [str(OWNER_USER_ID)]
     return {
         "id": str(doc.id),
         "owner_user_id": str(doc.owner_user_id),
