@@ -89,28 +89,6 @@ async def test_trip_list_excludes_soft_deleted(
 
 
 @pytest.mark.asyncio
-async def test_trip_detail_soft_deleted_returns_410(
-    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
-) -> None:
-    """/trips/<soft-deleted-id> must return 410 Gone (not 200 with stale data)."""
-    monkeypatch.setenv("DATABASE_URL", db_url)
-    settings = Settings()
-    user, _active, merged = await _seed(db_session)
-
-    app = create_app(settings=settings)
-    transport = httpx.ASGITransport(app=app)
-    async with (
-        app.router.lifespan_context(app),
-        httpx.AsyncClient(
-            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
-        ) as c,
-    ):
-        r = await c.get(f"/trips/{merged.id}")
-
-    assert r.status_code == 410
-
-
-@pytest.mark.asyncio
 async def test_segments_new_dropdown_excludes_soft_deleted(
     db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
 ) -> None:

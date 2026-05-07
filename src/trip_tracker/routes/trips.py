@@ -131,14 +131,6 @@ async def trip_detail(
     db: AsyncSession = Depends(get_session),  # noqa: B008
     redis: AsyncRedis = Depends(_redis),  # noqa: B008
 ) -> HTMLResponse | Response:
-    if trip.merged_into_id is not None:
-        target_url = f"/trips/{trip.merged_into_id}"
-        return Response(
-            status_code=410,
-            content=(f"This trip was merged into another trip. Visit {target_url} instead."),
-            media_type="text/plain",
-        )
-
     from collections import defaultdict
     from datetime import date as _date_cls
 
