@@ -34,8 +34,6 @@ async def owner_user(db_session: AsyncSession) -> User:
         id=OWNER_USER_ID,
         email="owner@example.com",
         display_name="Owner",
-        oidc_subject="owner-sub",
-        is_admin=True,
     )
     db_session.add(user)
     await db_session.commit()
