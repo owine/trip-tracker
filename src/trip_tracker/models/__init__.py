@@ -7,6 +7,5 @@ from trip_tracker.models.llm_budget import LlmBudget  # noqa: F401
 from trip_tracker.models.raw_email import RawEmail  # noqa: F401
 from trip_tracker.models.segment import Segment  # noqa: F401
 from trip_tracker.models.trip import Trip  # noqa: F401
-from trip_tracker.models.trip_merge_dismissal import TripMergeDismissal  # noqa: F401
 from trip_tracker.models.user import User  # noqa: F401
 from trip_tracker.models.webhook_replay import WebhookReplay  # noqa: F401
