@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from trip_tracker.auth.deps import require_user  # TODO(phase11-T5): admin.py deleted in T5
+from trip_tracker.auth.deps import require_user
 from trip_tracker.db import get_session
 from trip_tracker.models.forwarding_alias import ForwardingAlias
 from trip_tracker.models.raw_email import RawEmail

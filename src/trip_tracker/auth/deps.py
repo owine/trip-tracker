@@ -16,7 +16,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.auth.session import decode_session_cookie
-from trip_tracker.config import Settings, get_settings
+from trip_tracker.config import Settings
+from trip_tracker.config import get_settings as get_settings
 from trip_tracker.db import get_session
 from trip_tracker.models.trip import Trip
 from trip_tracker.models.user import User
