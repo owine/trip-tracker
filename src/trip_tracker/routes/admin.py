@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from trip_tracker.auth.deps import require_admin
+from trip_tracker.auth.deps import require_user  # TODO(phase11-T5): admin.py deleted in T5
 from trip_tracker.db import get_session
 from trip_tracker.models.forwarding_alias import ForwardingAlias
 from trip_tracker.models.raw_email import RawEmail
@@ -32,7 +32,7 @@ register_globals(templates)
 @router.get("/aliases", response_class=HTMLResponse)
 async def alias_list(
     request: Request,
-    user: User = Depends(require_admin),  # noqa: B008
+    user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> HTMLResponse:
     rows = (
@@ -52,7 +52,7 @@ async def alias_list(
 @router.get("/aliases/new", response_class=HTMLResponse)
 async def alias_new_form(
     request: Request,
-    user: User = Depends(require_admin),  # noqa: B008
+    user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> HTMLResponse:
     users = (await db.execute(select(User).order_by(User.email))).scalars().all()
@@ -71,7 +71,7 @@ _LOCAL_PART_RE = re.compile(r"^[a-z0-9._%+\-]+$")
 @router.post("/aliases", response_model=None)
 async def alias_create(
     request: Request,
-    user: User = Depends(require_admin),  # noqa: B008
+    user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
     local_part: str = Form(...),
     user_id: uuid.UUID = Form(...),  # noqa: B008
@@ -114,7 +114,7 @@ async def alias_create(
 async def alias_edit_form(
     request: Request,
     alias_id: uuid.UUID,
-    user: User = Depends(require_admin),  # noqa: B008
+    user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> HTMLResponse:
     alias = await db.get(ForwardingAlias, alias_id)
@@ -132,7 +132,7 @@ async def alias_edit_form(
 async def alias_update(
     request: Request,
     alias_id: uuid.UUID,
-    user: User = Depends(require_admin),  # noqa: B008
+    user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
     local_part: str = Form(...),
     user_id: uuid.UUID = Form(...),  # noqa: B008
@@ -178,7 +178,7 @@ async def alias_update(
 @router.post("/aliases/{alias_id}/delete", response_model=None)
 async def alias_delete(
     alias_id: uuid.UUID,
-    _user: User = Depends(require_admin),  # noqa: B008
+    _user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> Response:
     alias = await db.get(ForwardingAlias, alias_id)
@@ -192,7 +192,7 @@ async def alias_delete(
 @router.get("/raw-emails", response_class=HTMLResponse)
 async def raw_email_list(
     request: Request,
-    user: User = Depends(require_admin),  # noqa: B008
+    user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
     page: int = 1,
 ) -> HTMLResponse:
@@ -222,7 +222,7 @@ async def raw_email_list(
 async def raw_email_detail(
     request: Request,
     raw_email_id: uuid.UUID,
-    user: User = Depends(require_admin),  # noqa: B008
+    user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> HTMLResponse:
     email_row = await db.get(RawEmail, raw_email_id)
@@ -250,7 +250,7 @@ async def raw_email_detail(
 @router.get("/raw-emails/{raw_email_id}/eml", response_model=None)
 async def raw_email_download(
     raw_email_id: uuid.UUID,
-    _user: User = Depends(require_admin),  # noqa: B008
+    _user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> Response:
     email_row = await db.get(RawEmail, raw_email_id)

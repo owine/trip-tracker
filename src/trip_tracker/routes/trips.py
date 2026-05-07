@@ -20,7 +20,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from trip_tracker.auth.deps import (
     get_settings,
     require_traveler,
-    require_traveler_including_merged,
     require_user,
 )
 from trip_tracker.config import Settings
@@ -130,7 +129,7 @@ async def list_trips(
 @router.get("/{trip_id}", response_class=HTMLResponse, response_model=None)
 async def trip_detail(
     request: Request,
-    trip: Trip = Depends(require_traveler_including_merged),  # noqa: B008
+    trip: Trip = Depends(require_traveler),  # noqa: B008
     user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
     redis: AsyncRedis = Depends(_redis),  # noqa: B008
