@@ -30,10 +30,12 @@ from trip_tracker.models.user import User
 
 # FastAPI binds cookie names to parameter names. We hardcode "tt_session" in
 # current_user(); if Settings.session_cookie_name is ever changed from its
-# default, the cookie won't match and auth will silently fail. Pin it.
-assert Settings.model_fields["session_cookie_name"].default == "tt_session", (
-    "auth/deps.py expects session_cookie_name='tt_session'; update both together"
-)
+# default, the cookie won't match and auth will silently fail. Pin it at
+# import time. Use raise (not assert) so this survives `python -O`.
+if Settings.model_fields["session_cookie_name"].default != "tt_session":
+    raise RuntimeError(
+        "auth/deps.py expects session_cookie_name='tt_session'; update both together"
+    )
 
 
 async def current_user(
