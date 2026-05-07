@@ -10,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_merge_dismissal import TripMergeDismissal
 from trip_tracker.models.user import User
 from trip_tracker.parsers.base import SegmentDraft
 from trip_tracker.trips.consolidation import (
@@ -644,11 +643,28 @@ async def test_top_3_cap(db_session: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
-async def test_dismissed_pairs_excluded(db_session: AsyncSession) -> None:
-    """Dismissed pair (both orderings) must be excluded from candidates."""
-    user = await _make_user(db_session)
+async def test_consolidation_candidates_no_longer_filters_by_dismissal(
+    db_session: AsyncSession,
+) -> None:
+    """Phase 11: dismissal table is gone; candidates surface regardless.
 
-    # Existing trip: BERLIN → VIENNA
+    Uses a local helper that matches the post-T6 User model (no oidc_subject).
+    The pre-existing _make_user helper still passes oidc_subject= and will be
+    fixed in T17; this test is intentionally self-contained.
+    """
+
+    async def _make_user_v2(db: AsyncSession) -> User:
+        u = User(
+            email=f"{uuid.uuid4()}@test.example",
+            display_name="Tester",
+        )
+        db.add(u)
+        await db.flush()
+        return u
+
+    user = await _make_user_v2(db_session)
+
+    # Existing trip: BERLIN → VIENNA (within the ±3-day window of target)
     existing = await _make_trip(
         db_session, user=user, start_date=date(2026, 12, 1), end_date=date(2026, 12, 8)
     )
@@ -662,21 +678,7 @@ async def test_dismissed_pairs_excluded(db_session: AsyncSession) -> None:
     db_session.add(seg_e)
     await db_session.flush()
 
-    # Second existing trip (not dismissed) — same endpoints → should still appear
-    existing2 = await _make_trip(
-        db_session, user=user, start_date=date(2026, 12, 2), end_date=date(2026, 12, 9)
-    )
-    seg_e2 = _make_segment(
-        trip_id=existing2.id,
-        owner_user_id=user.id,
-        start_at=datetime(2026, 12, 2, 10, tzinfo=UTC),
-        start_city="BERLIN",
-        end_city="VIENNA",
-    )
-    db_session.add(seg_e2)
-    await db_session.flush()
-
-    # Target: VIENNA → ROME
+    # Target: VIENNA → ROME (start_city=VIENNA shared with existing.end_city → MEDIUM)
     target_trip = await _make_trip(
         db_session, user=user, start_date=date(2026, 12, 9), end_date=date(2026, 12, 14)
     )
@@ -690,41 +692,13 @@ async def test_dismissed_pairs_excluded(db_session: AsyncSession) -> None:
     db_session.add(seg_t)
     await db_session.flush()
 
-    # Dismiss existing (ordering A): target.trip_id as trip_a, existing as trip_b
-    dismissal_a = TripMergeDismissal(
-        user_id=user.id,
-        trip_a_id=target_trip.id,
-        trip_b_id=existing.id,
-    )
-    db_session.add(dismissal_a)
-    await db_session.flush()
-
     target = ConsolidationTarget.from_trip(target_trip, [seg_t])
     results = await consolidation_candidates(db_session, user, target)
 
-    result_ids = {r.trip.id for r in results}
-    assert existing.id not in result_ids, "dismissed trip should be excluded"
-    assert existing2.id in result_ids, "non-dismissed trip should still appear"
-
-    # Now also test reversed ordering: trip_b_id=target.trip_id, trip_a_id=existing2
-    # First clear the previous dismissal and test reversed ordering
-    await db_session.delete(dismissal_a)
-    await db_session.flush()
-
-    # Add dismissal with reversed ordering for existing2
-    dismissal_b = TripMergeDismissal(
-        user_id=user.id,
-        trip_a_id=existing2.id,
-        trip_b_id=target_trip.id,
+    # No dismissal filtering — existing trip must appear as a candidate.
+    assert any(c.trip.id == existing.id for c in results), (
+        "existing trip should surface as a candidate; dismissal filter has been removed"
     )
-    db_session.add(dismissal_b)
-    await db_session.flush()
-
-    results2 = await consolidation_candidates(db_session, user, target)
-    result_ids2 = {r.trip.id for r in results2}
-    assert existing2.id not in result_ids2, "reversed-ordering dismissal should also exclude"
-    # existing is no longer dismissed (we deleted dismissal_a)
-    assert existing.id in result_ids2
 
 
 @pytest.mark.asyncio

@@ -14,7 +14,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from trip_tracker.geo.cities import lookup_city
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_merge_dismissal import TripMergeDismissal
 from trip_tracker.models.user import User
 from trip_tracker.parsers.base import SegmentDraft  # not schemas.segments
 from trip_tracker.parsers.enrich import get_airport, haversine_km
@@ -142,30 +141,6 @@ async def _user_trips_within_window(
     return list(rows)
 
 
-async def _dismissed_pair_ids(
-    db: AsyncSession,
-    user: User,
-    target_trip_id: uuid.UUID | None,
-) -> frozenset[uuid.UUID]:
-    """Return the set of trip IDs dismissed against *target_trip_id* by this user.
-
-    When target_trip_id is None (in-flight drafts), no dismissals apply.
-    """
-    if target_trip_id is None:
-        return frozenset()
-    stmt = select(TripMergeDismissal).where(
-        TripMergeDismissal.user_id == user.id,
-        (TripMergeDismissal.trip_a_id == target_trip_id)
-        | (TripMergeDismissal.trip_b_id == target_trip_id),
-    )
-    rows = (await db.execute(stmt)).scalars().all()
-    dismissed: set[uuid.UUID] = set()
-    for row in rows:
-        other = row.trip_b_id if row.trip_a_id == target_trip_id else row.trip_a_id
-        dismissed.add(other)
-    return frozenset(dismissed)
-
-
 async def _load_trip_segments(db: AsyncSession, trip_id: uuid.UUID) -> list[Segment]:
     """Load non-cancelled segments for *trip_id*, ordered by start_at."""
     stmt = (
@@ -255,13 +230,9 @@ async def consolidation_candidates(
     Bounded and runs per-user-action, not in a hot loop.
     """
     home = await infer_home(db, user.id)
-    dismissed = await _dismissed_pair_ids(db, user, target.trip_id)
     candidates: list[ConsolidationCandidate] = []
 
     for trip in await _user_trips_within_window(db, user, target):
-        if trip.id in dismissed:
-            continue
-
         trip_segments = await _load_trip_segments(db, trip.id)
         trip_view = ConsolidationTarget.from_trip(trip, trip_segments)
 
