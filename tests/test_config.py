@@ -25,7 +25,7 @@ def test_settings_load_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert s.database_url.startswith("postgresql+asyncpg://")
     assert s.session_secret.get_secret_value() == "x" * 32
     assert s.owner_email == "owner@example.com"
-    assert s.owner_session_token == "x" * 32
+    assert s.owner_session_token.get_secret_value() == "x" * 32
     assert s.forwardemail_relay_token.get_secret_value() == "fe-token"
 
 
@@ -116,8 +116,6 @@ def test_settings_is_a_worker_settings(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_settings_requires_owner_email_and_session_token(monkeypatch: pytest.MonkeyPatch) -> None:
     """OWNER_EMAIL and OWNER_SESSION_TOKEN are required (no defaults).
     OWNER_SESSION_TOKEN must be at least 32 chars."""
-    from trip_tracker.config import Settings
-
     monkeypatch.setenv("OWNER_EMAIL", "owner@example.com")
     monkeypatch.setenv("OWNER_SESSION_TOKEN", "x" * 32)
     monkeypatch.setenv("SESSION_SECRET", "y" * 32)
@@ -131,12 +129,10 @@ def test_settings_requires_owner_email_and_session_token(monkeypatch: pytest.Mon
     monkeypatch.setenv("MEILI_MASTER_KEY", "meili-key")
     s = Settings(_env_file=None)
     assert s.owner_email == "owner@example.com"
-    assert s.owner_session_token == "x" * 32
+    assert s.owner_session_token.get_secret_value() == "x" * 32
 
 
 def test_settings_rejects_short_owner_session_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    from trip_tracker.config import Settings
-
     monkeypatch.setenv("OWNER_EMAIL", "owner@example.com")
     monkeypatch.setenv("OWNER_SESSION_TOKEN", "tooshort")
     monkeypatch.setenv("SESSION_SECRET", "y" * 32)
@@ -153,8 +149,6 @@ def test_settings_rejects_short_owner_session_token(monkeypatch: pytest.MonkeyPa
 
 
 def test_settings_no_longer_has_oidc_fields(monkeypatch: pytest.MonkeyPatch) -> None:
-    from trip_tracker.config import Settings
-
     monkeypatch.setenv("OWNER_EMAIL", "owner@example.com")
     monkeypatch.setenv("OWNER_SESSION_TOKEN", "x" * 32)
     monkeypatch.setenv("SESSION_SECRET", "y" * 32)

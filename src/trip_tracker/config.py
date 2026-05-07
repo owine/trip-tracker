@@ -90,7 +90,7 @@ class Settings(WorkerSettings):
         ...,
         description="Email address of the single owner; seeded into users table on first boot.",
     )
-    owner_session_token: str = Field(
+    owner_session_token: SecretStr = Field(
         ...,
         min_length=32,
         description="Shared secret presented at /auth/bootstrap?token=<>. >=32 chars.",
