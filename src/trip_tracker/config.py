@@ -137,3 +137,13 @@ class Settings(WorkerSettings):
         if not 0 < v <= 100 * 1024 * 1024:
             raise ValueError("must be in (0, 100 MiB]")
         return v
+
+
+def get_settings() -> Settings:
+    """FastAPI dependency that returns a fresh Settings instance.
+
+    Reads from environment / .env at call time. Used by routes that need
+    app-level config without importing Settings at module level (allows env
+    monkeypatching in tests).
+    """
+    return Settings()

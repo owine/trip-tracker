@@ -26,12 +26,12 @@ def _settings_dep() -> Settings:
 
 async def _client_dep(settings: Settings = Depends(_settings_dep)) -> OIDCClient:  # noqa: B008
     async with httpx.AsyncClient() as http:
-        discovery = await OIDCDiscovery.fetch(settings.oidc_issuer, client=http)
+        discovery = await OIDCDiscovery.fetch(settings.oidc_issuer, client=http)  # type: ignore[attr-defined]
     return OIDCClient(
         discovery=discovery,
-        client_id=settings.oidc_client_id,
-        client_secret=settings.oidc_client_secret.get_secret_value(),
-        redirect_uri=settings.oidc_redirect_uri,
+        client_id=settings.oidc_client_id,  # type: ignore[attr-defined]
+        client_secret=settings.oidc_client_secret.get_secret_value(),  # type: ignore[attr-defined]
+        redirect_uri=settings.oidc_redirect_uri,  # type: ignore[attr-defined]
     )
 
 
@@ -87,7 +87,7 @@ async def callback(
     if user is None:
         # First-user-is-admin or explicit group membership.
         existing_count = (await db.execute(select(func.count()).select_from(User))).scalar_one()
-        is_admin = existing_count == 0 or settings.admin_group in claims.groups
+        is_admin = existing_count == 0 or settings.admin_group in claims.groups  # type: ignore[attr-defined]
         user = User(
             oidc_subject=claims.sub,
             email=claims.email,
@@ -99,7 +99,7 @@ async def callback(
         user.email = claims.email
         if claims.preferred_username:
             user.display_name = claims.preferred_username
-        if settings.admin_group in claims.groups:
+        if settings.admin_group in claims.groups:  # type: ignore[attr-defined]
             user.is_admin = True
     await db.commit()
     await db.refresh(user)

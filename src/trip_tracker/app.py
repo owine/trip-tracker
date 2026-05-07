@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from trip_tracker import __version__
+from trip_tracker.auth.bootstrap import router as bootstrap_router
 from trip_tracker.auth.routes import router as auth_router
 from trip_tracker.config import Settings
 from trip_tracker.db import dispose_db, init_db
@@ -78,6 +79,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(static_dir), check_dir=False), name="static")
 
     app.include_router(health_router)
+    app.include_router(bootstrap_router)
     app.include_router(auth_router)
     app.include_router(ingest_router)
     app.include_router(forwardemail_router)
