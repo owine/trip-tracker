@@ -63,7 +63,6 @@ async def map_lifetime(
         await db.execute(
             select(Segment, Trip)
             .join(Trip, Trip.id == Segment.trip_id)
-            .where(Trip.merged_into_id.is_(None))
             .order_by(Trip.start_date, Segment.start_at)
         )
     ).all()
@@ -143,9 +142,7 @@ async def map_per_trip(
     settings: Settings = Depends(get_settings),  # noqa: B008
 ) -> HTMLResponse:
     """Per-trip map view: numbered markers + flight arcs + weather popups."""
-    trip = (
-        await db.execute(select(Trip).where(Trip.id == trip_id, Trip.merged_into_id.is_(None)))
-    ).scalar_one_or_none()
+    trip = (await db.execute(select(Trip).where(Trip.id == trip_id))).scalar_one_or_none()
     if trip is None:
         raise HTTPException(status_code=404, detail="Not found")
     segments = (

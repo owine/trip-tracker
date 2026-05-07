@@ -55,14 +55,10 @@ async def list_trips(
 ) -> HTMLResponse:
     today = date.today()
     is_past = case((Trip.end_date < today, 1), else_=0)
-    stmt = (
-        select(Trip)
-        .where(Trip.merged_into_id.is_(None))
-        .order_by(
-            is_past.asc(),
-            case((Trip.end_date >= today, Trip.start_date), else_=None).asc(),
-            case((Trip.end_date < today, Trip.start_date), else_=None).desc(),
-        )
+    stmt = select(Trip).order_by(
+        is_past.asc(),
+        case((Trip.end_date >= today, Trip.start_date), else_=None).asc(),
+        case((Trip.end_date < today, Trip.start_date), else_=None).desc(),
     )
     trips = (await db.execute(stmt)).scalars().all()
     return templates.TemplateResponse(request, "trips/list.html", {"trips": trips, "user": user})

@@ -115,20 +115,18 @@ class ConsolidationCandidate:
 
 async def _user_trips_within_window(
     db: AsyncSession,
-    user: User,
+    user: User,  # noqa: ARG001
     target: ConsolidationTarget,
 ) -> list[Trip]:
-    """Active trips owned by *user* that overlap target's date window (±3 days).
+    """Trips that overlap target's date window (±3 days).
 
-    Excludes the target trip itself (when target.trip_id is not None) and any
-    trip with merged_into_id set (soft-deleted).
+    Excludes the target trip itself (when target.trip_id is not None).
+    Single-owner mode: no created_by or soft-delete filter needed.
     """
     window = timedelta(days=_GAP_DAYS_FALLBACK)
     stmt = (
         select(Trip)
         .where(
-            Trip.created_by == user.id,
-            Trip.merged_into_id.is_(None),
             Trip.start_date <= target.end_date + window,
             Trip.end_date >= target.start_date - window,
         )

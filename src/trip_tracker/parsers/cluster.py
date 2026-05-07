@@ -129,7 +129,7 @@ async def cluster_for_user(
     draft: SegmentDraft,
 ) -> ClusterDecision:
     """Find the best Trip for `draft` among `user_id`'s trips, or signal a new one."""
-    rows = (await db.execute(select(Trip).where(Trip.merged_into_id.is_(None)))).scalars().all()
+    rows = (await db.execute(select(Trip))).scalars().all()
 
     candidates: list[tuple[Trip, float]] = []
     for trip in rows:

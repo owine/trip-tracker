@@ -264,14 +264,6 @@ async def confirm(
         target = (await db.execute(select(Trip).where(Trip.id == target_trip))).scalar_one_or_none()
         if target is None:
             raise HTTPException(status_code=404)
-        if target.created_by != user.id:
-            raise HTTPException(status_code=403)
-        if target.merged_into_id is not None:
-            raise HTTPException(
-                status_code=400,
-                detail="Target trip has been merged; choose an active trip",
-            )
-
         # Snapshot the segment trip_ids BEFORE reassignment so we can clean
         # up newly-empty trips after.
         old_trip_ids = list(
@@ -325,12 +317,7 @@ async def confirm(
             ).scalar_one()
             if remaining == 0:
                 old_trip = (
-                    await db.execute(
-                        select(Trip).where(
-                            Trip.id == old_trip_id,
-                            Trip.created_by == user.id,
-                        )
-                    )
+                    await db.execute(select(Trip).where(Trip.id == old_trip_id))
                 ).scalar_one_or_none()
                 if old_trip is not None:
                     await db.delete(old_trip)

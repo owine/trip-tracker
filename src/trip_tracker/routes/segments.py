@@ -104,7 +104,7 @@ def _user_trips(
     db: AsyncSession,  # noqa: ARG001
     user_id: uuid.UUID,  # noqa: ARG001
 ) -> Any:
-    return select(Trip).where(Trip.merged_into_id.is_(None)).order_by(Trip.start_date.desc())
+    return select(Trip).order_by(Trip.start_date.desc())
 
 
 @router.get("/segments/new", response_class=HTMLResponse)
@@ -183,7 +183,6 @@ async def create_segment(
             await db.execute(
                 select(Trip).where(
                     Trip.id == form.trip_selector.existing_trip_id,
-                    Trip.merged_into_id.is_(None),
                 )
             )
         ).scalar_one_or_none()
@@ -205,7 +204,6 @@ async def create_segment(
             start_date=start_at.date(),
             end_date=seg_end_date,
             primary_destination=primary,
-            created_by=user.id,
         )
         db.add(trip)
         await db.flush()
@@ -377,9 +375,7 @@ async def update_segment(
     """
     seg = await _load_segment_for_user(db, trip_id, segment_id, user.id)
     # Re-load the trip so we can widen its dates after recomputing.
-    trip = (
-        await db.execute(select(Trip).where(Trip.id == trip_id, Trip.merged_into_id.is_(None)))
-    ).scalar_one_or_none()
+    trip = (await db.execute(select(Trip).where(Trip.id == trip_id))).scalar_one_or_none()
     if trip is None:
         raise HTTPException(404)
 
@@ -539,7 +535,6 @@ async def _load_segment_for_user(
         .join(Trip, Trip.id == Segment.trip_id)
         .where(
             Trip.id == trip_id,
-            Trip.merged_into_id.is_(None),
             Segment.id == segment_id,
         )
     )

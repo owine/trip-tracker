@@ -18,7 +18,6 @@ from trip_tracker.db import get_session
 from trip_tracker.ics.render import render_calendar
 from trip_tracker.ics.tokens import hash_token, resolve_token
 from trip_tracker.models.segment import Segment
-from trip_tracker.models.trip import Trip
 
 router = APIRouter(tags=["ics"])
 _logger = logging.getLogger(__name__)
@@ -34,20 +33,7 @@ async def ics_feed(
     if user is None:
         raise HTTPException(status_code=404, detail="Not found")
 
-    segments = (
-        (
-            await db.execute(
-                select(Segment)
-                # Join Trip to exclude soft-deleted trips' segments from subscribers'
-                # feeds immediately on merge (spec §3.3: 410 Gone, no grace period).
-                .join(Trip, Trip.id == Segment.trip_id)
-                .where(Trip.merged_into_id.is_(None))
-                .order_by(Segment.start_at)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    segments = (await db.execute(select(Segment).order_by(Segment.start_at))).scalars().all()
 
     body = render_calendar(user=user, segments=segments, base_url=str(settings.base_url))
     # Log first 6 hex chars of the SHA-256 hash (NOT the plaintext token) so

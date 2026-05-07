@@ -44,9 +44,7 @@ async def reindex_all(
     async with SessionMaker() as db:
         trips_idx = meili.index("trips")
         batch: list[dict[str, Any]] = []
-        for trip in (
-            (await db.execute(select(Trip).where(Trip.merged_into_id.is_(None)))).scalars().all()
-        ):
+        for trip in (await db.execute(select(Trip))).scalars().all():
             batch.append(await trip_to_doc(trip, db=db))
             counts["trips"] += 1
             if len(batch) >= batch_size:

@@ -83,9 +83,7 @@ async def list_for_trip(
 ) -> HTMLResponse:
     if not await _user_can_access_trip(db, user, trip_id):
         raise HTTPException(404)
-    trip = (
-        await db.execute(select(Trip).where(Trip.id == trip_id, Trip.merged_into_id.is_(None)))
-    ).scalar_one_or_none()
+    trip = (await db.execute(select(Trip).where(Trip.id == trip_id))).scalar_one_or_none()
     if trip is None:
         raise HTTPException(404)
     docs = (

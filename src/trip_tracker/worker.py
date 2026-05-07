@@ -205,7 +205,6 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
                     start_date=draft.start_at.date(),
                     end_date=(draft.end_at or draft.start_at).date(),
                     primary_destination=derive_destination(draft),
-                    created_by=owner.user_id,
                 )
                 db.add(trip)
                 await db.flush()
