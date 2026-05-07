@@ -16,14 +16,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.auth.session import decode_session_cookie
-from trip_tracker.config import Settings
+from trip_tracker.config import Settings, get_settings
 from trip_tracker.db import get_session
 from trip_tracker.models.trip import Trip
 from trip_tracker.models.user import User
 
-
-def get_settings() -> Settings:
-    return Settings()
+# FastAPI binds cookie names to parameter names. We hardcode "tt_session" in
+# current_user(); if Settings.session_cookie_name is ever changed from its
+# default, the cookie won't match and auth will silently fail. Pin it.
+assert Settings.model_fields["session_cookie_name"].default == "tt_session", (
+    "auth/deps.py expects session_cookie_name='tt_session'; update both together"
+)
 
 
 async def current_user(
@@ -45,11 +48,8 @@ async def current_user(
 
 
 async def require_user(
-    tt_session: str | None = Cookie(default=None),
-    db: AsyncSession = Depends(get_session),  # noqa: B008
-    settings: Settings = Depends(get_settings),  # noqa: B008
+    user: User | None = Depends(current_user),  # noqa: B008
 ) -> User:
-    user = await current_user(tt_session=tt_session, db=db, settings=settings)
     if user is None:
         raise HTTPException(status_code=401, detail="not authenticated")
     return user

@@ -104,9 +104,7 @@ async def test_current_user_returns_none_with_uuid_for_unseeded_user(
 
 
 @pytest.mark.asyncio
-async def test_require_user_raises_401_without_cookie(
-    db_session: AsyncSession, settings: Settings
-) -> None:
+async def test_require_user_raises_401_without_cookie() -> None:
     with pytest.raises(HTTPException) as exc:
-        await require_user(tt_session=None, db=db_session, settings=settings)
+        await require_user(user=None)
     assert exc.value.status_code == 401
