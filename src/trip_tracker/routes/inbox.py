@@ -2,7 +2,6 @@
 
 Auth scoping: same case-insensitive lowering pattern as admin raw-emails
 (extract local-part of to_address, lower, join to forwarding_aliases).
-Admins (is_admin=True) see all RawEmails.
 """
 
 from __future__ import annotations
@@ -62,8 +61,6 @@ register_globals(templates)
 
 def _user_owned_filter(user: User) -> sa.ColumnElement[bool]:
     """Return a SQLA expression for 'this user owns this RawEmail'."""
-    if user.is_admin:
-        return sa.true()
     local = sa.func.lower(sa.func.split_part(RawEmail.to_address, "@", 1))
     return RawEmail.id.in_(
         select(RawEmail.id)
