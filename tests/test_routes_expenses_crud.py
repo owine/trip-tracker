@@ -9,27 +9,23 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from fastapi import Response as _Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.app import create_app
-from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.auth.session import OWNER_USER_ID, set_session_cookie
 from trip_tracker.config import Settings
 from trip_tracker.expenses.fx import FxError
 from trip_tracker.models.expense import Expense
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 
 def _cookie(user: User, settings: Settings) -> dict[str, str]:
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
+    r = _Response()
+    set_session_cookie(r, user_id=user.id, settings=settings)
+    return {"tt_session": r.headers["set-cookie"].split(";")[0].split("=", 1)[1]}
 
 
 @asynccontextmanager
@@ -73,7 +69,7 @@ def _mock_redis(monkeypatch: pytest.MonkeyPatch) -> None:
 
 async def _seed(db: AsyncSession, *, home_currency: str = "USD") -> tuple[User, Trip]:
     u = User(
-        oidc_subject="ex1",
+        id=OWNER_USER_ID,
         email="ex1@x.com",
         display_name="EX1",
         home_currency=home_currency,
@@ -84,11 +80,8 @@ async def _seed(db: AsyncSession, *, home_currency: str = "USD") -> tuple[User, 
         title="Trip",
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 5),
-        created_by=u.id,
     )
     db.add(t)
-    await db.flush()
-    db.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
     await db.commit()
     return u, t
 
@@ -157,24 +150,6 @@ async def test_create_expense_freezes_fx(
     assert e.amount_home_minor == 4142
     assert e.home_currency == "USD"
     fake_freeze.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_create_expense_unauthorized_returns_404(
-    db_session, authenticated_client_factory, monkeypatch
-) -> None:
-    _u, t = await _seed(db_session)
-    other = User(oidc_subject="other", email="other@x.com", display_name="O", home_currency="USD")
-    db_session.add(other)
-    await db_session.commit()
-    monkeypatch.setattr(
-        "trip_tracker.routes.expenses.freeze_fx",
-        AsyncMock(return_value=(Decimal("1"), 0)),
-    )
-
-    async with authenticated_client_factory(other) as client:
-        r = await client.post(f"/trips/{t.id}/expenses", data=_form())
-    assert r.status_code == 404
 
 
 @pytest.mark.asyncio

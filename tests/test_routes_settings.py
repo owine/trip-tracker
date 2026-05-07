@@ -6,22 +6,19 @@ from contextlib import asynccontextmanager
 
 import httpx
 import pytest
+from fastapi import Response as _Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.app import create_app
-from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.auth.session import OWNER_USER_ID, set_session_cookie
 from trip_tracker.config import Settings
 from trip_tracker.models.user import User
 
 
 def _cookie(user, settings):
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
+    r = _Response()
+    set_session_cookie(r, user_id=user.id, settings=settings)
+    return {"tt_session": r.headers["set-cookie"].split(";")[0].split("=", 1)[1]}
 
 
 @asynccontextmanager
@@ -56,7 +53,7 @@ def authenticated_client_factory(db_url, monkeypatch):
 async def test_get_settings_no_token_shows_generate_button(
     db_session: AsyncSession, authenticated_client_factory
 ) -> None:
-    u = User(oidc_subject="s1", email="s1@x.com", display_name="S1")
+    u = User(id=OWNER_USER_ID, email="s1@x.com", display_name="S1")
     db_session.add(u)
     await db_session.commit()
     async with authenticated_client_factory(u) as client:
@@ -71,7 +68,7 @@ async def test_get_settings_with_token_shows_regenerate(
     db_session: AsyncSession, authenticated_client_factory
 ) -> None:
     u = User(
-        oidc_subject="s2",
+        id=OWNER_USER_ID,
         email="s2@x.com",
         display_name="S2",
         ics_token_hash="a" * 64,
@@ -90,7 +87,7 @@ async def test_get_settings_with_token_shows_regenerate(
 async def test_post_regenerate_flashes_plaintext_url_once(
     db_session: AsyncSession, authenticated_client_factory
 ) -> None:
-    u = User(oidc_subject="s3", email="s3@x.com", display_name="S3")
+    u = User(id=OWNER_USER_ID, email="s3@x.com", display_name="S3")
     db_session.add(u)
     await db_session.commit()
     async with authenticated_client_factory(u) as client:
@@ -110,7 +107,7 @@ async def test_regenerate_overwrites_existing_token(
 ) -> None:
     """Old hash is replaced; a stale URL would 404."""
     u = User(
-        oidc_subject="s4",
+        id=OWNER_USER_ID,
         email="s4@x.com",
         display_name="S4",
         ics_token_hash="b" * 64,

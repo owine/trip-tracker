@@ -7,27 +7,23 @@ from datetime import UTC, datetime
 
 import httpx
 import pytest
+from fastapi import Response as _Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.app import create_app
-from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.auth.session import OWNER_USER_ID, set_session_cookie
 from trip_tracker.config import Settings
 from trip_tracker.models.forwarding_alias import ForwardingAlias
 from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 
 def _cookie(user: User, settings: Settings) -> dict[str, str]:
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
+    r = _Response()
+    set_session_cookie(r, user_id=user.id, settings=settings)
+    return {"tt_session": r.headers["set-cookie"].split(";")[0].split("=", 1)[1]}
 
 
 @pytest.mark.asyncio
@@ -37,7 +33,7 @@ async def test_edit_with_parse_source_shows_sparkle(
     """A segment with parse_source != 'manual' renders with ✨ on the edit form."""
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
-    user = User(oidc_subject="p", email="p@x.com", display_name="P")
+    user = User(id=OWNER_USER_ID, email="p@x.com", display_name="P")
     db_session.add(user)
     await db_session.flush()
     db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
@@ -56,11 +52,9 @@ async def test_edit_with_parse_source_shows_sparkle(
         title="T",
         start_date=datetime(2026, 6, 1).date(),
         end_date=datetime(2026, 6, 5).date(),
-        created_by=user.id,
     )
     db_session.add_all([raw, trip])
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = Segment(
         trip_id=trip.id,
         owner_user_id=user.id,
@@ -100,18 +94,16 @@ async def test_edit_manual_segment_no_sparkle(
     """Manual segment (parse_source='manual') — no ✨."""
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
-    user = User(oidc_subject="m", email="m@x.com", display_name="M")
+    user = User(id=OWNER_USER_ID, email="m@x.com", display_name="M")
     db_session.add(user)
     await db_session.flush()
     trip = Trip(
         title="T",
         start_date=datetime(2026, 6, 1).date(),
         end_date=datetime(2026, 6, 5).date(),
-        created_by=user.id,
     )
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = Segment(
         trip_id=trip.id,
         owner_user_id=user.id,

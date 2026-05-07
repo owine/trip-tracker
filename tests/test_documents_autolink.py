@@ -9,6 +9,7 @@ from datetime import UTC, date, datetime
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from trip_tracker.auth.session import OWNER_USER_ID
 from trip_tracker.documents.autolink import (
     autolink_pending_for_email,
     match_attachment_to_segment,
@@ -17,7 +18,6 @@ from trip_tracker.models.document import Document
 from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 # ─── Pure-function tests (no DB) ─────────────────────────────────────
@@ -111,18 +111,16 @@ async def _seed_email_seg_doc(
     seg_conf: str | None = None,
     pre_linked_segment: bool = False,
 ) -> tuple[User, Trip, RawEmail, Segment, Document]:
-    u = User(oidc_subject="al1", email="al1@x.com", display_name="AL1")
+    u = User(id=OWNER_USER_ID, email="al1@x.com", display_name="AL1")
     db.add(u)
     await db.flush()
     t = Trip(
         title="T",
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 2),
-        created_by=u.id,
     )
     db.add(t)
     await db.flush()
-    db.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
     re_ = RawEmail(
         to_address="oliver@trips.example.com",
         from_address="x@x.com",
@@ -231,7 +229,7 @@ async def test_autolink_no_op_when_no_segments(
     db_session: AsyncSession,
 ) -> None:
     """No Segment with this raw_email_id → helper returns immediately."""
-    u = User(oidc_subject="al2", email="al2@x.com", display_name="AL2")
+    u = User(id=OWNER_USER_ID, email="al2@x.com", display_name="AL2")
     db_session.add(u)
     await db_session.flush()
     re_ = RawEmail(

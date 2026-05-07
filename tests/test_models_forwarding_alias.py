@@ -12,7 +12,7 @@ from trip_tracker.models.user import User
 
 
 async def _user(db: AsyncSession, *, email: str = "u@example.com") -> User:
-    u = User(oidc_subject=f"sub-{email}", email=email, display_name="U")
+    u = User(email=email, display_name="U")
     db.add(u)
     await db.commit()
     return u

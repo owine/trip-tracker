@@ -15,7 +15,7 @@ from trip_tracker.parsers.dedup import find_existing_segment
 
 
 async def _make_user(db: AsyncSession, oidc: str = "u1") -> User:
-    user = User(oidc_subject=oidc, email=f"{oidc}@x.com", display_name=oidc)
+    user = User(email=f"{oidc}@x.com", display_name=oidc)
     db.add(user)
     await db.flush()
     return user
@@ -26,7 +26,6 @@ async def _make_trip(db: AsyncSession, user: User) -> Trip:
         title="Test Trip",
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 7),
-        created_by=user.id,
     )
     db.add(trip)
     await db.flush()

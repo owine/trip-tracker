@@ -8,17 +8,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from fastapi import Response as _Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.app import create_app
-from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.auth.session import OWNER_USER_ID, set_session_cookie
 from trip_tracker.config import Settings
 from trip_tracker.models.forwarding_alias import ForwardingAlias
 from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 # ---------------------------------------------------------------------------
@@ -27,13 +27,9 @@ from trip_tracker.models.user import User
 
 
 def _cookie(user: User, settings: Settings) -> dict[str, str]:
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
+    r = _Response()
+    set_session_cookie(r, user_id=user.id, settings=settings)
+    return {"tt_session": r.headers["set-cookie"].split(";")[0].split("=", 1)[1]}
 
 
 _MIME = (
@@ -45,13 +41,12 @@ _MIME = (
 async def _make_user(
     db: AsyncSession,
     *,
-    oidc: str = "u1",
     email: str = "u1@x.com",
     name: str = "User1",
     alias: str = "oliver",
 ) -> User:
-    """Create a user with a forwarding alias."""
-    user = User(oidc_subject=oidc, email=email, display_name=name, home_currency="USD")
+    """Create the owner user with a forwarding alias."""
+    user = User(id=OWNER_USER_ID, email=email, display_name=name, home_currency="USD")
     db.add(user)
     await db.flush()
     db.add(ForwardingAlias(local_part=alias, user_id=user.id))
@@ -83,18 +78,13 @@ async def _make_trip(
     title: str = "Trip",
     start: datetime,
     end: datetime,
-    merged_into_id: uuid.UUID | None = None,
 ) -> Trip:
     trip = Trip(
         title=title,
         start_date=start.date(),
         end_date=end.date(),
-        created_by=user.id,
-        merged_into_id=merged_into_id,
     )
     db.add(trip)
-    await db.flush()
-    db.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     await db.flush()
     return trip
 
@@ -328,123 +318,6 @@ async def test_confirm_with_target_trip_404_on_nonexistent(
     # Segment still in trip B (nothing changed).
     await db_session.refresh(seg)
     assert seg.trip_id == trip_b.id
-
-
-@pytest.mark.asyncio
-async def test_confirm_with_target_trip_403_on_non_owner(
-    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
-) -> None:
-    """User B tries to confirm raw_email → target=trip owned by user A: 403."""
-    monkeypatch.setenv("DATABASE_URL", db_url)
-    settings = Settings()
-
-    # User A owns trip A.
-    user_a = await _make_user(db_session, oidc="ua", email="ua@x.com", name="UA", alias="oliver")
-    trip_a = await _make_trip(
-        db_session,
-        user=user_a,
-        title="Trip A",
-        start=datetime(2026, 5, 1),
-        end=datetime(2026, 5, 10),
-    )
-    # User B owns the raw_email (different alias).
-    user_b = await _make_user(db_session, oidc="ub", email="ub@x.com", name="UB", alias="oliver2")
-    raw_b = RawEmail(
-        id=uuid.uuid4(),
-        received_at=datetime.now(tz=UTC),
-        to_address="oliver2@trips.example.com",
-        from_address="x@y.com",
-        subject="B's email",
-        message_id=f"<{uuid.uuid4()}@x>",
-        mime_blob=_MIME,
-        headers={},
-        parse_status="review",
-    )
-    db_session.add(raw_b)
-    trip_b = await _make_trip(
-        db_session,
-        user=user_b,
-        title="Auto-trip B",
-        start=datetime(2026, 6, 1),
-        end=datetime(2026, 6, 5),
-    )
-    await _make_segment(db_session, user=user_b, trip=trip_b, raw=raw_b)
-    await db_session.commit()
-
-    _mock_redis(monkeypatch)
-    app = create_app(settings=settings)
-    transport = httpx.ASGITransport(app=app)
-    async with (
-        app.router.lifespan_context(app),
-        httpx.AsyncClient(
-            transport=transport,
-            base_url="http://test",
-            cookies=_cookie(user_b, settings),
-        ) as c,
-    ):
-        r = await c.post(
-            f"/inbox/{raw_b.id}/confirm?target_trip={trip_a.id}",
-            follow_redirects=False,
-        )
-
-    assert r.status_code == 403
-
-
-@pytest.mark.asyncio
-async def test_confirm_with_target_trip_400_on_soft_deleted(
-    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
-) -> None:
-    """Targeting a soft-deleted (merged) trip returns 400."""
-    monkeypatch.setenv("DATABASE_URL", db_url)
-    settings = Settings()
-
-    user = await _make_user(db_session)
-    raw = await _make_raw(db_session)
-
-    # Trip A: create a second trip to satisfy the FK for merged_into_id.
-    trip_survivor = await _make_trip(
-        db_session,
-        user=user,
-        title="Survivor",
-        start=datetime(2026, 4, 1),
-        end=datetime(2026, 4, 5),
-    )
-    # Trip A: soft-deleted (merged into survivor).
-    trip_a = await _make_trip(
-        db_session,
-        user=user,
-        title="Merged Trip A",
-        start=datetime(2026, 5, 1),
-        end=datetime(2026, 5, 10),
-        merged_into_id=trip_survivor.id,
-    )
-    trip_b = await _make_trip(
-        db_session,
-        user=user,
-        title="Auto-trip B",
-        start=datetime(2026, 6, 1),
-        end=datetime(2026, 6, 5),
-    )
-    await _make_segment(db_session, user=user, trip=trip_b, raw=raw)
-    await db_session.commit()
-
-    _mock_redis(monkeypatch)
-    app = create_app(settings=settings)
-    transport = httpx.ASGITransport(app=app)
-    async with (
-        app.router.lifespan_context(app),
-        httpx.AsyncClient(
-            transport=transport,
-            base_url="http://test",
-            cookies=_cookie(user, settings),
-        ) as c,
-    ):
-        r = await c.post(
-            f"/inbox/{raw.id}/confirm?target_trip={trip_a.id}",
-            follow_redirects=False,
-        )
-
-    assert r.status_code == 400
 
 
 @pytest.mark.asyncio

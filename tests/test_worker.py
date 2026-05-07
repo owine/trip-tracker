@@ -47,7 +47,7 @@ async def test_webhook_enqueues_parse_task(
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
     settings = Settings()
 
-    user = User(oidc_subject="t", email="t@x.com", display_name="T")
+    user = User(email="t@x.com", display_name="T")
     db_session.add(user)
     await db_session.flush()
     db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
@@ -95,7 +95,7 @@ async def test_parse_raw_email_writes_segment(
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
 
-    user = User(oidc_subject="w", email="w@x.com", display_name="W")
+    user = User(email="w@x.com", display_name="W")
     db_session.add(user)
     await db_session.flush()
     db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
@@ -242,7 +242,7 @@ async def test_parse_raw_email_empty_segments_marks_no_segments(
     from trip_tracker.worker import parse_raw_email
 
     monkeypatch.setenv("DATABASE_URL", db_url)
-    user = User(oidc_subject="ns", email="ns@x.com", display_name="NS")
+    user = User(email="ns@x.com", display_name="NS")
     db_session.add(user)
     await db_session.flush()
     db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
@@ -307,7 +307,7 @@ async def test_parse_raw_email_with_pdf_attachment_but_no_segments_still_enqueue
     msg.add_attachment(pdf_payload, maintype="application", subtype="pdf", filename="boarding.pdf")
     mime_blob = msg.as_bytes()
 
-    user = User(oidc_subject="ps", email="ps@x.com", display_name="PS")
+    user = User(email="ps@x.com", display_name="PS")
     db_session.add(user)
     await db_session.flush()
     db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
@@ -379,7 +379,7 @@ async def test_parse_raw_email_low_confidence_marks_review(
     from trip_tracker.worker import parse_raw_email
 
     monkeypatch.setenv("DATABASE_URL", db_url)
-    user = User(oidc_subject="r", email="r@x.com", display_name="R")
+    user = User(email="r@x.com", display_name="R")
     db_session.add(user)
     await db_session.flush()
     db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
@@ -435,12 +435,11 @@ async def test_parse_raw_email_attaches_to_existing_trip(
 
     from trip_tracker.models.segment import Segment
     from trip_tracker.models.trip import Trip
-    from trip_tracker.models.trip_traveler import TripTraveler
     from trip_tracker.parsers.dispatch import ParseOutcome
     from trip_tracker.worker import parse_raw_email
 
     monkeypatch.setenv("DATABASE_URL", db_url)
-    user = User(oidc_subject="att", email="att@x.com", display_name="ATT")
+    user = User(email="att@x.com", display_name="ATT")
     db_session.add(user)
     await db_session.flush()
     db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
@@ -451,11 +450,8 @@ async def test_parse_raw_email_attaches_to_existing_trip(
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 5),
         primary_destination="Paris",
-        created_by=user.id,
     )
     db_session.add(trip)
-    await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
 
     raw = RawEmail(
         id=uuid.uuid4(),
@@ -520,13 +516,12 @@ async def test_parse_raw_email_ambiguous_decision_attaches_to_best_trip(
 
     from trip_tracker.models.segment import Segment
     from trip_tracker.models.trip import Trip
-    from trip_tracker.models.trip_traveler import TripTraveler
     from trip_tracker.parsers.cluster import ClusterDecision
     from trip_tracker.parsers.dispatch import ParseOutcome
     from trip_tracker.worker import parse_raw_email
 
     monkeypatch.setenv("DATABASE_URL", db_url)
-    user = User(oidc_subject="amb", email="amb@x.com", display_name="AMB")
+    user = User(email="amb@x.com", display_name="AMB")
     db_session.add(user)
     await db_session.flush()
     db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
@@ -536,11 +531,8 @@ async def test_parse_raw_email_ambiguous_decision_attaches_to_best_trip(
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 5),
         primary_destination="Paris",
-        created_by=user.id,
     )
     db_session.add(trip)
-    await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
 
     raw = RawEmail(
         id=uuid.uuid4(),
@@ -639,9 +631,8 @@ async def test_parse_raw_email_all_drafts_dedup_marks_duplicate(
     from datetime import date
 
     from trip_tracker.models.trip import Trip
-    from trip_tracker.models.trip_traveler import TripTraveler
 
-    user = User(oidc_subject="dup1", email="dup1@x.com", display_name="DUP1")
+    user = User(email="dup1@x.com", display_name="DUP1")
     db_session.add(user)
     await db_session.flush()
     db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
@@ -651,11 +642,9 @@ async def test_parse_raw_email_all_drafts_dedup_marks_duplicate(
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 5),
         primary_destination="Paris",
-        created_by=user.id,
     )
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
 
     # Seed an existing Segment that the draft will match (strong match: same
     # confirmation_number + provider).
@@ -744,9 +733,8 @@ async def test_parse_raw_email_mixed_drafts_persists_fresh_only(
     from datetime import date
 
     from trip_tracker.models.trip import Trip
-    from trip_tracker.models.trip_traveler import TripTraveler
 
-    user = User(oidc_subject="dup2", email="dup2@x.com", display_name="DUP2")
+    user = User(email="dup2@x.com", display_name="DUP2")
     db_session.add(user)
     await db_session.flush()
     db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
@@ -756,11 +744,9 @@ async def test_parse_raw_email_mixed_drafts_persists_fresh_only(
         start_date=date(2026, 7, 1),
         end_date=date(2026, 7, 5),
         primary_destination="London",
-        created_by=user.id,
     )
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
 
     seeded = Segment(
         trip_id=trip.id,
@@ -863,7 +849,7 @@ async def test_parse_raw_email_all_fresh_unchanged_behavior(
     from trip_tracker.worker import parse_raw_email
 
     monkeypatch.setenv("DATABASE_URL", db_url)
-    user = User(oidc_subject="fresh", email="fresh@x.com", display_name="FRESH")
+    user = User(email="fresh@x.com", display_name="FRESH")
     db_session.add(user)
     await db_session.flush()
     db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
@@ -936,7 +922,7 @@ async def test_parse_raw_email_reforward_same_confirmation_dedupes(
     from trip_tracker.worker import parse_raw_email
 
     monkeypatch.setenv("DATABASE_URL", db_url)
-    user = User(oidc_subject="rfwd", email="rfwd@x.com", display_name="RFWD")
+    user = User(email="rfwd@x.com", display_name="RFWD")
     db_session.add(user)
     await db_session.flush()
     db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))

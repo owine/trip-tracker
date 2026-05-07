@@ -11,11 +11,11 @@ from icalendar import Calendar
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.app import create_app
+from trip_tracker.auth.session import OWNER_USER_ID
 from trip_tracker.config import Settings
 from trip_tracker.ics.tokens import generate_token
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 
@@ -33,7 +33,7 @@ async def _client(settings: Settings):
 async def _seed_user_with_token(
     db: AsyncSession, *, with_segment: bool = True
 ) -> tuple[User, str, Trip | None, Segment | None]:
-    u = User(oidc_subject="ics1", email="ics1@x.com", display_name="ICS Tester")
+    u = User(id=OWNER_USER_ID, email="ics1@x.com", display_name="ICS Tester")
     db.add(u)
     await db.flush()
     plaintext, h = generate_token()
@@ -44,11 +44,9 @@ async def _seed_user_with_token(
             title="Paris",
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 7),
-            created_by=u.id,
         )
         db.add(trip)
         await db.flush()
-        db.add(TripTraveler(trip_id=trip.id, user_id=u.id, role="owner"))
         seg = Segment(
             trip_id=trip.id,
             owner_user_id=u.id,
@@ -107,7 +105,7 @@ async def test_user_with_null_token_returns_404(
     """A user exists but has ics_token_hash=NULL: any token → 404."""
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
-    u = User(oidc_subject="ics-null", email="null@x.com", display_name="NoToken")
+    u = User(id=OWNER_USER_ID, email="null@x.com", display_name="NoToken")
     db_session.add(u)
     await db_session.commit()
     plaintext, _ = generate_token()
@@ -144,43 +142,3 @@ async def test_no_session_required(
     async with _client(settings) as c:
         r = await c.get(f"/ics/{plaintext}.ics", follow_redirects=False)
     assert r.status_code == 200  # NOT 302/401
-
-
-@pytest.mark.asyncio
-async def test_segments_filtered_by_traveler_ids(
-    db_url: str, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Another user's segments don't leak into the feed."""
-    monkeypatch.setenv("DATABASE_URL", db_url)
-    settings = Settings()
-    _, plaintext, _, _ = await _seed_user_with_token(db_session)
-    other = User(oidc_subject="ics-other", email="other@x.com", display_name="Other")
-    db_session.add(other)
-    await db_session.flush()
-    other_trip = Trip(
-        title="OtherTrip",
-        start_date=date(2026, 7, 1),
-        end_date=date(2026, 7, 5),
-        created_by=other.id,
-    )
-    db_session.add(other_trip)
-    await db_session.flush()
-    db_session.add(TripTraveler(trip_id=other_trip.id, user_id=other.id, role="owner"))
-    db_session.add(
-        Segment(
-            trip_id=other_trip.id,
-            owner_user_id=other.id,
-            type="flight",
-            status="confirmed",
-            provider="Other Airline",
-            start_at=datetime(2026, 7, 1, 9, tzinfo=UTC),
-            start_tz="UTC",
-            parse_source="manual",
-            parse_confidence=1.0,
-        )
-    )
-    await db_session.commit()
-    async with _client(settings) as c:
-        body = (await c.get(f"/ics/{plaintext}.ics")).text
-    assert "Other Airline" not in body
-    assert "AF007" in body

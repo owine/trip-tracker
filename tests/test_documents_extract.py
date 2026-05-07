@@ -24,7 +24,7 @@ async def _seed_doc(
     storage: LocalFsStorage,
     fixture: str,
 ) -> Document:
-    u = User(oidc_subject=f"ex-{fixture}", email=f"{fixture}@x.com", display_name="EX")
+    u = User(email=f"{fixture}@x.com", display_name="EX")
     db.add(u)
     await db.flush()
     payload = (FIXTURE_DIR / fixture).read_bytes()
@@ -123,7 +123,7 @@ async def test_extract_marks_unsupported_for_non_pdf_mime(
     db_url: str, db_session: AsyncSession, tmp_path: Path
 ) -> None:
     storage = LocalFsStorage(tmp_path)
-    u = User(oidc_subject="ex2", email="ex2@x.com", display_name="EX2")
+    u = User(email="ex2@x.com", display_name="EX2")
     db_session.add(u)
     await db_session.flush()
     d = Document(

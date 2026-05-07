@@ -7,22 +7,19 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from fastapi import Response as _Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.app import create_app
-from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.auth.session import OWNER_USER_ID, set_session_cookie
 from trip_tracker.config import Settings
 from trip_tracker.models.user import User
 
 
 def _cookie(user: User, settings: Settings) -> dict[str, str]:
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
+    r = _Response()
+    set_session_cookie(r, user_id=user.id, settings=settings)
+    return {"tt_session": r.headers["set-cookie"].split(";")[0].split("=", 1)[1]}
 
 
 @pytest.mark.asyncio
@@ -32,7 +29,7 @@ async def test_search_segments_filters_by_user(
     """Server injects traveler_ids = '<user.id>' regardless of client input."""
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
-    user = User(oidc_subject="s1", email="s1@x.com", display_name="S1")
+    user = User(id=OWNER_USER_ID, email="s1@x.com", display_name="S1")
     db_session.add(user)
     await db_session.commit()
 
@@ -86,7 +83,7 @@ async def test_search_invalid_index_returns_422(
     """Path param is constrained to {trips, segments}; other values rejected."""
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
-    user = User(oidc_subject="s2", email="s2@x.com", display_name="S2")
+    user = User(id=OWNER_USER_ID, email="s2@x.com", display_name="S2")
     db_session.add(user)
     await db_session.commit()
 

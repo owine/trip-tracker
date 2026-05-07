@@ -36,7 +36,7 @@ def _email_with(*pdfs: tuple[str, bytes], non_pdf: bytes | None = None) -> bytes
 async def test_pdf_attachment_creates_document_with_owner(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
-    u = User(oidc_subject="pa1", email="pa1@x.com", display_name="PA1")
+    u = User(email="pa1@x.com", display_name="PA1")
     db_session.add(u)
     await db_session.flush()
     re_ = RawEmail(
@@ -79,7 +79,7 @@ async def test_pdf_attachment_creates_document_with_owner(
 
 @pytest.mark.asyncio
 async def test_idempotent_on_duplicate_sha256(db_session: AsyncSession, tmp_path: Path) -> None:
-    u = User(oidc_subject="pa2", email="pa2@x.com", display_name="PA2")
+    u = User(email="pa2@x.com", display_name="PA2")
     db_session.add(u)
     await db_session.flush()
     re_ = RawEmail(
@@ -122,7 +122,7 @@ async def test_idempotent_on_duplicate_sha256(db_session: AsyncSession, tmp_path
 
 @pytest.mark.asyncio
 async def test_non_pdf_attachment_dropped(db_session: AsyncSession, tmp_path: Path) -> None:
-    u = User(oidc_subject="pa3", email="pa3@x.com", display_name="PA3")
+    u = User(email="pa3@x.com", display_name="PA3")
     db_session.add(u)
     await db_session.flush()
     re_ = RawEmail(

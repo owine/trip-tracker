@@ -8,28 +8,24 @@ from datetime import date
 
 import httpx
 import pytest
+from fastapi import Response as _Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.app import create_app
-from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.auth.session import OWNER_USER_ID, set_session_cookie
 from trip_tracker.config import Settings
 from trip_tracker.models.document import Document
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 PDF_BODY = b"%PDF-1.4\n%fake content for tests\n"
 
 
 def _cookie(user, settings):
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
+    r = _Response()
+    set_session_cookie(r, user_id=user.id, settings=settings)
+    return {"tt_session": r.headers["set-cookie"].split(";")[0].split("=", 1)[1]}
 
 
 @asynccontextmanager
@@ -61,18 +57,15 @@ def authenticated_client_factory(db_url, monkeypatch):
 
 
 async def _seed(db: AsyncSession) -> tuple[User, Trip]:
-    u = User(oidc_subject="up1", email="up1@x.com", display_name="UP1")
+    u = User(id=OWNER_USER_ID, email="up1@x.com", display_name="UP1")
     db.add(u)
     await db.flush()
     t = Trip(
         title="T",
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 2),
-        created_by=u.id,
     )
     db.add(t)
-    await db.flush()
-    db.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
     await db.commit()
     return u, t
 
@@ -144,19 +137,3 @@ async def test_upload_size_cap_returns_413(
             files={"file": ("big.pdf", io.BytesIO(big), "application/pdf")},
         )
     assert r.status_code == 413
-
-
-@pytest.mark.asyncio
-async def test_upload_requires_traveler_membership(
-    db_session: AsyncSession, authenticated_client_factory
-) -> None:
-    _owner, t = await _seed(db_session)
-    other = User(oidc_subject="up2", email="up2@x.com", display_name="UP2")
-    db_session.add(other)
-    await db_session.commit()
-    async with authenticated_client_factory(other) as client:
-        r = await client.post(
-            f"/trips/{t.id}/documents",
-            files={"file": ("a.pdf", io.BytesIO(PDF_BODY), "application/pdf")},
-        )
-    assert r.status_code in (403, 404)

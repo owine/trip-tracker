@@ -6,33 +6,29 @@ from datetime import UTC, date, datetime
 
 import httpx
 import pytest
+from fastapi import Response as _Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.app import create_app
-from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.auth.session import OWNER_USER_ID, set_session_cookie
 from trip_tracker.config import Settings
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 
 async def _user(db: AsyncSession) -> User:
-    u = User(oidc_subject="s", email="u@x.com", display_name="U")
+    u = User(id=OWNER_USER_ID, email="u@x.com", display_name="U")
     db.add(u)
     await db.commit()
     return u
 
 
 def _cookie(user: User, settings: Settings) -> dict[str, str]:
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
+    r = _Response()
+    set_session_cookie(r, user_id=user.id, settings=settings)
+    return {"tt_session": r.headers["set-cookie"].split(";")[0].split("=", 1)[1]}
 
 
 @pytest.mark.asyncio
@@ -101,12 +97,9 @@ async def test_edit_flight_clear_award_removes_key(
     user = await _user(db_session)
 
     # Seed trip and segment with award.
-    trip = Trip(
-        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
-    )
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5))
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
 
     seg = Segment(
         trip_id=trip.id,
@@ -188,12 +181,9 @@ async def test_edit_flight_clear_award_with_prefilled_fields_still_clears(
     settings = Settings()
     user = await _user(db_session)
 
-    trip = Trip(
-        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
-    )
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5))
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
 
     seg = Segment(
         trip_id=trip.id,

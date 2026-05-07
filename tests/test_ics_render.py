@@ -51,7 +51,6 @@ def _seg(
 def _user() -> User:
     return User(
         id=uuid.uuid4(),
-        oidc_subject="r1",
         email="r1@x.com",
         display_name="Trip Tester",
     )

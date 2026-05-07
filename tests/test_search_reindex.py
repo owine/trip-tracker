@@ -8,24 +8,21 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from trip_tracker.auth.session import OWNER_USER_ID
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 from trip_tracker.search.reindex import reindex_all
 
 
 @pytest.mark.asyncio
 async def test_reindex_walks_all_rows(db_url: str, db_session: AsyncSession) -> None:
-    user = User(oidc_subject="r1", email="r1@x.com", display_name="R1")
+    user = User(id=OWNER_USER_ID, email="r1@x.com", display_name="R1")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(
-        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
-    )
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5))
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     db_session.add(
         Segment(
             trip_id=trip.id,
@@ -79,15 +76,12 @@ async def test_reindex_walks_all_rows(db_url: str, db_session: AsyncSession) -> 
 async def test_reindex_dry_run_skips_meili(db_url: str, db_session: AsyncSession) -> None:
     # Seed at least one trip+segment so the walk has rows to traverse —
     # otherwise the dry-run early-return would mask any actual write attempt.
-    user = User(oidc_subject="dr1", email="dr1@x.com", display_name="DR1")
+    user = User(id=OWNER_USER_ID, email="dr1@x.com", display_name="DR1")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(
-        title="DR", start_date=date(2026, 7, 1), end_date=date(2026, 7, 2), created_by=user.id
-    )
+    trip = Trip(title="DR", start_date=date(2026, 7, 1), end_date=date(2026, 7, 2))
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     db_session.add(
         Segment(
             trip_id=trip.id,

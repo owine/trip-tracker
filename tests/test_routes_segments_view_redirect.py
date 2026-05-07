@@ -12,40 +12,34 @@ from datetime import UTC, date, datetime
 
 import httpx
 import pytest
+from fastapi import Response as _Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.app import create_app
-from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.auth.session import OWNER_USER_ID, set_session_cookie
 from trip_tracker.config import Settings
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 
 def _cookie(user: User, settings: Settings) -> dict[str, str]:
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
+    r = _Response()
+    set_session_cookie(r, user_id=user.id, settings=settings)
+    return {"tt_session": r.headers["set-cookie"].split(";")[0].split("=", 1)[1]}
 
 
-async def _seed_user_trip_segment(db: AsyncSession, *, oidc: str = "u1") -> Segment:
-    u = User(oidc_subject=oidc, email=f"{oidc}@x.com", display_name=oidc)
+async def _seed_user_trip_segment(db: AsyncSession) -> Segment:
+    u = User(id=OWNER_USER_ID, email="u1@x.com", display_name="U1")
     db.add(u)
     await db.flush()
     trip = Trip(
         title="Trip",
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 7),
-        created_by=u.id,
     )
     db.add(trip)
     await db.flush()
-    db.add(TripTraveler(trip_id=trip.id, user_id=u.id, role="owner"))
     seg = Segment(
         trip_id=trip.id,
         owner_user_id=u.id,
@@ -110,27 +104,4 @@ async def test_view_segment_unknown_id_returns_404(
         ) as client,
     ):
         r = await client.get(f"/segments/{uuid.uuid4()}", follow_redirects=False)
-    assert r.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_view_segment_other_users_segment_returns_404(
-    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
-) -> None:
-    monkeypatch.setenv("DATABASE_URL", db_url)
-    settings = Settings()
-    seg = await _seed_user_trip_segment(db_session, oidc="owner-a")
-    other = User(oidc_subject="other-b", email="b@x.com", display_name="B")
-    db_session.add(other)
-    await db_session.commit()
-
-    app = create_app()
-    transport = httpx.ASGITransport(app=app)
-    async with (
-        app.router.lifespan_context(app),
-        httpx.AsyncClient(
-            transport=transport, base_url="http://test", cookies=_cookie(other, settings)
-        ) as client,
-    ):
-        r = await client.get(f"/segments/{seg.id}", follow_redirects=False)
     assert r.status_code == 404

@@ -87,11 +87,11 @@ class Settings(WorkerSettings):
 
     # Single-owner auth (replaces OIDC)
     owner_email: str = Field(
-        ...,
+        default="owner@example.com",
         description="Email address of the single owner; seeded into users table on first boot.",
     )
     owner_session_token: SecretStr = Field(
-        ...,
+        default=SecretStr("changeme-set-a-real-secret-in-production"),
         min_length=32,
         description="Shared secret presented at /auth/bootstrap?token=<>. >=32 chars.",
     )

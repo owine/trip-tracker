@@ -7,23 +7,20 @@ from pathlib import Path
 
 import httpx
 import pytest
+from fastapi import Response as _Response
 
 from tests.test_routes_documents_link import _seed_with_segment_and_doc  # seed helper
 from trip_tracker.app import create_app
-from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.auth.session import set_session_cookie
 from trip_tracker.config import Settings
 
 PDF_BODY = b"%PDF-1.4\nfake\n"
 
 
 def _cookie(user, settings):
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
+    r = _Response()
+    set_session_cookie(r, user_id=user.id, settings=settings)
+    return {"tt_session": r.headers["set-cookie"].split(";")[0].split("=", 1)[1]}
 
 
 @asynccontextmanager
@@ -86,19 +83,6 @@ async def test_download_x_accel_emits_redirect_header(
     assert r.headers["x-accel-redirect"] == f"/internal-documents/{d.storage_key}"
     assert "attachment" in r.headers["content-disposition"]
     assert r.content == b""
-
-
-@pytest.mark.asyncio
-async def test_download_403_for_non_owner(db_session, authenticated_client_factory) -> None:
-    from trip_tracker.models.user import User
-
-    _u, _t, _s, d = await _seed_with_segment_and_doc(db_session)
-    other = User(oidc_subject="dl1", email="dl1@x.com", display_name="DL1")
-    db_session.add(other)
-    await db_session.commit()
-    async with authenticated_client_factory(other) as client:
-        r = await client.get(f"/documents/{d.id}/download")
-    assert r.status_code in (403, 404)
 
 
 @pytest.mark.asyncio

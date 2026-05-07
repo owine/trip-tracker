@@ -7,8 +7,8 @@ from datetime import UTC, date, datetime
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from trip_tracker.auth.session import OWNER_USER_ID
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 from trip_tracker.parsers.base import SegmentDraft
 from trip_tracker.parsers.cluster import (
@@ -19,7 +19,7 @@ from trip_tracker.parsers.cluster import (
 
 @pytest.fixture
 async def user(db_session: AsyncSession) -> User:
-    u = User(oidc_subject="cluster-test", email="c@x.com", display_name="C")
+    u = User(id=OWNER_USER_ID, email="c@x.com", display_name="C")
     db_session.add(u)
     await db_session.commit()
     return u
@@ -57,11 +57,8 @@ async def test_single_overlapping_trip_attaches(db_session: AsyncSession, user: 
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 5),
         primary_destination="Paris",
-        created_by=user.id,
     )
     db_session.add(trip)
-    await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     await db_session.commit()
 
     draft = _flight_draft(
@@ -82,11 +79,8 @@ async def test_adjacent_plus_one_day_attaches(db_session: AsyncSession, user: Us
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 5),
         primary_destination="Paris",
-        created_by=user.id,
     )
     db_session.add(trip)
-    await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     await db_session.commit()
 
     # +1 day after trip end
@@ -108,11 +102,8 @@ async def test_two_day_gap_does_not_cluster(db_session: AsyncSession, user: User
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 5),
         primary_destination="Paris",
-        created_by=user.id,
     )
     db_session.add(trip)
-    await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     await db_session.commit()
 
     # +2 days after trip end → outside ±1d adjacency
@@ -135,11 +126,8 @@ async def test_close_score_routes_to_inbox(db_session: AsyncSession, user: User)
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 5),
             primary_destination="Paris",
-            created_by=user.id,
         )
         db_session.add(t)
-        await db_session.flush()
-        db_session.add(TripTraveler(trip_id=t.id, user_id=user.id, role="owner"))
     await db_session.commit()
 
     draft = _flight_draft(

@@ -9,29 +9,25 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+from fastapi import Response as _Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.app import create_app
-from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.auth.session import OWNER_USER_ID, set_session_cookie
 from trip_tracker.config import Settings
 from trip_tracker.models.expense import Expense
 from trip_tracker.models.forwarding_alias import ForwardingAlias
 from trip_tracker.models.raw_email import RawEmail
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 
 def _cookie(user: User, settings: Settings) -> dict[str, str]:
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
+    r = _Response()
+    set_session_cookie(r, user_id=user.id, settings=settings)
+    return {"tt_session": r.headers["set-cookie"].split(";")[0].split("=", 1)[1]}
 
 
 _MIME = (
@@ -43,7 +39,7 @@ _MIME = (
 async def _setup_user_with_raw(
     db_session: AsyncSession, *, parse_status: str
 ) -> tuple[User, RawEmail]:
-    user = User(oidc_subject="i", email="i@x.com", display_name="I")
+    user = User(id=OWNER_USER_ID, email="i@x.com", display_name="I")
     db_session.add(user)
     await db_session.flush()
     db_session.add(ForwardingAlias(local_part="oliver", user_id=user.id))
@@ -160,11 +156,9 @@ async def test_inbox_discard_action(
         title="Auto",
         start_date=datetime(2026, 6, 1).date(),
         end_date=datetime(2026, 6, 5).date(),
-        created_by=user.id,
     )
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = Segment(
         trip_id=trip.id,
         owner_user_id=user.id,
@@ -225,30 +219,6 @@ async def test_inbox_reparse_action(
 
 
 @pytest.mark.asyncio
-async def test_inbox_404_for_other_users_raw(
-    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
-) -> None:
-    """A user can't act on a RawEmail they don't own (via alias)."""
-    monkeypatch.setenv("DATABASE_URL", db_url)
-    settings = Settings()
-    _user_a, raw = await _setup_user_with_raw(db_session, parse_status="review")
-    user_b = User(oidc_subject="b", email="b@x.com", display_name="B")
-    db_session.add(user_b)
-    await db_session.commit()
-
-    app = create_app(settings=settings)
-    transport = httpx.ASGITransport(app=app)
-    async with (
-        app.router.lifespan_context(app),
-        httpx.AsyncClient(
-            transport=transport, base_url="http://test", cookies=_cookie(user_b, settings)
-        ) as c,
-    ):
-        r = await c.post(f"/inbox/{raw.id}/confirm", follow_redirects=False)
-    assert r.status_code == 404
-
-
-@pytest.mark.asyncio
 async def test_not_a_duplicate_resets_to_pending_and_clears_header(
     db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
 ) -> None:
@@ -274,29 +244,6 @@ async def test_not_a_duplicate_resets_to_pending_and_clears_header(
     assert raw.parse_status == "pending"
     assert "X-Tt-Dedup-Against" not in (raw.headers or {})
     mock_enqueue.assert_awaited_once_with(settings, raw.id)
-
-
-@pytest.mark.asyncio
-async def test_not_a_duplicate_other_user_returns_404(
-    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
-) -> None:
-    monkeypatch.setenv("DATABASE_URL", db_url)
-    settings = Settings()
-    _user_a, raw = await _setup_user_with_raw(db_session, parse_status="duplicate")
-    user_b = User(oidc_subject="b", email="b@x.com", display_name="B")
-    db_session.add(user_b)
-    await db_session.commit()
-
-    app = create_app(settings=settings)
-    transport = httpx.ASGITransport(app=app)
-    async with (
-        app.router.lifespan_context(app),
-        httpx.AsyncClient(
-            transport=transport, base_url="http://test", cookies=_cookie(user_b, settings)
-        ) as c,
-    ):
-        r = await c.post(f"/inbox/{raw.id}/not-a-duplicate", follow_redirects=False)
-    assert r.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -335,11 +282,9 @@ async def _setup_confirmed_segment(
         title="Auto-expense trip",
         start_date=datetime(2026, 6, 1).date(),
         end_date=datetime(2026, 6, 5).date(),
-        created_by=user.id,
     )
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = Segment(
         trip_id=trip.id,
         owner_user_id=user.id,

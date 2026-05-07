@@ -30,7 +30,7 @@ async def _seed_user_and_trip(
 ) -> tuple[User, Trip]:
     """Create a User + one Trip; flush so both have PKs."""
     user = User(
-        oidc_subject=f"sub-{uuid.uuid4()}",
+        id=uuid.uuid4(),
         email=f"{uuid.uuid4()}@test.example",
         display_name="Tester",
     )
@@ -41,7 +41,6 @@ async def _seed_user_and_trip(
         title="Test Trip",
         start_date=start_date,
         end_date=end_date,
-        created_by=user.id,
     )
     db.add(trip)
     await db.flush()
@@ -224,7 +223,7 @@ async def test_from_trip_empty_segments(db_session: AsyncSession) -> None:
 async def _make_user(db: AsyncSession) -> User:
     """Create and flush a User with a unique identity."""
     user = User(
-        oidc_subject=f"sub-{uuid.uuid4()}",
+        id=uuid.uuid4(),
         email=f"{uuid.uuid4()}@test.example",
         display_name="Tester",
     )
@@ -241,12 +240,11 @@ async def _make_trip(
     end_date: date,
     title: str = "Trip",
 ) -> Trip:
-    """Create and flush a Trip owned by *user*."""
+    """Create and flush a Trip."""
     trip = Trip(
         title=title,
         start_date=start_date,
         end_date=end_date,
-        created_by=user.id,
     )
     db.add(trip)
     await db.flush()
@@ -646,23 +644,8 @@ async def test_top_3_cap(db_session: AsyncSession) -> None:
 async def test_consolidation_candidates_no_longer_filters_by_dismissal(
     db_session: AsyncSession,
 ) -> None:
-    """Phase 11: dismissal table is gone; candidates surface regardless.
-
-    Uses a local helper that matches the post-T6 User model (no oidc_subject).
-    The pre-existing _make_user helper still passes oidc_subject= and will be
-    fixed in T17; this test is intentionally self-contained.
-    """
-
-    async def _make_user_v2(db: AsyncSession) -> User:
-        u = User(
-            email=f"{uuid.uuid4()}@test.example",
-            display_name="Tester",
-        )
-        db.add(u)
-        await db.flush()
-        return u
-
-    user = await _make_user_v2(db_session)
+    """Phase 11: dismissal table is gone; candidates surface regardless."""
+    user = await _make_user(db_session)
 
     # Existing trip: BERLIN → VIENNA (within the ±3-day window of target)
     existing = await _make_trip(
@@ -699,53 +682,6 @@ async def test_consolidation_candidates_no_longer_filters_by_dismissal(
     assert any(c.trip.id == existing.id for c in results), (
         "existing trip should surface as a candidate; dismissal filter has been removed"
     )
-
-
-@pytest.mark.asyncio
-async def test_soft_deleted_trips_excluded(db_session: AsyncSession) -> None:
-    """Trip with merged_into_id set (soft-deleted) is excluded by pre-filter."""
-    user = await _make_user(db_session)
-
-    # Sentinel trip (used as the merge target FK reference)
-    sentinel = await _make_trip(
-        db_session, user=user, start_date=date(2026, 12, 1), end_date=date(2026, 12, 2)
-    )
-
-    # Existing trip — will be soft-deleted (merged_into_id → sentinel)
-    existing = await _make_trip(
-        db_session, user=user, start_date=date(2027, 1, 1), end_date=date(2027, 1, 8)
-    )
-    seg_e = _make_segment(
-        trip_id=existing.id,
-        owner_user_id=user.id,
-        start_at=datetime(2027, 1, 1, 10, tzinfo=UTC),
-        start_city="BERLIN",
-        end_city="VIENNA",
-    )
-    db_session.add(seg_e)
-    # Soft-delete: point merged_into_id to the sentinel trip (satisfies FK)
-    existing.merged_into_id = sentinel.id
-    await db_session.flush()
-
-    # Target: VIENNA → ROME
-    target_trip = await _make_trip(
-        db_session, user=user, start_date=date(2027, 1, 9), end_date=date(2027, 1, 14)
-    )
-    seg_t = _make_segment(
-        trip_id=target_trip.id,
-        owner_user_id=user.id,
-        start_at=datetime(2027, 1, 9, 10, tzinfo=UTC),
-        start_city="VIENNA",
-        end_city="ROME",
-    )
-    db_session.add(seg_t)
-    await db_session.flush()
-
-    target = ConsolidationTarget.from_trip(target_trip, [seg_t])
-    results = await consolidation_candidates(db_session, user, target)
-
-    # soft-deleted trip excluded
-    assert results == []
 
 
 @pytest.mark.asyncio

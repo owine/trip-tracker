@@ -40,7 +40,7 @@ def test_hash_token_distinguishes_inputs() -> None:
 
 @pytest.mark.asyncio
 async def test_resolve_token_returns_user(db_session: AsyncSession) -> None:
-    u = User(oidc_subject="t1", email="t1@x.com", display_name="T1")
+    u = User(email="t1@x.com", display_name="T1")
     db_session.add(u)
     await db_session.flush()
     plaintext, h = generate_token()
@@ -64,7 +64,7 @@ async def test_resolve_token_returns_none_for_unknown(
 async def test_resolve_token_returns_none_for_user_without_token(
     db_session: AsyncSession,
 ) -> None:
-    u = User(oidc_subject="t2", email="t2@x.com", display_name="T2")
+    u = User(email="t2@x.com", display_name="T2")
     db_session.add(u)
     await db_session.commit()
     plaintext, _h = generate_token()

@@ -9,16 +9,16 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from trip_tracker.auth.session import OWNER_USER_ID
 from trip_tracker.models.document import Document
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 
 @pytest.mark.asyncio
 async def test_document_unique_owner_sha256(db_session: AsyncSession) -> None:
-    u = User(oidc_subject="d1", email="d1@x.com", display_name="D1")
+    u = User(id=OWNER_USER_ID, email="d1@x.com", display_name="D1")
     db_session.add(u)
     await db_session.flush()
     db_session.add(
@@ -48,13 +48,12 @@ async def test_document_unique_owner_sha256(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_trip_delete_cascades_documents(db_session: AsyncSession) -> None:
-    u = User(oidc_subject="d2", email="d2@x.com", display_name="D2")
+    u = User(id=OWNER_USER_ID, email="d2@x.com", display_name="D2")
     db_session.add(u)
     await db_session.flush()
-    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2), created_by=u.id)
+    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2))
     db_session.add(t)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
     db_session.add(
         Document(
             owner_user_id=u.id,
@@ -75,13 +74,12 @@ async def test_trip_delete_cascades_documents(db_session: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_segment_delete_sets_segment_id_null(db_session: AsyncSession) -> None:
-    u = User(oidc_subject="d3", email="d3@x.com", display_name="D3")
+    u = User(id=OWNER_USER_ID, email="d3@x.com", display_name="D3")
     db_session.add(u)
     await db_session.flush()
-    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2), created_by=u.id)
+    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2))
     db_session.add(t)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
     s = Segment(
         trip_id=t.id,
         owner_user_id=u.id,

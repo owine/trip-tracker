@@ -37,7 +37,6 @@ dev = [
     "respx==0.23.1",                   # mock httpx
     "ruff==0.15.12",
     "mypy==1.20.2",
-    "types-passlib==1.7.7.20260211",
     "pre-commit==4.6.0",
     "djlint==1.36.4",
     "bandit[toml]==1.9.4",
@@ -106,7 +105,6 @@ markers = [
 ]
 filterwarnings = [
     "error",
-    "ignore::DeprecationWarning:passlib.*",
     "ignore::DeprecationWarning:authlib.*",
     "ignore::DeprecationWarning:mf2py.*",
 ]

@@ -7,27 +7,25 @@ from datetime import date
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from trip_tracker.auth.session import OWNER_USER_ID
 from trip_tracker.models.document import Document
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 from trip_tracker.search.sync import document_to_doc
 
 
 @pytest.mark.asyncio
 async def test_document_to_doc_shape(db_session: AsyncSession) -> None:
-    u = User(oidc_subject="dt1", email="dt1@x.com", display_name="DT1")
+    u = User(id=OWNER_USER_ID, email="dt1@x.com", display_name="DT1")
     db_session.add(u)
     await db_session.flush()
     t = Trip(
         title="Paris vacation",
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 7),
-        created_by=u.id,
     )
     db_session.add(t)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
     d = Document(
         owner_user_id=u.id,
         trip_id=t.id,
@@ -55,7 +53,7 @@ async def test_document_to_doc_shape(db_session: AsyncSession) -> None:
 async def test_orphan_document_traveler_ids_falls_back_to_owner(
     db_session: AsyncSession,
 ) -> None:
-    u = User(oidc_subject="dt2", email="dt2@x.com", display_name="DT2")
+    u = User(id=OWNER_USER_ID, email="dt2@x.com", display_name="DT2")
     db_session.add(u)
     await db_session.flush()
     d = Document(

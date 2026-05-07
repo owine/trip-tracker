@@ -6,22 +6,19 @@ from contextlib import asynccontextmanager
 
 import httpx
 import pytest
+from fastapi import Response as _Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.app import create_app
-from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.auth.session import OWNER_USER_ID, set_session_cookie
 from trip_tracker.config import Settings
 from trip_tracker.models.user import User
 
 
 def _cookie(user, settings):
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
+    r = _Response()
+    set_session_cookie(r, user_id=user.id, settings=settings)
+    return {"tt_session": r.headers["set-cookie"].split(";")[0].split("=", 1)[1]}
 
 
 @asynccontextmanager
@@ -55,7 +52,7 @@ async def test_post_home_currency_persists(
     db_session: AsyncSession, authenticated_client_factory
 ) -> None:
     """POST /settings/home_currency updates user.home_currency and persists."""
-    u = User(oidc_subject="hc1", email="hc1@x.com", display_name="HC1")
+    u = User(id=OWNER_USER_ID, email="hc1@x.com", display_name="HC1")
     db_session.add(u)
     await db_session.commit()
     # Verify default is USD
@@ -78,7 +75,7 @@ async def test_post_home_currency_lowercase_normalized_and_accepted(
     db_session: AsyncSession, authenticated_client_factory
 ) -> None:
     """POST with lowercase code is uppercased and accepted (not rejected as invalid)."""
-    u = User(oidc_subject="hc3", email="hc3@x.com", display_name="HC3")
+    u = User(id=OWNER_USER_ID, email="hc3@x.com", display_name="HC3")
     db_session.add(u)
     await db_session.commit()
 
@@ -96,7 +93,7 @@ async def test_post_home_currency_invalid_code_rejected(
     db_session: AsyncSession, authenticated_client_factory
 ) -> None:
     """POST with invalid code (not 3 chars or contains digits) is rejected."""
-    u = User(oidc_subject="hc2", email="hc2@x.com", display_name="HC2", home_currency="USD")
+    u = User(id=OWNER_USER_ID, email="hc2@x.com", display_name="HC2", home_currency="USD")
     db_session.add(u)
     await db_session.commit()
 
@@ -128,7 +125,7 @@ async def test_settings_page_renders_current_home_currency(
     db_session: AsyncSession, authenticated_client_factory
 ) -> None:
     """GET /settings renders the user's current home_currency as selected in the dropdown."""
-    u = User(oidc_subject="hc3", email="hc3@x.com", display_name="HC3", home_currency="JPY")
+    u = User(id=OWNER_USER_ID, email="hc4@x.com", display_name="HC4", home_currency="JPY")
     db_session.add(u)
     await db_session.commit()
 

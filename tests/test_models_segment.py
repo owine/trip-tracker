@@ -16,10 +16,10 @@ from trip_tracker.models.user import User
 
 
 async def _trip_with_user(db: AsyncSession) -> tuple[Trip, User]:
-    u = User(oidc_subject="s", email="s@example.com", display_name="S")
+    u = User(email="s@example.com", display_name="S")
     db.add(u)
     await db.flush()
-    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=u.id)
+    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5))
     db.add(t)
     await db.commit()
     return t, u

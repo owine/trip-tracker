@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, date
 from decimal import Decimal
 
@@ -9,24 +10,21 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from trip_tracker.auth.session import OWNER_USER_ID
 from trip_tracker.models.expense import Expense
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 
 @pytest.mark.asyncio
 async def test_expense_cascades_with_trip(db_session: AsyncSession) -> None:
     """Trip delete -> expense rows gone (CASCADE)."""
-    user = User(oidc_subject="e1", email="e1@x.com", display_name="E1")
+    user = User(id=OWNER_USER_ID, email="e1@x.com", display_name="E1")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(
-        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
-    )
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5))
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
 
     exp = Expense(
         trip_id=trip.id,
@@ -55,15 +53,12 @@ async def test_expense_segment_set_null_on_segment_delete(db_session: AsyncSessi
     """Segment delete -> expense.segment_id becomes NULL but row survives."""
     from datetime import datetime as _dt
 
-    user = User(oidc_subject="e2", email="e2@x.com", display_name="E2")
+    user = User(id=OWNER_USER_ID, email="e2@x.com", display_name="E2")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(
-        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
-    )
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5))
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     from trip_tracker.models.segment import Segment
 
     seg = Segment(
@@ -110,15 +105,12 @@ async def test_expense_document_set_null_on_document_delete(db_session: AsyncSes
     """Document delete -> expense.document_id becomes NULL but row survives."""
     from trip_tracker.models.document import Document
 
-    user = User(oidc_subject="e3", email="e3@x.com", display_name="E3")
+    user = User(id=OWNER_USER_ID, email="e3@x.com", display_name="E3")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(
-        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
-    )
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5))
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     doc = Document(
         owner_user_id=user.id,
         filename="receipt.pdf",
@@ -154,19 +146,13 @@ async def test_expense_document_set_null_on_document_delete(db_session: AsyncSes
 @pytest.mark.asyncio
 async def test_expense_owner_cascade_on_user_delete(db_session: AsyncSession) -> None:
     """User delete -> expense rows gone (CASCADE)."""
-    # NOTE: trips.created_by uses ondelete=RESTRICT, so the expense owner must be
-    # a *different* user than the trip creator to isolate the owner CASCADE check.
-    creator = User(oidc_subject="e4-creator", email="e4c@x.com", display_name="E4C")
-    owner = User(oidc_subject="e4-owner", email="e4o@x.com", display_name="E4O")
-    db_session.add_all([creator, owner])
+    # Use a distinct secondary user as expense owner to test the cascade.
+    owner = User(id=uuid.UUID(int=999), email="e4o@x.com", display_name="E4O")
+    db_session.add(owner)
     await db_session.flush()
-    trip = Trip(
-        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=creator.id
-    )
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5))
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=creator.id, role="owner"))
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=owner.id, role="companion"))
     exp = Expense(
         trip_id=trip.id,
         owner_user_id=owner.id,

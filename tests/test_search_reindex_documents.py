@@ -8,27 +8,25 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from trip_tracker.auth.session import OWNER_USER_ID
 from trip_tracker.models.document import Document
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 from trip_tracker.search.reindex import reindex_all
 
 
 @pytest.mark.asyncio
 async def test_reindex_walks_documents(db_url: str, db_session: AsyncSession) -> None:
-    u = User(oidc_subject="rd1", email="rd1@x.com", display_name="RD1")
+    u = User(id=OWNER_USER_ID, email="rd1@x.com", display_name="RD1")
     db_session.add(u)
     await db_session.flush()
     t = Trip(
         title="T",
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 2),
-        created_by=u.id,
     )
     db_session.add(t)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
     db_session.add(
         Document(
             owner_user_id=u.id,

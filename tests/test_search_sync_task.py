@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
+from trip_tracker.auth.session import OWNER_USER_ID
 from trip_tracker.config import Settings
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 from trip_tracker.search.client import MeiliClientProtocol
 
@@ -20,15 +20,11 @@ from trip_tracker.search.client import MeiliClientProtocol
 async def test_sync_meili_upserts_existing_trip(db_url: str, db_session: AsyncSession) -> None:
     from trip_tracker.worker import sync_meili
 
-    user = User(oidc_subject="m1", email="m1@x.com", display_name="M1")
+    user = User(id=OWNER_USER_ID, email="m1@x.com", display_name="M1")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(
-        title="T1", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
-    )
+    trip = Trip(title="T1", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5))
     db_session.add(trip)
-    await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     await db_session.commit()
 
     fake_index = MagicMock()

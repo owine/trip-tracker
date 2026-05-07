@@ -21,7 +21,7 @@ from trip_tracker.trips.home import infer_home
 async def _seed_user_and_trip(db: AsyncSession) -> tuple[User, Trip]:
     """Create a User + one Trip; flush so both have PKs."""
     user = User(
-        oidc_subject=f"sub-{uuid.uuid4()}",
+        id=uuid.uuid4(),
         email=f"{uuid.uuid4()}@test.example",
         display_name="Tester",
     )
@@ -32,7 +32,6 @@ async def _seed_user_and_trip(db: AsyncSession) -> tuple[User, Trip]:
         title="Test Trip",
         start_date=datetime(2026, 1, 1).date(),
         end_date=datetime(2026, 12, 31).date(),
-        created_by=user.id,
     )
     db.add(trip)
     await db.flush()

@@ -6,33 +6,29 @@ from datetime import UTC, date, datetime
 
 import httpx
 import pytest
+from fastapi import Response as _Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from trip_tracker.app import create_app
-from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.auth.session import OWNER_USER_ID, set_session_cookie
 from trip_tracker.config import Settings
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 
 async def _user(db: AsyncSession) -> User:
-    u = User(oidc_subject="s", email="u@x.com", display_name="U")
+    u = User(id=OWNER_USER_ID, email="u@x.com", display_name="U")
     db.add(u)
     await db.commit()
     return u
 
 
 def _cookie(user: User, settings: Settings) -> dict[str, str]:
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
+    r = _Response()
+    set_session_cookie(r, user_id=user.id, settings=settings)
+    return {"tt_session": r.headers["set-cookie"].split(";")[0].split("=", 1)[1]}
 
 
 @pytest.mark.asyncio
@@ -157,12 +153,8 @@ async def test_create_segment_existing_trip_widens_dates(
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
     user = await _user(db_session)
-    trip = Trip(
-        title="T", start_date=date(2026, 6, 5), end_date=date(2026, 6, 7), created_by=user.id
-    )
+    trip = Trip(title="T", start_date=date(2026, 6, 5), end_date=date(2026, 6, 7))
     db_session.add(trip)
-    await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     await db_session.commit()
 
     app = create_app(settings=settings)
@@ -222,12 +214,9 @@ async def test_edit_segment_renders_prefilled_form(
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
     user = await _user(db_session)
-    trip = Trip(
-        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
-    )
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5))
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = await _seed_flight(db_session, user, trip)
 
     app = create_app(settings=settings)
@@ -272,12 +261,9 @@ async def test_edit_segment_round_trip_updates_db(
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
     user = await _user(db_session)
-    trip = Trip(
-        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
-    )
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5))
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = await _seed_flight(db_session, user, trip)
 
     app = create_app(settings=settings)
@@ -327,12 +313,9 @@ async def test_delete_segment_removes_row(
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
     user = await _user(db_session)
-    trip = Trip(
-        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
-    )
+    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5))
     db_session.add(trip)
     await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = await _seed_flight(db_session, user, trip)
 
     app = create_app(settings=settings)
@@ -354,48 +337,3 @@ async def test_delete_segment_removes_row(
 
     rows = (await db_session.execute(select(Segment))).scalars().all()
     assert rows == []
-
-
-@pytest.mark.asyncio
-async def test_edit_segment_404_for_non_traveler(
-    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
-) -> None:
-    monkeypatch.setenv("DATABASE_URL", db_url)
-    settings = Settings()
-    creator = await _user(db_session)
-    other = User(oidc_subject="other", email="other@x.com", display_name="O")
-    db_session.add(other)
-    await db_session.flush()
-    trip = Trip(
-        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=creator.id
-    )
-    db_session.add(trip)
-    await db_session.flush()
-    db_session.add(TripTraveler(trip_id=trip.id, user_id=creator.id, role="owner"))
-    seg = await _seed_flight(db_session, creator, trip)
-
-    app = create_app(settings=settings)
-    transport = httpx.ASGITransport(app=app)
-    async with (
-        app.router.lifespan_context(app),
-        httpx.AsyncClient(
-            transport=transport,
-            base_url="http://test",
-            cookies=_cookie(other, settings),
-        ) as c,
-    ):
-        r_edit = await c.get(f"/trips/{trip.id}/segments/{seg.id}/edit")
-        r_post = await c.post(
-            f"/trips/{trip.id}/segments/{seg.id}",
-            data={"type": "flight"},
-            follow_redirects=False,
-        )
-        r_del = await c.post(
-            f"/trips/{trip.id}/segments/{seg.id}/delete",
-            follow_redirects=False,
-        )
-
-    # All three must 404 — non-member can't see the trip exists.
-    assert r_edit.status_code == 404
-    assert r_post.status_code == 404
-    assert r_del.status_code == 404

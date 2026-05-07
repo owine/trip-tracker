@@ -10,17 +10,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from fastapi import Response as _Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from trip_tracker.app import create_app
-from trip_tracker.auth.session import SessionPayload, encode_session
+from trip_tracker.auth.session import OWNER_USER_ID, set_session_cookie
 from trip_tracker.config import Settings
 from trip_tracker.expenses.fx import FxError
 from trip_tracker.models.expense import Expense
 from trip_tracker.models.segment import Segment
 from trip_tracker.models.trip import Trip
-from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
 
 
@@ -30,13 +30,9 @@ def _normalize(text: str) -> str:
 
 
 def _cookie(user: User, settings: Settings) -> dict[str, str]:
-    return {
-        "tt_session": encode_session(
-            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-            secret=settings.session_secret.get_secret_value(),
-            max_age=3600,
-        )
-    }
+    r = _Response()
+    set_session_cookie(r, user_id=user.id, settings=settings)
+    return {"tt_session": r.headers["set-cookie"].split(";")[0].split("=", 1)[1]}
 
 
 @asynccontextmanager
@@ -80,7 +76,7 @@ def _mock_redis(monkeypatch: pytest.MonkeyPatch) -> None:
 
 async def _seed(db: AsyncSession, *, home_currency: str = "USD") -> tuple[User, Trip]:
     u = User(
-        oidc_subject="exp_section",
+        id=OWNER_USER_ID,
         email="exp_section@x.com",
         display_name="Exp",
         home_currency=home_currency,
@@ -91,11 +87,8 @@ async def _seed(db: AsyncSession, *, home_currency: str = "USD") -> tuple[User, 
         title="Trip",
         start_date=date(2026, 6, 1),
         end_date=date(2026, 6, 5),
-        created_by=u.id,
     )
     db.add(t)
-    await db.flush()
-    db.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
     await db.commit()
     return u, t
 
