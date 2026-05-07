@@ -181,6 +181,15 @@ TripIt's docs are explicit: "deleted objects will not be considered as a change.
 3. Enqueues `pull_tripit_changes(modified_since=last_modified_since)` to saq. The webhook payload tells us *something* changed but a `modified_since` pull is the cheapest way to handle bulk changes.
 4. TripIt suppresses notifications for 10 minutes after an initial notification per their throttling — design accordingly: a webhook receipt is a hint, not a guarantee of all changes.
 
+### `last_modified_since` cursor concurrency
+
+Both the webhook handler and the 60-min fallback cron call `pull_tripit_changes`. Race-free updates are critical — losing a window means missed changes; double-pulling is wasted work but not corrupting. The pattern:
+
+1. Read `tripit_sync_state.last_modified_since` and the response timestamp from TripIt's `<timestamp>` field.
+2. Apply upserts.
+3. Update `tripit_sync_state.last_modified_since = response_timestamp` only on successful upsert commit, gated by `WHERE last_modified_since < response_timestamp` so a slower-completing pull cannot regress a faster one.
+4. Enqueue jobs are **deduplicated by saq's job key** so two webhook receipts within seconds collapse to one pull.
+
 ### Rate limiting and resilience
 
 TripIt does not document its rate limit. We implement defensively:
@@ -193,6 +202,17 @@ TripIt does not document its rate limit. We implement defensively:
 ### Failed-push handling
 
 When push to TripIt fails (validation, rate limit exhaustion, auth revocation), the segment stays in the inbox in a new state: `push_failed`. The inbox UI surfaces it with the error and a retry button. Source intake rows (raw email, raw text, raw document) are never destroyed until a successful push acknowledges receipt.
+
+### Inbox state machine (canonical enumeration)
+
+Every inbox row is in exactly one of these states at any time. There are no other states; an implementer encountering a need for a fifth state should treat that as a design escalation, not a free addition.
+
+| State | Meaning | Entry trigger | Exit trigger |
+|---|---|---|---|
+| `needs_review` | Parse complete; `attach_decider` punted to human | `decide_attach` returns `NEEDS_REVIEW`, OR an undo restores a prior auto-attach | User clicks Confirm-and-attach / Confirm-create-new / Discard |
+| `recently_attached` | Auto-attached or user-confirmed; pushed to TripIt successfully | Successful TripIt push acknowledged | Removed from inbox surface 24h after `pushed_at` (still queryable for forensic) |
+| `push_pending` | Parse complete but TripIt not pushable right now (auth revoked, circuit broken) | TripIt circuit open or auth lost at push time | Auth restored / circuit closed → automatic retry → transitions to `recently_attached` or `push_failed` |
+| `push_failed` | TripIt rejected the push (validation error, persistent failure beyond retries) | Push retries exhausted with non-transient error | User clicks Retry (back to push attempt) or Discard |
 
 ### Testing strategy
 
@@ -335,7 +355,7 @@ Each segment row gets a small TripIt-logo badge with sync-time tooltip ("synced 
 - `POST /attach/{audit_id}/undo`:
   1. For each `pushed_segment_id`: `client.delete_segment(...)`.
   2. If attach was auto-new-trip and trip now has zero segments: `client.delete_trip(...)`.
-  3. Set `attach_audit.undone_at = now()`.
+  3. Set `attach_audit.undone_at = now()`. The row is **kept** (not deleted); `undone_at IS NOT NULL` is the audit trail of "this attach existed and was reversed."
   4. Restore source intake row (`raw_email` / `raw_text` / `raw_document`) to inbox in `needs_review` state, preserving `candidates` JSONB so the user can pick a different target without re-parsing.
   5. Enqueue immediate single-trip pull for the affected trip.
 - Failure modes (TripIt down, segment already deleted in TripIt's app, etc.): surface partial-undo state in UI; do not silently swallow.
@@ -359,7 +379,7 @@ Each segment row gets a small TripIt-logo badge with sync-time tooltip ("synced 
 ### Local identity layers
 
 1. **Process-level identity:** Single seeded `user` row (`id=1`, `email=$OWNER_EMAIL`). FK convenience only. Created idempotently via Alembic data migration.
-2. **Request authentication:** Single shared session secret in env (`OWNER_SESSION_TOKEN`, 32 random bytes hex-encoded). Browser gets cookie set on first visit if it presents the right `?token=...` query parameter (printed on first run). Subsequent visits authenticate via cookie.
+2. **Request authentication:** Single shared session secret in env (`OWNER_SESSION_TOKEN`, 32 random bytes hex-encoded). A dedicated `GET /auth/bootstrap?token=<secret>` route validates the query token, sets a long-lived signed cookie, and 302s to `/`. All other routes are gated by middleware that requires the cookie. The bootstrap route exists only to keep the cookie-setting logic in one place; subsequent visits go straight through middleware.
 
 The single-token-cookie pattern is the lightest auth that prevents drive-by access on a self-hosted internet-reachable install. Token rotation is manual (regenerate env, restart) — acceptable trade for single-user simplicity.
 
@@ -434,7 +454,8 @@ These have unknown turnaround. Sending now lets TripIt's response and the design
 | **11 (single-user collapse)** | Rip multi-user/signup/passwords; seed owner row; cookie auth; drop `trip_traveler`, `trip_merge_dismissal`; delete merge/undo/dismiss/410 routes | 2–3 days |
 | **12 (schema migration)** | Drop trip CRUD fields; add `tripit_*_id`/`tripit_synced_at`/`upstream_deleted_at` to `trip` and `segment`; add `raw_text`, `raw_document`, `tripit_oauth_credentials`, `tripit_sync_state`, `tripit_notification_log`, `attach_audit` | 1–2 days |
 | **13 (sync + viewer rewire)** | Pull cron + sync state + retry/circuit; Notification API webhook; daily reconcile; integrate cache reads into trip list + detail; "synced N min ago" footers + per-segment badges; refresh button; deep links; sync status page | 4–5 days |
-| **14 (intake → push pipeline)** | `attach_decider`; rewire email path to push-not-store; inbox bucket reshape (needs review / recently attached / push failed); candidates persisted at parse; force-new + 10-min undo + email self-notification | 5–7 days |
+| **14a (decider + push)** | `attach_decider`; rewire email path to push-not-store; inbox bucket reshape with state machine (needs_review / recently_attached / push_pending / push_failed); candidates persisted at parse | 3–4 days |
+| **14b (undo + force-new + notify)** | 10-min undo flow with `attach_audit`; force-new affordance; email self-notification on auto-attach | 2–3 days |
 | **15 (new intake modalities)** | Paste-blob page; document upload + Haiku vision parsing; HEIC support | 3–4 days |
 | **Cutover** | Drop prod DB, deploy v2, smoke, tag v1.0.0 | 0.5 day |
 
