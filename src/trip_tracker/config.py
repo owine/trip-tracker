@@ -4,8 +4,8 @@ Two-class split:
 
 - `WorkerSettings` — the subset of config the saq worker needs (DB, Redis,
   LLM, Meili, documents storage, logging). Worker boots with these alone.
-- `Settings(WorkerSettings)` — full app config; adds OIDC/sessions/base URL
-  /webhook/UI-bound fields. App boots with all of them.
+- `Settings(WorkerSettings)` — full app config; adds single-owner auth/sessions
+  /base URL/webhook/UI-bound fields. App boots with all of them.
 
 The split prevents the "every container needs every secret" deploy footgun:
 the worker no longer requires session/OIDC/webhook env vars to start, since
@@ -77,22 +77,26 @@ class WorkerSettings(BaseSettings):
 
 class Settings(WorkerSettings):
     """Full application settings. Extends `WorkerSettings` with app-only fields
-    (sessions, OIDC, base URL, webhook secrets, UI bounds). Required values
-    raise on startup if missing."""
+    (sessions, single-owner auth, base URL, webhook secrets, UI bounds). Required
+    values raise on startup if missing."""
 
     # Sessions (app-only — worker doesn't issue cookies)
     session_secret: SecretStr = Field(..., min_length=32)
     session_cookie_name: str = "tt_session"
     session_max_age_seconds: int = 7 * 24 * 60 * 60  # 7 days
 
-    # OIDC (app-only — worker doesn't authenticate users)
-    oidc_issuer: str
-    oidc_client_id: str
-    oidc_client_secret: SecretStr
-    oidc_redirect_uri: str
-    admin_group: str = "trip-tracker:admin"
+    # Single-owner auth (replaces OIDC)
+    owner_email: str = Field(
+        ...,
+        description="Email address of the single owner; seeded into users table on first boot.",
+    )
+    owner_session_token: str = Field(
+        ...,
+        min_length=32,
+        description="Shared secret presented at /auth/bootstrap?token=<>. >=32 chars.",
+    )
 
-    # App URL (only used by app for OIDC callback construction)
+    # App URL
     base_url: str
 
     # Webhook (forwardemail.net) — app-only; only ingest routes consume these
