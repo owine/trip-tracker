@@ -1,4 +1,4 @@
-"""Trips routes: list/detail/edit/delete with traveler scoping."""
+"""Trips routes: list/detail with traveler scoping."""
 
 from __future__ import annotations
 
@@ -95,38 +95,6 @@ async def test_detail_404_for_non_traveler(
     ):
         r = await c.get(f"/trips/{trip.id}")
     assert r.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_edit_trip(
-    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
-) -> None:
-    monkeypatch.setenv("DATABASE_URL", db_url)
-    settings = Settings()
-    me = await _user(db_session)
-    trip = await _trip(db_session, me)
-
-    app = create_app(settings=settings)
-    transport = httpx.ASGITransport(app=app)
-    async with (
-        app.router.lifespan_context(app),
-        httpx.AsyncClient(
-            transport=transport, base_url="http://test", cookies=_cookie(me, settings)
-        ) as c,
-    ):
-        r = await c.post(
-            f"/trips/{trip.id}",
-            data={
-                "title": "Updated",
-                "start_date": "2026-06-01",
-                "end_date": "2026-06-10",
-                "primary_destination": "Paris",
-            },
-            follow_redirects=False,
-        )
-    assert r.status_code == 303
-    await db_session.refresh(trip)
-    assert trip.title == "Updated"
 
 
 @pytest.mark.asyncio

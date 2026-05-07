@@ -1,4 +1,4 @@
-"""Trips routes: list, detail, edit, delete. Spec §6."""
+"""Trips routes: list and detail. Trip identity is managed by TripIt (Phase 13)."""
 
 from __future__ import annotations
 
@@ -8,9 +8,8 @@ import zoneinfo
 from datetime import date, datetime
 from pathlib import Path
 
-import pydantic
-from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import HTMLResponse, Response  # Response kept for trip_detail return type
 from fastapi.templating import Jinja2Templates
 from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy import case, select
@@ -26,8 +25,6 @@ from trip_tracker.db import get_session
 from trip_tracker.models.trip import Trip
 from trip_tracker.models.trip_traveler import TripTraveler
 from trip_tracker.models.user import User
-from trip_tracker.schemas.trip_forms import TripForm
-from trip_tracker.search.sync import enqueue_meili_sync
 from trip_tracker.templating import register_globals
 
 router = APIRouter(prefix="/trips", tags=["trips"])
@@ -49,56 +46,6 @@ def _localize_dt(dt: datetime, tz: str, fmt: str = "%Y-%m-%d %H:%M") -> str:
 
 
 templates.env.filters["localize_dt"] = _localize_dt
-
-
-@router.get("/new", response_class=HTMLResponse)
-async def new_trip_form(
-    request: Request,
-    user: User = Depends(require_user),  # noqa: B008
-) -> HTMLResponse:
-    return templates.TemplateResponse(request, "trips/new.html", {"user": user, "errors": {}})
-
-
-@router.post("", response_model=None)
-async def create_trip(
-    request: Request,
-    user: User = Depends(require_user),  # noqa: B008
-    db: AsyncSession = Depends(get_session),  # noqa: B008
-    title: str = Form(...),
-    start_date: date = Form(...),  # noqa: B008
-    end_date: date = Form(...),  # noqa: B008
-    primary_destination: str | None = Form(None),
-    notes: str | None = Form(None),
-    cover_color: str | None = Form(None),
-) -> RedirectResponse | HTMLResponse:
-    try:
-        form = TripForm(
-            title=title,
-            start_date=start_date,
-            end_date=end_date,
-            primary_destination=primary_destination,
-            notes=notes,
-            cover_color=cover_color,
-        )
-    except pydantic.ValidationError as e:
-        return templates.TemplateResponse(
-            request,
-            "trips/new.html",
-            {"user": user, "errors": {"_form": str(e)}},
-        )
-    trip = Trip(
-        title=form.title,
-        start_date=form.start_date,
-        end_date=form.end_date,
-        primary_destination=form.primary_destination,
-        notes=form.notes,
-        cover_color=form.cover_color,
-        created_by=user.id,
-    )
-    db.add(trip)
-    await db.commit()
-    await enqueue_meili_sync(request.app.state.settings, entity="trip", entity_id=trip.id)
-    return RedirectResponse(f"/trips/{trip.id}", status_code=303)
 
 
 @router.get("", response_class=HTMLResponse)
@@ -254,66 +201,3 @@ async def trip_detail(
             "consolidation_candidates": candidates,
         },
     )
-
-
-@router.get("/{trip_id}/edit", response_class=HTMLResponse)
-async def edit_trip_form(
-    request: Request,
-    trip: Trip = Depends(require_traveler),  # noqa: B008
-    user: User = Depends(require_user),  # noqa: B008
-) -> HTMLResponse:
-    return templates.TemplateResponse(
-        request, "trips/edit.html", {"trip": trip, "user": user, "errors": {}}
-    )
-
-
-@router.post("/{trip_id}", response_model=None)
-async def update_trip(
-    request: Request,
-    trip: Trip = Depends(require_traveler),  # noqa: B008
-    user: User = Depends(require_user),  # noqa: B008
-    db: AsyncSession = Depends(get_session),  # noqa: B008
-    title: str = Form(...),
-    start_date: date = Form(...),  # noqa: B008
-    end_date: date = Form(...),  # noqa: B008
-    primary_destination: str | None = Form(None),
-    notes: str | None = Form(None),
-    cover_color: str | None = Form(None),
-) -> RedirectResponse | HTMLResponse:
-    try:
-        form = TripForm(
-            title=title,
-            start_date=start_date,
-            end_date=end_date,
-            primary_destination=primary_destination,
-            notes=notes,
-            cover_color=cover_color,
-        )
-    except pydantic.ValidationError as e:
-        return templates.TemplateResponse(
-            request,
-            "trips/edit.html",
-            {"trip": trip, "user": user, "errors": {"_form": str(e)}},
-        )
-    trip.title = form.title
-    trip.start_date = form.start_date
-    trip.end_date = form.end_date
-    trip.primary_destination = form.primary_destination
-    trip.notes = form.notes
-    trip.cover_color = form.cover_color
-    await db.commit()
-    await enqueue_meili_sync(request.app.state.settings, entity="trip", entity_id=trip.id)
-    return RedirectResponse(f"/trips/{trip.id}", status_code=303)
-
-
-@router.post("/{trip_id}/delete", response_model=None)
-async def delete_trip(
-    request: Request,
-    trip: Trip = Depends(require_traveler),  # noqa: B008
-    db: AsyncSession = Depends(get_session),  # noqa: B008
-) -> RedirectResponse:
-    trip_id = trip.id
-    await db.delete(trip)
-    await db.commit()
-    await enqueue_meili_sync(request.app.state.settings, entity="trip", entity_id=trip_id)
-    return RedirectResponse("/trips", status_code=303)

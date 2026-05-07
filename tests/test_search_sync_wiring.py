@@ -1,8 +1,8 @@
 """Verify write sites enqueue meili sync after commit.
 
-Spec §5.1 catalogs 8 sites; this test exercises 4 representative ones
-(create_trip, create_segment, delete_segment, inbox.discard). Adding new
-write sites later means adding new tests here.
+Spec §5.1 catalogs 8 sites; this test exercises 3 representative ones
+(create_segment, delete_segment, inbox.discard). Adding new write sites
+later means adding new tests here.
 """
 
 from __future__ import annotations
@@ -34,42 +34,6 @@ def _cookie(user: User, settings: Settings) -> dict[str, str]:
             max_age=3600,
         )
     }
-
-
-@pytest.mark.asyncio
-async def test_create_trip_enqueues_meili_sync(
-    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
-) -> None:
-    """POST /trips after success calls enqueue_meili_sync(entity='trip')."""
-    monkeypatch.setenv("DATABASE_URL", db_url)
-    settings = Settings()
-    user = User(oidc_subject="t1", email="t1@x.com", display_name="T1")
-    db_session.add(user)
-    await db_session.commit()
-
-    app = create_app(settings=settings)
-    transport = httpx.ASGITransport(app=app)
-    with patch("trip_tracker.routes.trips.enqueue_meili_sync", new=AsyncMock()) as mock:
-        async with (
-            app.router.lifespan_context(app),
-            httpx.AsyncClient(
-                transport=transport, base_url="http://test", cookies=_cookie(user, settings)
-            ) as c,
-        ):
-            r = await c.post(
-                "/trips",
-                data={
-                    "title": "Test",
-                    "start_date": "2026-06-01",
-                    "end_date": "2026-06-05",
-                    "primary_destination": "Paris",
-                },
-                follow_redirects=False,
-            )
-    assert r.status_code == 303
-    mock.assert_awaited()
-    kwargs = mock.call_args.kwargs
-    assert kwargs.get("entity") == "trip"
 
 
 @pytest.mark.asyncio
