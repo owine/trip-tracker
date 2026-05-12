@@ -3,7 +3,7 @@ name = "trip-tracker"
 version = "0.8.1"
 description = "Self-hosted itinerary aggregator (TripIt replacement)."
 readme = "README.md"
-requires-python = "==3.14.4"
+requires-python = "==3.14.5"
 dependencies = [
     "fastapi==0.136.1",
     "uvicorn[standard]==0.46.0",
