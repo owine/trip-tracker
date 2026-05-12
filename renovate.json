@@ -1,163 +1,29 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended",
-    ":dependencyDashboard",
-    ":semanticCommits",
-    ":automergeDigest",
-    "helpers:pinGitHubActionDigests",
-    "security:openssf-scorecard"
+    "github>owine/renovate-config",
+    "github>owine/renovate-config:automerge",
+    "github>owine/renovate-config:python",
+    "github>owine/renovate-config:docker"
   ],
   "timezone": "America/Los_Angeles",
-  "schedule": ["on monday"],
-  "automergeSchedule": ["at any time"],
-  "labels": ["dependencies"],
-  "prHourlyLimit": 8,
-  "prConcurrentLimit": 20,
-  "rebaseWhen": "behind-base-branch",
-  "configMigration": true,
-  "rangeStrategy": "pin",
-  "osvVulnerabilityAlerts": true,
-  "separateMajorMinor": true,
-  "separateMultipleMajor": true,
-  "vulnerabilityAlerts": {
-    "labels": ["security"],
-    "automerge": true,
-    "minimumReleaseAge": "0 days",
-    "schedule": ["at any time"]
-  },
-  "lockFileMaintenance": {
-    "enabled": true,
-    "schedule": ["on monday"],
-    "automerge": true
-  },
-  "docker-compose": {
-    "enabled": false
-  },
-  "pre-commit": {
-    "enabled": true
-  },
   "packageRules": [
     {
-      "description": "Hard-disable docker-compose manager: compose files use floating tags by design",
-      "matchManagers": ["docker-compose"],
-      "enabled": false
-    },
-
-    {
-      "description": "Group: FastAPI + ASGI stack (web layer)",
-      "matchManagers": ["pep621"],
-      "matchPackageNames": ["fastapi", "uvicorn", "jinja2", "httpx", "itsdangerous", "structlog", "authlib"],
-      "matchUpdateTypes": ["patch", "minor", "digest"],
-      "groupName": "fastapi stack",
-      "automerge": true
-    },
-    {
-      "description": "Group: SQLAlchemy + Postgres driver + Alembic (data layer)",
-      "matchManagers": ["pep621"],
-      "matchPackageNames": ["sqlalchemy", "asyncpg", "alembic", "psycopg"],
-      "matchUpdateTypes": ["patch", "minor", "digest"],
-      "groupName": "sqlalchemy + postgres stack",
-      "automerge": true
-    },
-    {
-      "description": "Group: Pydantic + pydantic-settings (always release together)",
-      "matchManagers": ["pep621"],
-      "matchPackageNames": ["pydantic", "pydantic-settings"],
-      "matchUpdateTypes": ["patch", "minor", "digest", "major"],
-      "groupName": "pydantic stack",
-      "automerge": true
-    },
-    {
-      "description": "Group: pytest + pytest-* + respx (test infra)",
-      "matchManagers": ["pep621"],
-      "matchPackageNames": ["pytest", "/^pytest-/", "respx"],
-      "matchUpdateTypes": ["patch", "minor", "digest"],
-      "groupName": "pytest stack",
-      "automerge": true
-    },
-    {
-      "description": "Group: ruff + mypy + bandit + pip-audit + djlint + types-* + pre-commit (lint/types tooling)",
-      "matchManagers": ["pep621"],
-      "matchPackageNames": ["ruff", "mypy", "bandit", "pip-audit", "djlint", "/^types-/", "pre-commit"],
-      "matchUpdateTypes": ["patch", "minor", "digest"],
-      "groupName": "lint + types tooling",
-      "automerge": true
-    },
-    {
-      "description": "Group: build-system tooling (hatchling, etc.)",
-      "matchManagers": ["pep621"],
-      "matchPackageNames": ["hatchling"],
-      "matchUpdateTypes": ["patch", "minor", "digest"],
-      "groupName": "build tooling",
-      "automerge": true
-    },
-
-    {
-      "description": "Group: Docker base images in Dockerfile (digest pins + tag updates)",
-      "matchManagers": ["dockerfile"],
-      "matchUpdateTypes": ["patch", "minor", "digest", "pinDigest"],
-      "groupName": "dockerfile bases",
-      "automerge": true
-    },
-    {
-      "description": "uv image ships frequently and we trust the upstream",
+      "description": "uv image ships frequently and is trusted — bundle into the shared dockerfile bases group",
       "matchManagers": ["dockerfile"],
       "matchPackageNames": ["ghcr.io/astral-sh/uv"],
-      "matchUpdateTypes": ["patch", "minor", "digest", "pinDigest"],
-      "groupName": "dockerfile bases",
-      "automerge": true
-    },
-
-    {
-      "description": "Group: GitHub Actions (after 3-day soak)",
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["patch", "minor", "digest", "pinDigest"],
-      "groupName": "github-actions",
-      "automerge": true,
-      "minimumReleaseAge": "3 days"
-    },
-
-    {
-      "description": "Group: pre-commit hooks (managed by pre-commit framework, not pep621)",
-      "matchManagers": ["pre-commit"],
-      "matchUpdateTypes": ["patch", "minor"],
-      "groupName": "pre-commit hooks",
-      "automerge": true
-    },
-
-    {
-      "description": "Group: Tailwind CLI tracked via custom regex manager",
-      "matchPackageNames": ["tailwindlabs/tailwindcss"],
-      "matchUpdateTypes": ["patch", "minor"],
-      "groupName": "tailwind",
-      "automerge": true
-    },
-
-    {
-      "description": "Major bumps: ALWAYS one PR per package, no grouping, manual review, 7-day soak",
-      "matchUpdateTypes": ["major"],
-      "automerge": false,
-      "addLabels": ["needs-review"],
-      "minimumReleaseAge": "7 days"
+      "groupName": "dockerfile bases"
     },
     {
-      "description": "Flag runtime/data-tier majors as breaking-change candidates",
-      "matchPackageNames": [
-        "python",
-        "postgres",
-        "/^postgres:/",
-        "/python:.*-slim/",
-        "/^docker\\.io\\/library\\/postgres/",
-        "/^docker\\.io\\/library\\/python/"
-      ],
-      "matchUpdateTypes": ["major"],
-      "addLabels": ["breaking", "needs-review"]
+      "description": "Hatchling build tooling",
+      "matchManagers": ["pep621"],
+      "matchPackageNames": ["hatchling"],
+      "groupName": "build tooling"
     }
   ],
   "customManagers": [
     {
-      "description": "Track standalone Tailwind CLI version pinned in build-tailwind.sh",
+      "description": "Track standalone Tailwind CLI version pinned in scripts/build-tailwind.sh",
       "customType": "regex",
       "managerFilePatterns": [
         "/^scripts/build-tailwind\\.sh$/"
