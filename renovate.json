@@ -8,12 +8,6 @@
   ],
   "packageRules": [
     {
-      "description": "uv image ships frequently and is trusted — bundle into the shared dockerfile bases group",
-      "matchManagers": ["dockerfile"],
-      "matchPackageNames": ["ghcr.io/astral-sh/uv"],
-      "groupName": "dockerfile bases"
-    },
-    {
       "description": "Hatchling build tooling",
       "matchManagers": ["pep621"],
       "matchPackageNames": ["hatchling"],
