@@ -6,7 +6,6 @@
     "github>owine/renovate-config:python",
     "github>owine/renovate-config:docker"
   ],
-  "timezone": "America/Los_Angeles",
   "packageRules": [
     {
       "description": "uv image ships frequently and is trusted — bundle into the shared dockerfile bases group",
