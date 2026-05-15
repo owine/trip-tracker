@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from redis.asyncio import Redis as AsyncRedis
-from sqlalchemy import case, select
+from sqlalchemy import case, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -134,6 +134,7 @@ async def trip_detail(
     user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
     redis: AsyncRedis = Depends(_redis),  # noqa: B008
+    merged_from: uuid.UUID | None = None,
 ) -> HTMLResponse | Response:
     if trip.merged_into_id is not None:
         target_url = f"/trips/{trip.merged_into_id}"
@@ -211,6 +212,58 @@ async def trip_detail(
     _target = ConsolidationTarget.from_trip(trip, list(segments))
     candidates = await consolidation_candidates(db, user, _target)
 
+    # C6: Merge dropdown — every other non-merged trip the user can access.
+    # Separate from consolidation_candidates: that's heuristic-filtered ("looks
+    # related"); this is the full list ("anything I might want to merge into").
+    # Sort by absolute start-date proximity to the current trip so the most
+    # likely match is at the top.
+    other_trips_rows = (
+        (
+            await db.execute(
+                select(Trip)
+                .join(TripTraveler, TripTraveler.trip_id == Trip.id)
+                .where(
+                    TripTraveler.user_id == user.id,
+                    Trip.merged_into_id.is_(None),
+                    Trip.id != trip.id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    other_trips = sorted(other_trips_rows, key=lambda t: abs((t.start_date - trip.start_date).days))
+
+    # C6: Source counts for the confirm dialog. The current trip is the
+    # *source* when merging (POST /trips/<source>/merge-into/<target>), so
+    # these tallies describe what will move out of this page.
+    source_segment_count = len(segments)
+    source_expense_count = len(expenses)
+    source_document_count = (
+        await db.execute(select(func.count(Document.id)).where(Document.trip_id == trip.id))
+    ).scalar_one()
+
+    # C6: Undo-flash — only render when ?merged_from is set, points at a trip
+    # that was actually merged INTO this one, and the 7-day window is still open.
+    merged_from_trip: Trip | None = None
+    merged_from_days_remaining: int | None = None
+    if merged_from is not None:
+        candidate_src = (
+            await db.execute(select(Trip).where(Trip.id == merged_from))
+        ).scalar_one_or_none()
+        if (
+            candidate_src is not None
+            and candidate_src.merged_into_id == trip.id
+            and candidate_src.merged_at is not None
+        ):
+            elapsed = datetime.now(UTC) - candidate_src.merged_at
+            if elapsed < _UNDO_WINDOW:
+                merged_from_trip = candidate_src
+                # ceil-style: any partial day left counts as a day remaining,
+                # so "merged 0 seconds ago" reads "7 days" not "6 days 23h".
+                seconds_left = (_UNDO_WINDOW - elapsed).total_seconds()
+                merged_from_days_remaining = max(1, -(-int(seconds_left) // 86400))
+
     # Saved-by-points rollup with FxError swallow.
     total_saved_home: int | None = 0
     try:
@@ -264,6 +317,12 @@ async def trip_detail(
             "minor_digits": minor_digits,
             "today": _date_cls.today(),
             "consolidation_candidates": candidates,
+            "other_trips": other_trips,
+            "source_segment_count": source_segment_count,
+            "source_expense_count": source_expense_count,
+            "source_document_count": source_document_count,
+            "merged_from_trip": merged_from_trip,
+            "merged_from_days_remaining": merged_from_days_remaining,
         },
     )
 
