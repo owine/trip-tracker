@@ -212,18 +212,19 @@ async def trip_detail(
     _target = ConsolidationTarget.from_trip(trip, list(segments))
     candidates = await consolidation_candidates(db, user, _target)
 
-    # C6: Merge dropdown — every other non-merged trip the user can access.
-    # Separate from consolidation_candidates: that's heuristic-filtered ("looks
-    # related"); this is the full list ("anything I might want to merge into").
+    # C6: Merge dropdown — non-merged trips the *current viewer created*.
+    # Filter matches POST /trips/<source>/merge-into/<target>, which requires
+    # both source.created_by == user.id AND target.created_by == user.id; a
+    # non-creator traveler picking a target would 403 on submit.
     # Sort by absolute start-date proximity to the current trip so the most
-    # likely match is at the top.
+    # likely match is at the top, then cap at 50 — anyone with hundreds of
+    # trips would otherwise render hundreds of <option>s on every detail load.
+    _OTHER_TRIPS_CAP = 50
     other_trips_rows = (
         (
             await db.execute(
-                select(Trip)
-                .join(TripTraveler, TripTraveler.trip_id == Trip.id)
-                .where(
-                    TripTraveler.user_id == user.id,
+                select(Trip).where(
+                    Trip.created_by == user.id,
                     Trip.merged_into_id.is_(None),
                     Trip.id != trip.id,
                 )
@@ -232,7 +233,9 @@ async def trip_detail(
         .scalars()
         .all()
     )
-    other_trips = sorted(other_trips_rows, key=lambda t: abs((t.start_date - trip.start_date).days))
+    other_trips = sorted(
+        other_trips_rows, key=lambda t: abs((t.start_date - trip.start_date).days)
+    )[:_OTHER_TRIPS_CAP]
 
     # C6: Source counts for the confirm dialog. The current trip is the
     # *source* when merging (POST /trips/<source>/merge-into/<target>), so

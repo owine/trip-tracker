@@ -247,7 +247,8 @@ async def test_undo_flash_renders_when_merged_from_query_param_set_within_window
     assert 'id="merge-undo-flash"' in body
     assert "Source-Gone" in body
     # 7 - 3 = 4 days remaining (modulo sub-day rounding, ceil gives 4).
-    assert "4 day" in body
+    # Word-bounded so "14 days" / "24 days" can't falsely match.
+    assert re.search(r"\b4 days\b", body) is not None
     # Undo form must POST to /trips/<target>/undo-merge/<source>
     assert f'action="/trips/{target.id}/undo-merge/{source.id}"' in body
 
@@ -285,3 +286,47 @@ async def test_undo_flash_absent_when_outside_window(
 
     assert r.status_code == 200
     assert 'id="merge-undo-flash"' not in r.text
+
+
+@pytest.mark.asyncio
+async def test_merge_dropdown_hidden_when_viewer_is_traveler_but_not_creator(
+    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession
+) -> None:
+    """Non-creator travelers can't merge, so the dropdown must not render for them.
+
+    Auth alignment with POST /trips/<source>/merge-into/<target>, which requires
+    source.created_by == user.id AND target.created_by == user.id.
+    """
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    settings = Settings()
+    creator = await _seed_user(db_session, "c6-creator")
+    viewer = await _seed_user(db_session, "c6-traveler")
+
+    # Trip created by `creator`; `viewer` is a co-traveler.
+    trip = await _seed_trip(
+        db_session, creator, title="Shared", start=date(2026, 9, 1), end=date(2026, 9, 5)
+    )
+    db_session.add(TripTraveler(trip_id=trip.id, user_id=viewer.id, role="companion"))
+    # An "other" trip exists (viewer's own) so dropdown would otherwise render.
+    await _seed_trip(
+        db_session, viewer, title="ViewerOwn", start=date(2026, 9, 10), end=date(2026, 9, 12)
+    )
+    await db_session.commit()
+
+    app = create_app(settings=settings)
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(
+            transport=transport,
+            base_url="http://test",
+            cookies=_cookie(viewer, settings),
+            follow_redirects=False,
+        ) as c,
+    ):
+        r = await c.get(f"/trips/{trip.id}")
+
+    assert r.status_code == 200
+    body = r.text
+    assert 'id="merge-into-select"' not in body
+    assert 'id="merge-confirm-dialog"' not in body
