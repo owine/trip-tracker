@@ -1,0 +1,15 @@
+{# C6: Undo-merge flash banner. Outer guard in detail.html — this template
+   assumes merged_from_trip is non-None and inside the 7-day window. #}
+<aside id="merge-undo-flash"
+       class="mb-4 mt-2 rounded border border-emerald-300 bg-emerald-50 p-4 text-sm dark:border-emerald-700 dark:bg-emerald-900/30">
+  <p>
+    Merged <strong>{{ merged_from_trip.title }}</strong> into this trip.
+    Permanent deletion in
+    <strong>{{ merged_from_days_remaining }} day{{ '' if merged_from_days_remaining == 1 else 's' }}</strong>.
+  </p>
+  <form method="post"
+        action="/trips/{{ trip.id }}/undo-merge/{{ merged_from_trip.id }}"
+        class="mt-2">
+    <button class="rounded bg-emerald-700 px-3 py-1 text-white">Undo merge</button>
+  </form>
+</aside>
