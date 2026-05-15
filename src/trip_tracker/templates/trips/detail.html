@@ -51,11 +51,13 @@
       </ul>
     </aside>
   {% endif %}
-  {% if other_trips %}
+  {% if trip.created_by == user.id and other_trips %}
     {# C6: Merge dropdown. The current trip is the *source*; user picks
        a *target* and we POST to /trips/<source>/merge-into/<target>.
        data-* attrs feed the confirm dialog; the form action is rewritten
-       by JS at dialog-open time so we use a single dialog for all options. #}
+       by JS at dialog-open time so we use a single dialog for all options.
+       Outer `trip.created_by == user.id` gate matches the merge endpoint's
+       creator-only auth so non-creator travelers don't see a dead-end UI. #}
     <section id="merge-into-trip"
              class="mt-4 rounded border border-zinc-200 p-3 text-sm dark:border-zinc-800">
       <form id="merge-into-form" method="post" action="">
