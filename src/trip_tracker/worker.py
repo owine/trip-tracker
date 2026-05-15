@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import default as email_policy_default
@@ -18,8 +19,8 @@ from pathlib import Path
 from typing import Any
 
 from redis.asyncio import Redis as AsyncRedis
-from saq import Queue
-from sqlalchemy import select
+from saq import CronJob, Queue
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import trip_tracker.parsers.vendors  # noqa: F401  # register all packs
@@ -320,6 +321,34 @@ async def refresh_weather(ctx: dict[str, Any], *, lat: float, lon: float) -> Non
     await set_cached(forecast, redis, request_lat=lat, request_lon=lon)
 
 
+async def purge_merged_trips(ctx: dict[str, Any]) -> None:
+    """Hard-delete trips that have been soft-merged for >= 7 days.
+
+    Daily cron at 04:00 UTC. The 7-day window is the undo grace period —
+    after that, the merge is committed. Cascades on FKs clean up segments
+    (ondelete=CASCADE), expenses (CASCADE), documents (CASCADE),
+    trip_travelers (CASCADE), and trip_merge_dismissals (CASCADE on both
+    trip_a_id and trip_b_id). The self-FK trips.merged_into_id is
+    ondelete=SET NULL, which is intentional: if a merge target is later
+    purged, source rows already deleted by then; if order inverts, the
+    SET NULL avoids a constraint violation.
+    """
+    cutoff = datetime.now(UTC) - timedelta(days=7)
+    engine = ctx["engine"]
+    SessionMaker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    async with SessionMaker() as db:
+        result = await db.execute(
+            delete(Trip).where(
+                Trip.merged_into_id.is_not(None),
+                Trip.merged_at < cutoff,
+            )
+        )
+        await db.commit()
+        # CursorResult on DELETE exposes rowcount; mypy sees the looser
+        # Result base class which doesn't.
+        logger.info("purged_merged_trips count=%s", result.rowcount)  # type: ignore[attr-defined]
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     """Build worker-process singletons. saq calls this once when the worker boots."""
     s = WorkerSettings()
@@ -349,7 +378,19 @@ queue = Queue.from_url(_SETTINGS.redis_url)
 # saq picks up `settings` (a dict) when invoked via `saq trip_tracker.worker.settings`.
 settings = {
     "queue": queue,
-    "functions": [parse_raw_email, sync_meili, extract_document, refresh_weather],
+    "functions": [
+        parse_raw_email,
+        sync_meili,
+        extract_document,
+        refresh_weather,
+        purge_merged_trips,
+    ],
+    # Daily 04:00 UTC: sweep trips soft-merged >= 7 days ago. Quiet hour to
+    # avoid contending with users / ingest spikes.
+    # saq's CronJob is Generic[CtxType] bound to saq.types.Context (a TypedDict);
+    # our task uses `dict[str, Any]` like every other task in this module, so
+    # mypy refuses the implicit bind. The cast is purely a type-checker hint.
+    "cron_jobs": [CronJob(purge_merged_trips, cron="0 4 * * *")],  # type: ignore[type-var]
     "startup": startup,
     "shutdown": shutdown,
     "concurrency": 1,  # one task at a time per worker; matches arq's effective default
