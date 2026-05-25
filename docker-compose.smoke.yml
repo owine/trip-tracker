@@ -6,7 +6,7 @@
 # Track migration to PG18 + new mount in a separate ticket.
 services:
   trip-tracker-db:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     ports: !override
       - "5433:5432"
   trip-tracker-redis:
