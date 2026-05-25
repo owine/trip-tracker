@@ -176,7 +176,7 @@ jobs:
   #
   # Gated on ALL code-quality + security jobs so a failing lint, typecheck,
   # test, or security scan blocks image push.
-  docker-build:
+  docker-build-matrix:
     needs: [lint, typecheck, test, security-python, security-secrets, security-semgrep, detect-changes]
     if: |
       !cancelled() &&
@@ -253,11 +253,30 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # Stable-named aggregator so the branch ruleset can require a single
+  # `docker-build` check regardless of the matrix dimensions (platform/runner/
+  # arch — `ubuntu-24.04` rotates when Renovate bumps runner images).
+  # Treats "skipped" as success: doc-only PRs intentionally skip the matrix via
+  # detect-changes, and the aggregator must not block those merges.
+  docker-build:
+    needs: docker-build-matrix
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify matrix succeeded or was skipped
+        env:
+          MATRIX_RESULT: ${{ needs.docker-build-matrix.result }}
+        run: |
+          case "$MATRIX_RESULT" in
+            success|skipped) exit 0 ;;
+            *) echo "docker-build-matrix result: $MATRIX_RESULT" ; exit 1 ;;
+          esac
+
   # Merge per-arch digests into a multi-arch manifest list and sign it.
-  # Only runs on main push (depends on docker-build which is also gated).
+  # Only runs on main push (depends on docker-build-matrix which is also gated).
   manifest-merge:
     if: github.event_name == 'push'
-    needs: docker-build
+    needs: docker-build-matrix
     runs-on: ubuntu-24.04
     outputs:
       digest: ${{ steps.digest.outputs.digest }}
