@@ -79,7 +79,9 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
             | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
-          sudo apt-get install -y postgresql-client-18
+          # postgresql-18 (server) is required by pytest-postgresql, which
+          # spawns its own ephemeral cluster via pg_ctl/initdb for unit tests.
+          sudo apt-get install -y postgresql-client-18 postgresql-18
       - name: Build Tailwind CSS (required for static mount)
         run: bash scripts/build-tailwind.sh
       - name: Run tests with coverage
