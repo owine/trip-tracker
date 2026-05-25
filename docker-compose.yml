@@ -36,7 +36,7 @@ services:
     networks: [proxy, internal]
 
   trip-tracker-db:
-    image: postgres:18.3-alpine
+    image: postgres:18.4-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: trip
@@ -57,7 +57,7 @@ services:
     networks: [internal]
 
   trip-tracker-search:
-    image: getmeili/meilisearch:v1.42
+    image: getmeili/meilisearch:v1.44
     restart: unless-stopped
     environment:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
