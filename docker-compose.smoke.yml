@@ -1,12 +1,10 @@
-# Alt-port override for v0.8.0 smoke (host 5432/6379 already in use).
+# Alt-port override for smoke (host 5432/6379 already in use).
 # Layer on top of docker-compose.yml + docker-compose.dev.yml.
 # Uses !override to REPLACE the dev override's port mapping rather than merge.
-# Also pins postgres to 17-alpine: the prod compose's mount path is not
-# compatible with PG18's new layout (PR docker-library/postgres#1259).
-# Track migration to PG18 + new mount in a separate ticket.
 services:
   trip-tracker-db:
-    image: postgres:17-alpine
+    environment:
+      PGDATA: /var/lib/postgresql/data
     ports: !override
       - "5433:5432"
   trip-tracker-redis:
