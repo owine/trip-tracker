@@ -68,10 +68,18 @@ jobs:
         with: { enable-cache: true }
       - run: uv python install 3.14
       - run: uv sync --all-groups --frozen
-      - name: Install postgres client tools
+      - name: Install postgres 18 client tools (PGDG)
         run: |
+          # Ubuntu Noble's default repo ships postgresql-client 16, which can't
+          # pg_dump from the PG 18 service container. Pull 18 from PGDG.
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
+          . /etc/os-release
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
-          sudo apt-get install -y postgresql-client postgresql
+          sudo apt-get install -y postgresql-client-18
       - name: Build Tailwind CSS (required for static mount)
         run: bash scripts/build-tailwind.sh
       - name: Run tests with coverage
