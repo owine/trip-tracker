@@ -10,7 +10,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Install uv from its release image (also digest-pinnable; using stable tag here is acceptable
 # as the binary is verified by uv's self-update mechanism).
-COPY --from=ghcr.io/astral-sh/uv:0.11.13@sha256:841c8e6fe30a8b07b4478d12d0c608cba6de66102d29d65d1cc423af86051563 /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.19@sha256:b46b03ddfcfbf8f547af7e9eaefdf8a39c8cebcba7c98858d3162bd28cf536f6 /uv /uvx /usr/local/bin/
 
 WORKDIR /app
 
