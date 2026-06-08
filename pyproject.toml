@@ -19,7 +19,7 @@ dependencies = [
     "structlog==25.5.0",
     "python-multipart==0.0.32",
     "anthropic==0.105.2",
-    "redis==7.4.0",
+    "redis==8.0.0",
     "extruct==0.18.0",
     "saq[hiredis]==0.26.4",
     "meilisearch-python-sdk==7.2.1",
