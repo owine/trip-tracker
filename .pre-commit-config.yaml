@@ -14,7 +14,7 @@ repos:
       - id: detect-private-key
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.15
+    rev: v0.15.16
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -39,7 +39,7 @@ repos:
         files: ^src/
 
   - repo: https://github.com/Riverside-Healthcare/djLint
-    rev: v1.36.4
+    rev: v1.38.1
     hooks:
       - id: djlint-reformat
         args: [--profile=jinja]
