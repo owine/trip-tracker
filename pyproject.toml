@@ -39,7 +39,7 @@ dev = [
     "mypy==2.1.0",
     "types-passlib==1.7.7.20260211",
     "pre-commit==4.6.0",
-    "djlint==1.38.2",
+    "djlint==1.39.0",
     "bandit[toml]==1.9.4",
     "pip-audit==2.10.0",
     "icalendar==7.1.2",
