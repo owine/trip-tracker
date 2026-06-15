@@ -86,7 +86,7 @@ jobs:
         run: bash scripts/build-tailwind.sh
       - name: Run tests with coverage
         run: uv run pytest --cov --cov-report=xml --cov-report=term
-      - uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354  # v6.0.1
+      - uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v6.0.2
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
@@ -117,7 +117,7 @@ jobs:
 
   security-semgrep:
     runs-on: ubuntu-latest
-    container: returntocorp/semgrep@sha256:207983631beecdbe7fa29196c7f4a7a5f29033933cdb76c687ce4a672e07618d
+    container: returntocorp/semgrep@sha256:f4791a54c891eabe1188248135574e6e03dfc31dfd3f3b747c7bec7079bfed1b
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
       - run: semgrep ci --config p/owasp-top-ten --config p/python --sarif --output semgrep.sarif
