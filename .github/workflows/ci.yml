@@ -348,6 +348,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # Human-readable findings in the job log. exit-code 0 so it never fails
+      # the job — the sarif step below is the gate. Without this, a gate failure
+      # shows no CVE details in the log, only in the Security tab.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}@${{ needs.manifest-merge.outputs.digest }}
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+          ignore-unfixed: true
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository }}@${{ needs.manifest-merge.outputs.digest }}
