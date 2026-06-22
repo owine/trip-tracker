@@ -6,7 +6,13 @@ FROM python:3.14.6-slim@sha256:44dd04494ee8f3b538294360e7c4b3acb87c8268e4d0a4828
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
-    UV_COMPILE_BYTECODE=1
+    UV_COMPILE_BYTECODE=1 \
+    # Build the venv against the base image's system Python, never a uv-managed
+    # standalone interpreter under /root (unreachable by the non-root runtime
+    # user). If `requires-python` ever drifts from the python base image tag,
+    # this fails the build loudly instead of silently shipping a broken image.
+    UV_PYTHON_PREFERENCE=only-system \
+    UV_PYTHON_DOWNLOADS=never
 
 # Install uv from its release image (also digest-pinnable; using stable tag here is acceptable
 # as the binary is verified by uv's self-update mechanism).
