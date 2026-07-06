@@ -39,7 +39,7 @@ repos:
         files: ^src/
 
   - repo: https://github.com/Riverside-Healthcare/djLint
-    rev: v1.39.4
+    rev: v1.40.2
     hooks:
       - id: djlint-reformat
         args: [--profile=jinja]
