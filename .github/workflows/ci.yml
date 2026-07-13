@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:18.4-alpine@sha256:1b1689b20d16a014a3d195653381cf2caa75a41a92d93b255a9d6ea29fd353aa
+        image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
@@ -117,13 +117,13 @@ jobs:
 
   security-semgrep:
     runs-on: ubuntu-latest
-    container: returntocorp/semgrep@sha256:06938c1f365d3f67b8cedd8bc117607ae64253f88a0e768e9da9408548927dd6
+    container: returntocorp/semgrep@sha256:59fbed6127ea7c5dde3ba6a85142733bb20ea9aaa36120c953904f1539aaf66e
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - run: semgrep ci --config p/owasp-top-ten --config p/python --sarif --output semgrep.sarif
         env:
           SEMGREP_RULES: p/owasp-top-ten p/python
-      - uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a  # v4.36.3
+      - uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9  # v4.37.0
         if: always()
         with:
           sarif_file: semgrep.sarif
@@ -369,7 +369,7 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: true
-      - uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a  # v4.36.3
+      - uses: github/codeql-action/upload-sarif@99df26d4f13ea111d4ec1a7dddef6063f76b97e9  # v4.37.0
         if: always()
         with:
           sarif_file: trivy.sarif
