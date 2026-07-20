@@ -21,10 +21,7 @@
           <div>
             <div class="px-2 py-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Trips</div>
             <template x-for="(hit, i) in trips" :key="hit.id">
-              <a :href="`/trips/${hit.id}`"
-                 class="block rounded px-3 py-2 text-sm"
-                 :class="{ 'bg-zinc-100 dark:bg-zinc-800': isActive('trip', i) }"
-                 @mouseenter="setActive('trip', i)">
+              <a :href="`/trips/${hit.id}`" class="block rounded px-3 py-2 text-sm" :class="{ 'bg-zinc-100 dark:bg-zinc-800': isActive('trip', i) }" @mouseenter="setActive('trip', i)">
                 <span x-text="hit.title"></span>
                 <span x-show="hit.primary_destination"
                       class="ml-2 text-zinc-500"
@@ -37,10 +34,7 @@
           <div class="mt-2">
             <div class="px-2 py-1 text-xs font-semibold uppercase tracking-wider text-zinc-500">Segments</div>
             <template x-for="(hit, i) in segments" :key="hit.id">
-              <a :href="`/trips/${hit.trip_id}#segment-${hit.id}`"
-                 class="block rounded px-3 py-2 text-sm"
-                 :class="{ 'bg-zinc-100 dark:bg-zinc-800': isActive('segment', i) }"
-                 @mouseenter="setActive('segment', i)">
+              <a :href="`/trips/${hit.trip_id}#segment-${hit.id}`" class="block rounded px-3 py-2 text-sm" :class="{ 'bg-zinc-100 dark:bg-zinc-800': isActive('segment', i) }" @mouseenter="setActive('segment', i)">
                 <span class="rounded bg-zinc-200 px-1.5 py-0.5 text-xs uppercase dark:bg-zinc-800"
                       x-text="hit.type"></span>
                 <span class="ml-2"

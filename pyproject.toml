@@ -35,11 +35,11 @@ dev = [
     "pytest-postgresql==8.1.0",
     "psycopg[binary]==3.3.4",          # used by pytest-postgresql
     "respx==0.23.1",                   # mock httpx
-    "ruff==0.15.21",
-    "mypy==2.2.0",
+    "ruff==0.15.22",
+    "mypy==2.3.0",
     "types-passlib==1.7.7.20260211",
     "pre-commit==4.6.0",
-    "djlint==1.40.4",
+    "djlint==1.40.8",
     "bandit[toml]==1.9.4",
     "pip-audit==2.10.1",
     "icalendar==7.2.0",
