@@ -14,14 +14,14 @@ repos:
       - id: detect-private-key
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.21
+    rev: v0.15.22
     hooks:
       - id: ruff
         args: ["--fix"]
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.2.0
+    rev: v2.3.0
     hooks:
       - id: mypy
         additional_dependencies:
@@ -39,7 +39,7 @@ repos:
         files: ^src/
 
   - repo: https://github.com/Riverside-Healthcare/djLint
-    rev: v1.40.4
+    rev: v1.40.7
     hooks:
       - id: djlint-reformat
         args: [--profile=jinja]
