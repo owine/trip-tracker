@@ -13,37 +13,38 @@ repos:
       - id: check-merge-conflict
       - id: detect-private-key
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.22
+  # Lint/type tooling runs the project venv's own binaries via `uv run`, so the
+  # hook version is always exactly the pyproject.toml pin — no separate rev to
+  # drift (previously the mirror revs skewed from the pep621 pins). mypy checks
+  # against the venv's real installed deps, replacing a hand-maintained
+  # additional_dependencies list. Requires `uv sync` before running hooks.
+  - repo: local
     hooks:
       - id: ruff
-        args: ["--fix"]
+        name: ruff (uv run)
+        entry: uv run ruff check --fix
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
       - id: ruff-format
-
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.3.0
-    hooks:
+        name: ruff-format (uv run)
+        entry: uv run ruff format
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
       - id: mypy
-        additional_dependencies:
-          - "pydantic>=2.9"
-          - "pydantic-settings>=2.6"
-          - "sqlalchemy>=2.0"
-          - "fastapi>=0.115"
-          - "httpx>=0.27"
-          - "structlog>=24.4"
-          - "itsdangerous>=2.2"
-          - "authlib>=1.3.2"
-          - "types-passlib"
-          - "anthropic>=0.97,<0.98"
-          - "saq[hiredis]>=0.26"
+        name: mypy (uv run)
+        entry: uv run mypy
+        language: system
+        types_or: [python, pyi]
         files: ^src/
-
-  - repo: https://github.com/Riverside-Healthcare/djLint
-    rev: v1.40.7
-    hooks:
-      - id: djlint-reformat
-        args: [--profile=jinja]
+        require_serial: true
+      - id: djlint
+        name: djlint (uv run)
+        entry: uv run djlint --profile=jinja --reformat
+        language: system
         files: ^src/trip_tracker/templates/
+        require_serial: true
 
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
