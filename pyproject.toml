@@ -45,7 +45,10 @@ dev = [
     "icalendar==7.2.0",
 ]
 
-[tool.uv]
+# Release soak is enforced via Renovate's minimumReleaseAge (3 days; 7 days for
+# majors), not uv's exclude-newer — exclude-newer would reject a version Renovate
+# bumps to inside its 3-day window, breaking Renovate PRs. See renovate.json.
+[tool.uv]  # nosemgrep: package_managers.uv.uv-missing-dependency-cooldown.uv-missing-dependency-cooldown
 package = true
 
 [build-system]
