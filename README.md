@@ -3,9 +3,14 @@
 Self-hosted itinerary aggregator. Forwarded confirmation emails (flights, hotels,
 rentals, trains, transfers, activities) → unified day-by-day timeline.
 
-> **Status:** Phase 7 — world map + per-trip Open-Meteo weather cards.
-> Phase 8 (TBD — candidates: expenses with frozen FX, OCR, S3 storage) is next.
+> **Status:** Phase 9 — parse-time duplicate detection, `/inbox` triage, and
+> trip consolidation (merge with a 7-day undo). The package version stays
+> `0.8.1`; no `0.9.0` release was cut on `main`.
 > See [`docs/superpowers/specs/2026-04-26-trip-tracker-design.md`](docs/superpowers/specs/2026-04-26-trip-tracker-design.md) for the full spec.
+>
+> The `v0.9.0` git tag is **not** an ancestor of `main` — it marks the end of a
+> line of work that was abandoned, and Phase 9 was re-landed on `main` instead.
+> Build from `main`, not from that tag.
 
 ## Quick start (local dev)
 
@@ -266,6 +271,70 @@ never silently shift when ECB rates move.
   household travel ever becomes in scope).
 - v0.8.6 — Multi-currency receipts (e.g., EUR folio + USD card surcharge).
 - v0.8.7 — Re-FX historical expenses admin tool.
+
+## Inbox & trip consolidation (Phase 9)
+
+### Duplicate detection
+
+Re-forwarding the same confirmation no longer creates a second segment. At parse
+time each extracted draft is matched against your existing segments (scoped to
+you, cancelled segments excluded):
+
+| Rule | Match on |
+|---|---|
+| Strong | normalized provider + confirmation number (both present) |
+| Medium — flight/train/transfer | same type + start within ±30 min + same origin/destination pair |
+| Medium — lodging | same check-in date + case-insensitive hotel name |
+
+Fuzzy provider matching is deliberately excluded — it produced false merges.
+If **every** draft matches, nothing is persisted and the email lands in the
+Duplicates bucket. If only some match, the fresh ones are saved and the email
+goes to Review so you can see what was skipped.
+
+### /inbox
+
+Three buckets — **Review** (below `LLM_CONFIDENCE_FLOOR`, or a partial
+duplicate), **Duplicates**, and **No segments found** — with five actions:
+
+- **Confirm** — accept the extraction, optionally retargeting it to a different
+  trip; also creates the auto-Expense when the email carried a price.
+- **Discard** — drop the email without creating anything.
+- **Reparse** — re-run the parser chain unchanged (use after adding a vendor pack).
+- **Not a duplicate** — override the dedup verdict and re-parse.
+- **Re-ask** — re-run with a free-text hint.
+
+> **Known limitation:** Re-ask stores your hint on the RawEmail
+> (`X-Tt-Hint`) but the worker does not yet feed it to the LLM, so the re-parse
+> currently behaves like a plain Reparse.
+
+### Consolidation suggestions and merging
+
+Trips that look like one trip split in two get a dismissible banner on the trip
+detail page and in the inbox confirm preview. Up to 3 candidates are suggested,
+scored:
+
+- **High** — home-anchored (the next leg out, or the closing leg back home)
+- **Medium** — shared endpoint city
+- **Low** — nearest endpoint pair within 500 km
+
+Candidates are drawn from a ±3-day window around the target. Dismissing a pair
+suppresses it permanently for that pairing.
+
+Merging reassigns segments, expenses, documents, and travelers onto the target,
+widens the target's date range, and **soft-deletes** the source (it stays in the
+database with `merged_into_id` + a `merge_audit` JSONB payload). Undo is
+audit-driven and lossless within **7 days**; after that a daily cron
+(`purge_merged_trips`, 04:00 UTC) hard-deletes the source and the merge becomes
+permanent. Merges cannot be unwound out of order — if the target has itself
+since been merged, unwind from the top first.
+
+### Known limitations (Phase 9)
+
+- Home-anchored matching runs through the same ±3-day window as the geometric
+  fallback, so long-gap home-anchored chains (e.g. a trip out and a return leg
+  three weeks later) will not surface until that window is widened.
+- Consolidation candidate lookup issues N+1 selects across the windowed trips
+  (bounded at 50). It runs per user action, not in a hot loop.
 
 ## Production deploy
 
