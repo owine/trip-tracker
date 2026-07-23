@@ -304,8 +304,9 @@ duplicate), **Duplicates**, and **No segments found** — with five actions:
 - **Re-ask** — re-run with a free-text hint.
 
 > **Known limitation:** Re-ask stores your hint on the RawEmail
-> (`X-Tt-Hint`) but the worker does not yet feed it to the LLM, so the re-parse
-> currently behaves like a plain Reparse.
+> (`X-Tt-Hint`, `routes/inbox.py::reask`) but the worker does not yet feed it to
+> the LLM (`worker.py::parse_raw_email`), so the re-parse currently behaves like
+> a plain Reparse.
 
 ### Consolidation suggestions and merging
 
@@ -330,11 +331,13 @@ since been merged, unwind from the top first.
 
 ### Known limitations (Phase 9)
 
+Both live in `trips/consolidation.py::consolidation_candidates`:
+
 - Home-anchored matching runs through the same ±3-day window as the geometric
   fallback, so long-gap home-anchored chains (e.g. a trip out and a return leg
   three weeks later) will not surface until that window is widened.
-- Consolidation candidate lookup issues N+1 selects across the windowed trips
-  (bounded at 50). It runs per user action, not in a hot loop.
+- Candidate lookup issues N+1 selects across the windowed trips (bounded at 50).
+  It runs per user action, not in a hot loop.
 
 ## Production deploy
 

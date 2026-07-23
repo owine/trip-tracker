@@ -17,7 +17,8 @@ Versioning is not what `git tag` suggests: the package version is `0.8.1` and
 Phase 9 shipped on `main` without a version bump. The `v0.9.0` tag is **not** an
 ancestor of `main` — it marks an abandoned line of work, and Phase 9 was
 re-landed on `main` separately. `pyproject.toml`'s `version` and `main`'s HEAD
-are authoritative; don't reason from tags.
+are authoritative; don't reason from tags. The README status block states the
+same caveat for operators — if this story changes, update both.
 
 ## Commands
 
