@@ -368,8 +368,13 @@ def test_settings_load_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_settings_missing_required_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     for var in (
-        "DATABASE_URL", "SESSION_SECRET", "OIDC_ISSUER",
-        "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET", "OIDC_REDIRECT_URI", "BASE_URL",
+        "DATABASE_URL",
+        "SESSION_SECRET",
+        "OIDC_ISSUER",
+        "OIDC_CLIENT_ID",
+        "OIDC_CLIENT_SECRET",
+        "OIDC_REDIRECT_URI",
+        "BASE_URL",
     ):
         monkeypatch.delenv(var, raising=False)
     with pytest.raises(ValidationError):
@@ -784,7 +789,9 @@ async def test_create_user(db_session: AsyncSession) -> None:
     db_session.add(u)
     await db_session.commit()
 
-    fetched = (await db_session.execute(select(User).where(User.email == "oliver@example.com"))).scalar_one()
+    fetched = (
+        await db_session.execute(select(User).where(User.email == "oliver@example.com"))
+    ).scalar_one()
     assert fetched.oidc_subject == "abc-123"
     assert fetched.is_admin is True
     assert fetched.id is not None  # uuid assigned
@@ -834,9 +841,7 @@ from trip_tracker.models.base import Base
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     oidc_subject: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -987,7 +992,10 @@ async def test_alembic_upgrade_creates_users_table(db_url: str) -> None:
     }
     result = subprocess.run(
         ["uv", "run", "alembic", "upgrade", "head"],
-        env=env, capture_output=True, text=True, check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
 ```
@@ -1047,7 +1055,9 @@ def test_round_trip() -> None:
 def test_tampered_cookie_raises() -> None:
     secret = "x" * 32
     cookie = encode_session(
-        SessionPayload(user_id=uuid.uuid4(), oidc_subject="s"), secret=secret, max_age=3600,
+        SessionPayload(user_id=uuid.uuid4(), oidc_subject="s"),
+        secret=secret,
+        max_age=3600,
     )
     tampered = cookie[:-2] + ("AA" if cookie[-2:] != "AA" else "BB")
     with pytest.raises(SessionTampered):
@@ -1057,7 +1067,8 @@ def test_tampered_cookie_raises() -> None:
 def test_wrong_secret_raises() -> None:
     cookie = encode_session(
         SessionPayload(user_id=uuid.uuid4(), oidc_subject="s"),
-        secret="x" * 32, max_age=3600,
+        secret="x" * 32,
+        max_age=3600,
     )
     with pytest.raises(SessionTampered):
         decode_session(cookie, secret="y" * 32, max_age=3600)
@@ -1066,7 +1077,8 @@ def test_wrong_secret_raises() -> None:
 def test_expired_cookie_raises() -> None:
     cookie = encode_session(
         SessionPayload(user_id=uuid.uuid4(), oidc_subject="s"),
-        secret="x" * 32, max_age=-1,
+        secret="x" * 32,
+        max_age=-1,
     )
     with pytest.raises(SessionExpired):
         decode_session(cookie, secret="x" * 32, max_age=1)
@@ -1204,7 +1216,9 @@ def test_build_authorize_url_includes_pkce() -> None:
         client_secret="secret",
         redirect_uri="https://trips.example.com/auth/callback",
     )
-    url, state, verifier = client.build_authorize_url(scopes=["openid", "profile", "email", "groups"])
+    url, state, verifier = client.build_authorize_url(
+        scopes=["openid", "profile", "email", "groups"]
+    )
     assert url.startswith(disc.authorization_endpoint)
     assert "code_challenge=" in url
     assert "code_challenge_method=S256" in url
@@ -1236,12 +1250,15 @@ async def test_exchange_code_returns_claims() -> None:
 
     with respx.mock(assert_all_called=False) as router:
         router.post(DISCOVERY["token_endpoint"]).mock(
-            return_value=httpx.Response(200, json={
-                "id_token": id_token,
-                "access_token": "at",
-                "token_type": "Bearer",
-                "expires_in": 3600,
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "id_token": id_token,
+                    "access_token": "at",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                },
+            )
         )
         router.get(DISCOVERY["jwks_uri"]).mock(return_value=httpx.Response(200, json=public_jwks))
 
@@ -1344,7 +1361,9 @@ class OIDCDiscovery:
             token_endpoint=data["token_endpoint"],
             jwks_uri=data["jwks_uri"],
             end_session_endpoint=data.get("end_session_endpoint"),
-            id_token_signing_alg_values_supported=data.get("id_token_signing_alg_values_supported", []),
+            id_token_signing_alg_values_supported=data.get(
+                "id_token_signing_alg_values_supported", []
+            ),
             response_types_supported=data.get("response_types_supported", []),
             grant_types_supported=data.get("grant_types_supported", []),
             code_challenge_methods_supported=data.get("code_challenge_methods_supported", []),
@@ -1353,6 +1372,7 @@ class OIDCDiscovery:
 
 class OIDCClaims(BaseModel):
     """Validated ID token claims we care about."""
+
     model_config = ConfigDict(extra="ignore")
     sub: str
     email: str
@@ -1391,7 +1411,11 @@ class OIDCClient:
         return f"{self.discovery.authorization_endpoint}?{urlencode(params)}", state, verifier
 
     async def exchange_code(
-        self, *, code: str, verifier: str, http: httpx.AsyncClient,
+        self,
+        *,
+        code: str,
+        verifier: str,
+        http: httpx.AsyncClient,
     ) -> OIDCClaims:
         r = await http.post(
             self.discovery.token_endpoint,
@@ -1564,7 +1588,12 @@ async def login(client: OIDCClient = Depends(_client_dep)) -> RedirectResponse:
         _OAUTH_STATE_COOKIE, state, max_age=600, httponly=True, secure=secure_cookie, samesite="lax"
     )
     response.set_cookie(
-        _OAUTH_PKCE_COOKIE, verifier, max_age=600, httponly=True, secure=secure_cookie, samesite="lax"
+        _OAUTH_PKCE_COOKIE,
+        verifier,
+        max_age=600,
+        httponly=True,
+        secure=secure_cookie,
+        samesite="lax",
     )
     return response
 
@@ -1589,7 +1618,9 @@ async def callback(
         claims = await client.exchange_code(code=code, verifier=tt_oauth_pkce, http=http)
 
     # Upsert user.
-    user = (await db.execute(select(User).where(User.oidc_subject == claims.sub))).scalar_one_or_none()
+    user = (
+        await db.execute(select(User).where(User.oidc_subject == claims.sub))
+    ).scalar_one_or_none()
     if user is None:
         # First-user-is-admin or explicit group membership.
         existing_count = (await db.execute(select(func.count()).select_from(User))).scalar_one()
@@ -1679,9 +1710,13 @@ DISC = {
 def signed_id_token(monkeypatch: pytest.MonkeyPatch) -> tuple[str, dict]:
     key = RSAKey.generate_key(2048, is_private=True)
     payload = {
-        "iss": ISSUER, "sub": "subj-1", "aud": "trip-tracker",
-        "exp": 9999999999, "iat": 1000000000,
-        "email": "oliver@example.com", "preferred_username": "oliver",
+        "iss": ISSUER,
+        "sub": "subj-1",
+        "aud": "trip-tracker",
+        "exp": 9999999999,
+        "iat": 1000000000,
+        "email": "oliver@example.com",
+        "preferred_username": "oliver",
         "groups": [],
     }
     token = jwt.encode({"alg": "RS256", "kid": key.kid}, payload, key).decode()
@@ -1690,7 +1725,8 @@ def signed_id_token(monkeypatch: pytest.MonkeyPatch) -> tuple[str, dict]:
 
 @pytest.mark.asyncio
 async def test_login_redirects_to_authorize(
-    db_url: str, monkeypatch: pytest.MonkeyPatch,
+    db_url: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", db_url)
     app = create_app()
@@ -1709,8 +1745,10 @@ async def test_login_redirects_to_authorize(
 
 @pytest.mark.asyncio
 async def test_callback_creates_user_and_sets_session(
-    db_url: str, monkeypatch: pytest.MonkeyPatch,
-    signed_id_token: tuple[str, dict], db_session: AsyncSession,
+    db_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    signed_id_token: tuple[str, dict],
+    db_session: AsyncSession,
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", db_url)
     id_token, jwks = signed_id_token
@@ -1721,10 +1759,15 @@ async def test_callback_creates_user_and_sets_session(
             return_value=httpx.Response(200, json=DISC)
         )
         router.post(DISC["token_endpoint"]).mock(
-            return_value=httpx.Response(200, json={
-                "id_token": id_token, "access_token": "at",
-                "token_type": "Bearer", "expires_in": 3600,
-            })
+            return_value=httpx.Response(
+                200,
+                json={
+                    "id_token": id_token,
+                    "access_token": "at",
+                    "token_type": "Bearer",
+                    "expires_in": 3600,
+                },
+            )
         )
         router.get(DISC["jwks_uri"]).mock(return_value=httpx.Response(200, json=jwks))
 
@@ -1739,7 +1782,9 @@ async def test_callback_creates_user_and_sets_session(
             assert "tt_session" in r.cookies
 
     # User upserted, marked admin (first user).
-    user = (await db_session.execute(select(User).where(User.oidc_subject == "subj-1"))).scalar_one()
+    user = (
+        await db_session.execute(select(User).where(User.oidc_subject == "subj-1"))
+    ).scalar_one()
     assert user.is_admin is True
     assert user.email == "oliver@example.com"
 ```
@@ -1874,7 +1919,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title="trip-tracker",
         version=__version__,
         lifespan=lifespan,
-        docs_url=None,        # no public Swagger
+        docs_url=None,  # no public Swagger
         redoc_url=None,
         openapi_url=None,
     )
@@ -1883,6 +1928,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Static files (Tailwind output ships baked into the image).
     # Use a path computed from __file__ so the app works regardless of CWD.
     from pathlib import Path
+
     static_dir = Path(__file__).parent / "static"
     app.mount("/static", StaticFiles(directory=str(static_dir), check_dir=False), name="static")
 
@@ -1907,12 +1953,12 @@ import uvicorn
 def main() -> None:
     uvicorn.run(
         "trip_tracker.app:create_app",
-        host="0.0.0.0",       # noqa: S104  — bound inside container; reverse proxy enforces auth
+        host="0.0.0.0",  # noqa: S104  — bound inside container; reverse proxy enforces auth
         port=8000,
         factory=True,
         proxy_headers=True,
         forwarded_allow_ips="*",
-        log_config=None,      # we own logging
+        log_config=None,  # we own logging
     )
 
 
@@ -1974,14 +2020,19 @@ async def test_home_anonymous_shows_login() -> None:
 
 @pytest.mark.asyncio
 async def test_home_logged_in_greets_user(
-    db_url: str, monkeypatch: pytest.MonkeyPatch, db_session: AsyncSession,
+    db_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: AsyncSession,
 ) -> None:
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
 
     user = User(
-        id=uuid.uuid4(), oidc_subject="s", email="o@example.com",
-        display_name="Oliver", is_admin=False,
+        id=uuid.uuid4(),
+        oidc_subject="s",
+        email="o@example.com",
+        display_name="Oliver",
+        is_admin=False,
     )
     db_session.add(user)
     await db_session.commit()
@@ -1993,7 +2044,9 @@ async def test_home_logged_in_greets_user(
         secret=settings.session_secret.get_secret_value(),
         max_age=3600,
     )
-    async with httpx.AsyncClient(transport=transport, base_url="http://test", cookies={"tt_session": cookie}) as client:
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test", cookies={"tt_session": cookie}
+    ) as client:
         r = await client.get("/")
     assert r.status_code == 200
     assert "Hello, Oliver" in r.text
@@ -2122,6 +2175,7 @@ router = APIRouter()
 
 # Templates path computed from __file__ for CWD-independence.
 from pathlib import Path
+
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
@@ -2137,6 +2191,7 @@ In `src/trip_tracker/app.py`, add:
 
 ```python
 from trip_tracker.routes.home import router as home_router
+
 # inside create_app(), after auth_router:
 app.include_router(home_router)
 ```

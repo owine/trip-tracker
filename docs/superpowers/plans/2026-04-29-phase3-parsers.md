@@ -193,19 +193,20 @@ Run: `uv run pytest tests/test_config_phase3.py -v` — expect 4 failures.
 In `src/trip_tracker/config.py`, add (before the closing of the `Settings` class):
 
 ```python
-    # Phase 3 — parser pipeline
-    anthropic_api_key: SecretStr
-    redis_url: str
-    llm_daily_budget_cents: int = 100  # $1.00 USD/day soft cap
-    llm_model: str = "claude-haiku-4-5-20251001"
-    llm_confidence_floor: float = 0.7
+# Phase 3 — parser pipeline
+anthropic_api_key: SecretStr
+redis_url: str
+llm_daily_budget_cents: int = 100  # $1.00 USD/day soft cap
+llm_model: str = "claude-haiku-4-5-20251001"
+llm_confidence_floor: float = 0.7
 
-    @field_validator("llm_confidence_floor")
-    @classmethod
-    def _floor_in_unit_interval(cls, v: float) -> float:
-        if not 0.0 <= v <= 1.0:
-            raise ValueError("llm_confidence_floor must be in [0, 1]")
-        return v
+
+@field_validator("llm_confidence_floor")
+@classmethod
+def _floor_in_unit_interval(cls, v: float) -> float:
+    if not 0.0 <= v <= 1.0:
+        raise ValueError("llm_confidence_floor must be in [0, 1]")
+    return v
 ```
 
 Make sure `SecretStr` is imported from pydantic and `field_validator` is imported from pydantic.
@@ -292,12 +293,8 @@ def upgrade() -> None:
     op.create_table(
         "llm_budget",
         sa.Column("day", sa.Date(), primary_key=True),
-        sa.Column(
-            "cost_cents", sa.Integer(), nullable=False, server_default="0"
-        ),
-        sa.Column(
-            "request_count", sa.Integer(), nullable=False, server_default="0"
-        ),
+        sa.Column("cost_cents", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("request_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column(
             "updated_at",
             sa.TIMESTAMP(timezone=True),
@@ -317,9 +314,7 @@ def upgrade() -> None:
             nullable=True,
         ),
     )
-    op.create_index(
-        "ix_segments_raw_email_id", "segments", ["raw_email_id"]
-    )
+    op.create_index("ix_segments_raw_email_id", "segments", ["raw_email_id"])
 
 
 def downgrade() -> None:
@@ -955,9 +950,7 @@ async def user(db_session: AsyncSession) -> User:
     return u
 
 
-def _flight_draft(
-    start: datetime, end: datetime, origin_iata: str, dest_iata: str
-) -> SegmentDraft:
+def _flight_draft(start: datetime, end: datetime, origin_iata: str, dest_iata: str) -> SegmentDraft:
     return SegmentDraft(
         type="flight",
         start_at=start,
@@ -970,13 +963,12 @@ def _flight_draft(
 
 
 @pytest.mark.asyncio
-async def test_no_existing_trips_creates_new(
-    db_session: AsyncSession, user: User
-) -> None:
+async def test_no_existing_trips_creates_new(db_session: AsyncSession, user: User) -> None:
     draft = _flight_draft(
         datetime(2026, 6, 1, 9, tzinfo=UTC),
         datetime(2026, 6, 1, 22, tzinfo=UTC),
-        "JFK", "CDG",
+        "JFK",
+        "CDG",
     )
     decision = await cluster_for_user(db_session, user.id, draft)
     assert decision.kind == "create_new"
@@ -984,12 +976,13 @@ async def test_no_existing_trips_creates_new(
 
 
 @pytest.mark.asyncio
-async def test_single_overlapping_trip_attaches(
-    db_session: AsyncSession, user: User
-) -> None:
+async def test_single_overlapping_trip_attaches(db_session: AsyncSession, user: User) -> None:
     trip = Trip(
-        title="Paris trip", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
-        primary_destination="Paris", created_by=user.id,
+        title="Paris trip",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 5),
+        primary_destination="Paris",
+        created_by=user.id,
     )
     db_session.add(trip)
     await db_session.flush()
@@ -999,7 +992,8 @@ async def test_single_overlapping_trip_attaches(
     draft = _flight_draft(
         datetime(2026, 6, 3, 9, tzinfo=UTC),
         datetime(2026, 6, 3, 22, tzinfo=UTC),
-        "CDG", "JFK",
+        "CDG",
+        "JFK",
     )
     decision = await cluster_for_user(db_session, user.id, draft)
     assert decision.kind == "attach"
@@ -1007,12 +1001,13 @@ async def test_single_overlapping_trip_attaches(
 
 
 @pytest.mark.asyncio
-async def test_adjacent_plus_one_day_attaches(
-    db_session: AsyncSession, user: User
-) -> None:
+async def test_adjacent_plus_one_day_attaches(db_session: AsyncSession, user: User) -> None:
     trip = Trip(
-        title="Paris", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
-        primary_destination="Paris", created_by=user.id,
+        title="Paris",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 5),
+        primary_destination="Paris",
+        created_by=user.id,
     )
     db_session.add(trip)
     await db_session.flush()
@@ -1023,7 +1018,8 @@ async def test_adjacent_plus_one_day_attaches(
     draft = _flight_draft(
         datetime(2026, 6, 6, 9, tzinfo=UTC),
         datetime(2026, 6, 6, 22, tzinfo=UTC),
-        "CDG", "JFK",
+        "CDG",
+        "JFK",
     )
     decision = await cluster_for_user(db_session, user.id, draft)
     assert decision.kind == "attach"
@@ -1031,12 +1027,13 @@ async def test_adjacent_plus_one_day_attaches(
 
 
 @pytest.mark.asyncio
-async def test_two_day_gap_does_not_cluster(
-    db_session: AsyncSession, user: User
-) -> None:
+async def test_two_day_gap_does_not_cluster(db_session: AsyncSession, user: User) -> None:
     trip = Trip(
-        title="Paris", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
-        primary_destination="Paris", created_by=user.id,
+        title="Paris",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 5),
+        primary_destination="Paris",
+        created_by=user.id,
     )
     db_session.add(trip)
     await db_session.flush()
@@ -1047,21 +1044,23 @@ async def test_two_day_gap_does_not_cluster(
     draft = _flight_draft(
         datetime(2026, 6, 7, 9, tzinfo=UTC),
         datetime(2026, 6, 7, 22, tzinfo=UTC),
-        "JFK", "CDG",
+        "JFK",
+        "CDG",
     )
     decision = await cluster_for_user(db_session, user.id, draft)
     assert decision.kind == "create_new"
 
 
 @pytest.mark.asyncio
-async def test_close_score_routes_to_inbox(
-    db_session: AsyncSession, user: User
-) -> None:
+async def test_close_score_routes_to_inbox(db_session: AsyncSession, user: User) -> None:
     """Two trips overlap with the same dates → ambiguous → /inbox."""
     for label in ("Paris", "Paris2"):
         t = Trip(
-            title=label, start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
-            primary_destination="Paris", created_by=user.id,
+            title=label,
+            start_date=date(2026, 6, 1),
+            end_date=date(2026, 6, 5),
+            primary_destination="Paris",
+            created_by=user.id,
         )
         db_session.add(t)
         await db_session.flush()
@@ -1071,7 +1070,8 @@ async def test_close_score_routes_to_inbox(
     draft = _flight_draft(
         datetime(2026, 6, 3, 9, tzinfo=UTC),
         datetime(2026, 6, 3, 22, tzinfo=UTC),
-        "JFK", "CDG",
+        "JFK",
+        "CDG",
     )
     decision = await cluster_for_user(db_session, user.id, draft)
     assert decision.kind == "ambiguous"
@@ -1081,7 +1081,8 @@ def test_derive_destination_flight_uses_end_city() -> None:
     draft = _flight_draft(
         datetime(2026, 6, 1, tzinfo=UTC),
         datetime(2026, 6, 1, tzinfo=UTC),
-        "JFK", "CDG",
+        "JFK",
+        "CDG",
     )
     assert derive_destination(draft) == "Dest"
 
@@ -1183,9 +1184,7 @@ def _location_proximity(draft: SegmentDraft, trip: Trip) -> bool:
     return False
 
 
-def _date_overlap_or_adjacent(
-    draft: SegmentDraft, trip: Trip, *, adjacent_days: int = 1
-) -> bool:
+def _date_overlap_or_adjacent(draft: SegmentDraft, trip: Trip, *, adjacent_days: int = 1) -> bool:
     s, e = _segment_dates(draft)
     delta = timedelta(days=adjacent_days)
     return s - delta <= trip.end_date and e + delta >= trip.start_date
@@ -1206,12 +1205,16 @@ async def cluster_for_user(
 ) -> ClusterDecision:
     """Find the best Trip for `draft` among `user_id`'s trips, or signal a new one."""
     rows = (
-        await db.execute(
-            select(Trip)
-            .join(TripTraveler, TripTraveler.trip_id == Trip.id)
-            .where(TripTraveler.user_id == user_id)
+        (
+            await db.execute(
+                select(Trip)
+                .join(TripTraveler, TripTraveler.trip_id == Trip.id)
+                .where(TripTraveler.user_id == user_id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     candidates: list[tuple[Trip, float]] = []
     for trip in rows:
@@ -1367,6 +1370,7 @@ def test_lodging_reservation_extracted() -> None:
 def test_no_jsonld_returns_empty() -> None:
     """A plain-text email with no JSON-LD returns segments=[] confidence=0."""
     from email.message import EmailMessage
+
     msg = EmailMessage()
     msg["Subject"] = "Plain"
     msg["From"] = "x@y.com"
@@ -1581,9 +1585,7 @@ async def test_record_usage_upserts(db_session: AsyncSession) -> None:
     today = datetime.now(tz=UTC).date()
     await record_usage(db_session, cost_cents=5)
     await record_usage(db_session, cost_cents=7)
-    row = (
-        await db_session.execute(select(LlmBudget).where(LlmBudget.day == today))
-    ).scalar_one()
+    row = (await db_session.execute(select(LlmBudget).where(LlmBudget.day == today))).scalar_one()
     assert row.cost_cents == 12
     assert row.request_count == 2
 ```
@@ -1852,7 +1854,9 @@ async def test_parse_decodes_tool_use() -> None:
 @pytest.mark.asyncio
 async def test_parse_with_hint_appends_to_user_message() -> None:
     client = MagicMock(spec=LLMClient)
-    client.call = AsyncMock(return_value=_fake_response(tool_input={"segments": [], "confidence": 0.9}))
+    client.call = AsyncMock(
+        return_value=_fake_response(tool_input={"segments": [], "confidence": 0.9})
+    )
     await parse_with_llm(client, _msg(), hint="This is a return flight")
     args, kwargs = client.call.call_args
     user_msg = kwargs["user_content"]
@@ -1932,7 +1936,9 @@ def _msg_to_text(msg: EmailMessage) -> str:
             if part.get_content_type() == "text/plain":
                 payload = part.get_payload(decode=True)
                 if isinstance(payload, bytes):
-                    parts.append(payload.decode(part.get_content_charset() or "utf-8", errors="replace"))
+                    parts.append(
+                        payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+                    )
                 break
     else:
         if msg.get_content_type().startswith("text/"):
@@ -1945,14 +1951,13 @@ def _msg_to_text(msg: EmailMessage) -> str:
 @dataclass
 class LLMOutcome:
     """ParseResult plus the token counts so callers can record exact LLM cost."""
+
     result: ParseResult
     input_tokens: int
     output_tokens: int
 
 
-async def parse_with_llm(
-    client: LLMClient, msg: EmailMessage, *, hint: str | None
-) -> LLMOutcome:
+async def parse_with_llm(client: LLMClient, msg: EmailMessage, *, hint: str | None) -> LLMOutcome:
     """Run Haiku once, decode the tool-use response, return LLMOutcome.
 
     `hint` (optional): short user-supplied note appended to the user message
@@ -1978,7 +1983,9 @@ async def parse_with_llm(
     if tool_input is None:
         return LLMOutcome(
             result=ParseResult(
-                segments=[], confidence=0.0, source="llm:haiku-4-5",
+                segments=[],
+                confidence=0.0,
+                source="llm:haiku-4-5",
                 warnings=["model did not invoke extract_segments tool"],
             ),
             input_tokens=in_tok,
@@ -2028,9 +2035,7 @@ from trip_tracker.parsers.llm import LLMClient, parse_with_llm
 
 
 @pytest.mark.live_llm
-@pytest.mark.skipif(
-    not os.getenv("ANTHROPIC_API_KEY"), reason="requires ANTHROPIC_API_KEY"
-)
+@pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="requires ANTHROPIC_API_KEY")
 @pytest.mark.asyncio
 async def test_haiku_round_trip_with_canonical_email() -> None:
     msg = EmailMessage()
@@ -2135,7 +2140,9 @@ async def test_jsonld_short_circuits() -> None:
         patch("trip_tracker.parsers.dispatch.parse_with_llm") as llm,
     ):
         jsonld.return_value = ParseResult(segments=[_draft()], confidence=0.95, source="json-ld")
-        outcome = await dispatch_parse(_msg(), llm_client=MagicMock(), db=MagicMock(), cap_cents=100)
+        outcome = await dispatch_parse(
+            _msg(), llm_client=MagicMock(), db=MagicMock(), cap_cents=100
+        )
         assert outcome.result.source == "json-ld"
         vendors.assert_not_called()
         llm.assert_not_called()
@@ -2145,15 +2152,21 @@ async def test_jsonld_short_circuits() -> None:
 async def test_vendor_runs_when_jsonld_empty() -> None:
     fake_vendor_cls = MagicMock()
     fake_vendor_cls.return_value.parse.return_value = ParseResult(
-        segments=[_draft()], confidence=0.9, source="rules:fake",
+        segments=[_draft()],
+        confidence=0.9,
+        source="rules:fake",
     )
     with (
-        patch("trip_tracker.parsers.dispatch.parse_jsonld",
-              return_value=ParseResult(segments=[], confidence=0.0, source="json-ld")),
+        patch(
+            "trip_tracker.parsers.dispatch.parse_jsonld",
+            return_value=ParseResult(segments=[], confidence=0.0, source="json-ld"),
+        ),
         patch("trip_tracker.parsers.dispatch.select_parsers", return_value=[fake_vendor_cls]),
         patch("trip_tracker.parsers.dispatch.parse_with_llm") as llm,
     ):
-        outcome = await dispatch_parse(_msg(), llm_client=MagicMock(), db=MagicMock(), cap_cents=100)
+        outcome = await dispatch_parse(
+            _msg(), llm_client=MagicMock(), db=MagicMock(), cap_cents=100
+        )
         assert outcome.result.source == "rules:fake"
         llm.assert_not_called()
 
@@ -2162,18 +2175,29 @@ async def test_vendor_runs_when_jsonld_empty() -> None:
 async def test_llm_runs_when_vendor_below_floor() -> None:
     fake_vendor_cls = MagicMock()
     fake_vendor_cls.return_value.parse.return_value = ParseResult(
-        segments=[_draft()], confidence=0.4, source="rules:fake",
+        segments=[_draft()],
+        confidence=0.4,
+        source="rules:fake",
     )
     with (
-        patch("trip_tracker.parsers.dispatch.parse_jsonld",
-              return_value=ParseResult(segments=[], confidence=0.0, source="json-ld")),
+        patch(
+            "trip_tracker.parsers.dispatch.parse_jsonld",
+            return_value=ParseResult(segments=[], confidence=0.0, source="json-ld"),
+        ),
         patch("trip_tracker.parsers.dispatch.select_parsers", return_value=[fake_vendor_cls]),
         patch("trip_tracker.parsers.dispatch.is_over_budget", new=AsyncMock(return_value=False)),
-        patch("trip_tracker.parsers.dispatch.parse_with_llm",
-              new=AsyncMock(return_value=ParseResult(segments=[_draft()], confidence=0.85,
-                                                     source="llm:haiku-4-5"))) as llm,
+        patch(
+            "trip_tracker.parsers.dispatch.parse_with_llm",
+            new=AsyncMock(
+                return_value=ParseResult(
+                    segments=[_draft()], confidence=0.85, source="llm:haiku-4-5"
+                )
+            ),
+        ) as llm,
     ):
-        outcome = await dispatch_parse(_msg(), llm_client=MagicMock(), db=MagicMock(), cap_cents=100)
+        outcome = await dispatch_parse(
+            _msg(), llm_client=MagicMock(), db=MagicMock(), cap_cents=100
+        )
         llm.assert_awaited_once()
         assert outcome.result.source == "llm:haiku-4-5"
 
@@ -2182,13 +2206,17 @@ async def test_llm_runs_when_vendor_below_floor() -> None:
 async def test_budget_skips_llm() -> None:
     """Over budget: LLM step skipped; outcome carries the best earlier result."""
     with (
-        patch("trip_tracker.parsers.dispatch.parse_jsonld",
-              return_value=ParseResult(segments=[], confidence=0.0, source="json-ld")),
+        patch(
+            "trip_tracker.parsers.dispatch.parse_jsonld",
+            return_value=ParseResult(segments=[], confidence=0.0, source="json-ld"),
+        ),
         patch("trip_tracker.parsers.dispatch.select_parsers", return_value=[]),
         patch("trip_tracker.parsers.dispatch.is_over_budget", new=AsyncMock(return_value=True)),
         patch("trip_tracker.parsers.dispatch.parse_with_llm") as llm,
     ):
-        outcome = await dispatch_parse(_msg(), llm_client=MagicMock(), db=MagicMock(), cap_cents=100)
+        outcome = await dispatch_parse(
+            _msg(), llm_client=MagicMock(), db=MagicMock(), cap_cents=100
+        )
         llm.assert_not_called()
         assert outcome.budget_skipped is True
         assert outcome.result.segments == []
@@ -2225,8 +2253,8 @@ logger = logging.getLogger(__name__)
 class ParseOutcome:
     result: ParseResult
     budget_skipped: bool = False  # True when LLM was needed but budget exhausted
-    llm_input_tokens: int = 0     # populated when strategy 3 actually ran
-    llm_output_tokens: int = 0    # populated when strategy 3 actually ran
+    llm_input_tokens: int = 0  # populated when strategy 3 actually ran
+    llm_output_tokens: int = 0  # populated when strategy 3 actually ran
 
 
 async def dispatch_parse(
@@ -2377,9 +2405,7 @@ from trip_tracker.parsers.base import ParseResult, SegmentDraft, VendorParser
 
 _FLIGHT_NUM = re.compile(r"\b(AF|KL)\s?(\d{2,4})\b")
 _IATA_PAIR = re.compile(r"\b([A-Z]{3})\s*(?:→|->|to)\s*([A-Z]{3})\b")
-_DATE_TIME = re.compile(
-    r"(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})", flags=re.IGNORECASE
-)
+_DATE_TIME = re.compile(r"(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})", flags=re.IGNORECASE)
 _CONFIRMATION = re.compile(r"\b(?:confirmation|reservation)[\s:]+([A-Z0-9]{6,8})", re.I)
 
 
@@ -2398,8 +2424,12 @@ class AirFranceParser(VendorParser):
         conf_match = _CONFIRMATION.search(body)
 
         if not (flight_match and iata_match and dt_matches):
-            return ParseResult(segments=[], confidence=0.0, source="rules:air_france",
-                               warnings=["could not locate flight number + IATA pair + datetime"])
+            return ParseResult(
+                segments=[],
+                confidence=0.0,
+                source="rules:air_france",
+                warnings=["could not locate flight number + IATA pair + datetime"],
+            )
 
         flight_no = f"{flight_match.group(1)}{flight_match.group(2)}"
         origin, dest = iata_match.group(1), iata_match.group(2)
@@ -2523,7 +2553,11 @@ def _find_parser(vendor: str) -> type[VendorParser]:
     raise RuntimeError(f"no registered parser for vendor: {vendor}")
 
 
-@pytest.mark.parametrize(("name", "eml_path", "expected_path"), _fixture_pairs(), ids=lambda x: x if isinstance(x, str) else None)
+@pytest.mark.parametrize(
+    ("name", "eml_path", "expected_path"),
+    _fixture_pairs(),
+    ids=lambda x: x if isinstance(x, str) else None,
+)
 def test_vendor_fixture(name: str, eml_path: Path, expected_path: Path) -> None:
     """Each fixture is parsed by its vendor's parser; output is compared to expected."""
     vendor_name = name.split("/")[0]
@@ -2541,7 +2575,9 @@ def test_vendor_fixture(name: str, eml_path: Path, expected_path: Path) -> None:
     for actual_seg, expected_seg in zip(result.segments, expected["segments"], strict=True):
         for key, expected_val in expected_seg.items():
             actual_val = getattr(actual_seg, key)
-            assert actual_val == expected_val, f"{name}: {key} mismatch — got {actual_val!r}, expected {expected_val!r}"
+            assert actual_val == expected_val, (
+                f"{name}: {key} mismatch — got {actual_val!r}, expected {expected_val!r}"
+            )
 
 
 def test_at_least_one_fixture_pair_exists() -> None:
@@ -2920,7 +2956,9 @@ from zoneinfo import ZoneInfo
 from trip_tracker.parsers.base import ParseResult, SegmentDraft, VendorParser
 
 _PICKUP = re.compile(r"pick[\s-]?up[:\s]+([\w\s]+?)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2})", re.I)
-_DROPOFF = re.compile(r"drop[\s-]?off[:\s]+([\w\s]+?)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2})", re.I)
+_DROPOFF = re.compile(
+    r"drop[\s-]?off[:\s]+([\w\s]+?)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2})", re.I
+)
 _CONFIRMATION = re.compile(r"confirmation[:\s]+([A-Z0-9]{6,12})", re.I)
 
 
@@ -3177,8 +3215,16 @@ def _extract_text(msg: EmailMessage) -> str:
 ```python
 # vendors/__init__.py
 from . import (  # noqa: F401
-    air_france, american, amtrak, avis, blacklane, fairmont,
-    national, sncf, uber, united,
+    air_france,
+    american,
+    amtrak,
+    avis,
+    blacklane,
+    fairmont,
+    national,
+    sncf,
+    uber,
+    united,
 )
 ```
 
@@ -3318,20 +3364,26 @@ async def test_parse_raw_email_writes_segment(
     await db_session.commit()
 
     fake_dispatch = AsyncMock(
-        return_value=type("O", (), {  # ParseOutcome-shaped
-            "result": ParseResult(
-                segments=[SegmentDraft(
-                    type="flight",
-                    start_at=datetime(2026, 6, 1, tzinfo=UTC),
-                    start_tz="UTC",
-                    start_location={"city": "New York"},
-                    end_location={"city": "Paris"},
-                )],
-                confidence=0.9,
-                source="rules:test",
-            ),
-            "budget_skipped": False,
-        })(),
+        return_value=type(
+            "O",
+            (),
+            {  # ParseOutcome-shaped
+                "result": ParseResult(
+                    segments=[
+                        SegmentDraft(
+                            type="flight",
+                            start_at=datetime(2026, 6, 1, tzinfo=UTC),
+                            start_tz="UTC",
+                            start_location={"city": "New York"},
+                            end_location={"city": "Paris"},
+                        )
+                    ],
+                    confidence=0.9,
+                    source="rules:test",
+                ),
+                "budget_skipped": False,
+            },
+        )(),
     )
 
     with patch("trip_tracker.worker.dispatch_parse", new=fake_dispatch):
@@ -3425,7 +3477,10 @@ async def parse_raw_email(ctx: dict[str, Any], raw_email_id: str) -> None:
         msg = message_from_bytes(raw.mime_blob, policy=email_policy_default)
         client = LLMClient(settings)
         outcome = await dispatch_parse(
-            msg, llm_client=client, db=db, cap_cents=settings.llm_daily_budget_cents,
+            msg,
+            llm_client=client,
+            db=db,
+            cap_cents=settings.llm_daily_budget_cents,
         )
 
         if outcome.result.source == "llm:haiku-4-5":
@@ -3570,12 +3625,14 @@ async def _parse_pending(*, max_emails: int = 1000, dry_run: bool = False) -> No
     Session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     async with Session() as db:
         rows = (
-            await db.execute(
-                select(RawEmail.id)
-                .where(RawEmail.parse_status == "pending")
-                .limit(max_emails)
+            (
+                await db.execute(
+                    select(RawEmail.id).where(RawEmail.parse_status == "pending").limit(max_emails)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         print(f"Found {len(rows)} pending RawEmails")
         if dry_run:
             return
@@ -3760,7 +3817,9 @@ async def test_inbox_list_shows_three_buckets(
     transport = httpx.ASGITransport(app=app)
     async with (
         app.router.lifespan_context(app),
-        httpx.AsyncClient(transport=transport, base_url="http://test", cookies=_cookie(user, settings)) as c,
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+        ) as c,
     ):
         r = await c.get("/inbox")
     assert r.status_code == 200
@@ -3780,7 +3839,9 @@ async def test_inbox_confirm_action(
     transport = httpx.ASGITransport(app=app)
     async with (
         app.router.lifespan_context(app),
-        httpx.AsyncClient(transport=transport, base_url="http://test", cookies=_cookie(user, settings)) as c,
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+        ) as c,
     ):
         r = await c.post(f"/inbox/{raw.id}/confirm", follow_redirects=False)
     assert r.status_code == 303
@@ -3806,16 +3867,23 @@ async def test_inbox_discard_action(
 
     # Seed an auto-created segment linked to the RawEmail.
     trip = Trip(
-        title="Auto", start_date=datetime(2026, 6, 1).date(),
-        end_date=datetime(2026, 6, 5).date(), created_by=user.id,
+        title="Auto",
+        start_date=datetime(2026, 6, 1).date(),
+        end_date=datetime(2026, 6, 5).date(),
+        created_by=user.id,
     )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = Segment(
-        trip_id=trip.id, owner_user_id=user.id, type="flight", status="confirmed",
-        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC), start_tz="UTC",
-        parse_source="llm:haiku-4-5", parse_confidence=0.7,
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="flight",
+        status="confirmed",
+        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC),
+        start_tz="UTC",
+        parse_source="llm:haiku-4-5",
+        parse_confidence=0.7,
         raw_email_id=raw.id,
     )
     db_session.add(seg)
@@ -3825,14 +3893,20 @@ async def test_inbox_discard_action(
     transport = httpx.ASGITransport(app=app)
     async with (
         app.router.lifespan_context(app),
-        httpx.AsyncClient(transport=transport, base_url="http://test", cookies=_cookie(user, settings)) as c,
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+        ) as c,
     ):
         r = await c.post(f"/inbox/{raw.id}/discard", follow_redirects=False)
     assert r.status_code == 303
     await db_session.refresh(raw)
     assert raw.parse_status == "no_segments"
 
-    rows = (await db_session.execute(select(Segment).where(Segment.raw_email_id == raw.id))).scalars().all()
+    rows = (
+        (await db_session.execute(select(Segment).where(Segment.raw_email_id == raw.id)))
+        .scalars()
+        .all()
+    )
     assert rows == []  # auto-created segment deleted
 
 
@@ -3850,7 +3924,9 @@ async def test_inbox_reparse_action(
     with patch("trip_tracker.routes.inbox.enqueue_parse", new=AsyncMock()) as mock_enqueue:
         async with (
             app.router.lifespan_context(app),
-            httpx.AsyncClient(transport=transport, base_url="http://test", cookies=_cookie(user, settings)) as c,
+            httpx.AsyncClient(
+                transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+            ) as c,
         ):
             r = await c.post(f"/inbox/{raw.id}/reparse", follow_redirects=False)
     assert r.status_code == 303
@@ -3875,7 +3951,9 @@ async def test_inbox_404_for_other_users_raw(
     transport = httpx.ASGITransport(app=app)
     async with (
         app.router.lifespan_context(app),
-        httpx.AsyncClient(transport=transport, base_url="http://test", cookies=_cookie(user_b, settings)) as c,
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user_b, settings)
+        ) as c,
     ):
         r = await c.post(f"/inbox/{raw.id}/confirm", follow_redirects=False)
     assert r.status_code == 404
@@ -3933,9 +4011,7 @@ def _user_owned_filter(user: User) -> sa.ColumnElement[bool]:
 
 async def _load_owned(db: AsyncSession, user: User, raw_id: uuid.UUID) -> RawEmail:
     raw = (
-        await db.execute(
-            select(RawEmail).where(RawEmail.id == raw_id, _user_owned_filter(user))
-        )
+        await db.execute(select(RawEmail).where(RawEmail.id == raw_id, _user_owned_filter(user)))
     ).scalar_one_or_none()
     if raw is None:
         raise HTTPException(404)
@@ -3950,21 +4026,29 @@ async def inbox_list(
 ) -> HTMLResponse:
     own = _user_owned_filter(user)
     review_rows = (
-        await db.execute(
-            select(RawEmail)
-            .where(RawEmail.parse_status == "review", own)
-            .order_by(RawEmail.received_at.desc())
-            .limit(50)
+        (
+            await db.execute(
+                select(RawEmail)
+                .where(RawEmail.parse_status == "review", own)
+                .order_by(RawEmail.received_at.desc())
+                .limit(50)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     no_seg_rows = (
-        await db.execute(
-            select(RawEmail)
-            .where(RawEmail.parse_status == "no_segments", own)
-            .order_by(RawEmail.received_at.desc())
-            .limit(50)
+        (
+            await db.execute(
+                select(RawEmail)
+                .where(RawEmail.parse_status == "no_segments", own)
+                .order_by(RawEmail.received_at.desc())
+                .limit(50)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
         request,
         "inbox/list.html",
@@ -4169,6 +4253,7 @@ In `src/trip_tracker/app.py`, include the inbox router:
 
 ```python
 from trip_tracker.routes.inbox import router as inbox_router
+
 # ... in create_app:
 app.include_router(inbox_router)
 app.state.settings = settings  # so request.app.state.settings works in inbox routes
@@ -4265,21 +4350,35 @@ async def test_edit_with_from_raw_email_shows_sparkle(
         received_at=datetime.now(tz=UTC),
         to_address="oliver@trips.example.com",
         from_address="x@y.com",
-        subject="t", message_id=f"<{uuid.uuid4()}@x>",
-        mime_blob=b"", headers={}, parse_status="review",
+        subject="t",
+        message_id=f"<{uuid.uuid4()}@x>",
+        mime_blob=b"",
+        headers={},
+        parse_status="review",
     )
-    trip = Trip(title="T", start_date=datetime(2026, 6, 1).date(),
-                end_date=datetime(2026, 6, 5).date(), created_by=user.id)
+    trip = Trip(
+        title="T",
+        start_date=datetime(2026, 6, 1).date(),
+        end_date=datetime(2026, 6, 5).date(),
+        created_by=user.id,
+    )
     db_session.add_all([raw, trip])
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = Segment(
-        trip_id=trip.id, owner_user_id=user.id, type="flight", status="confirmed",
-        provider="Air France", confirmation_number="ABC123",
-        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC), start_tz="UTC",
-        start_location={"iata": "JFK"}, end_location={"iata": "CDG"},
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="flight",
+        status="confirmed",
+        provider="Air France",
+        confirmation_number="ABC123",
+        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC),
+        start_tz="UTC",
+        start_location={"iata": "JFK"},
+        end_location={"iata": "CDG"},
         details={"flight_number": "AF44"},
-        parse_source="rules:air_france", parse_confidence=0.9,
+        parse_source="rules:air_france",
+        parse_confidence=0.9,
     )
     db_session.add(seg)
     await db_session.commit()
@@ -4288,7 +4387,9 @@ async def test_edit_with_from_raw_email_shows_sparkle(
     transport = httpx.ASGITransport(app=app)
     async with (
         app.router.lifespan_context(app),
-        httpx.AsyncClient(transport=transport, base_url="http://test", cookies=_cookie(user, settings)) as c,
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+        ) as c,
     ):
         r = await c.get(f"/trips/{trip.id}/segments/{seg.id}/edit?from_raw_email={raw.id}")
     assert r.status_code == 200
@@ -4306,15 +4407,24 @@ async def test_edit_without_from_raw_email_no_sparkle(
     user = User(oidc_subject="m", email="m@x.com", display_name="M")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(title="T", start_date=datetime(2026, 6, 1).date(),
-                end_date=datetime(2026, 6, 5).date(), created_by=user.id)
+    trip = Trip(
+        title="T",
+        start_date=datetime(2026, 6, 1).date(),
+        end_date=datetime(2026, 6, 5).date(),
+        created_by=user.id,
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = Segment(
-        trip_id=trip.id, owner_user_id=user.id, type="flight", status="confirmed",
-        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC), start_tz="UTC",
-        parse_source="manual", parse_confidence=1.0,
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="flight",
+        status="confirmed",
+        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC),
+        start_tz="UTC",
+        parse_source="manual",
+        parse_confidence=1.0,
     )
     db_session.add(seg)
     await db_session.commit()
@@ -4323,7 +4433,9 @@ async def test_edit_without_from_raw_email_no_sparkle(
     transport = httpx.ASGITransport(app=app)
     async with (
         app.router.lifespan_context(app),
-        httpx.AsyncClient(transport=transport, base_url="http://test", cookies=_cookie(user, settings)) as c,
+        httpx.AsyncClient(
+            transport=transport, base_url="http://test", cookies=_cookie(user, settings)
+        ) as c,
     ):
         r = await c.get(f"/trips/{trip.id}/segments/{seg.id}/edit")
     assert r.status_code == 200

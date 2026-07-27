@@ -119,7 +119,8 @@ src/trip_tracker/parsers/vendors/
 ```python
 class SegmentDraft(BaseModel):
     """Pydantic schema mirrored to the Segment ORM shape, no DB columns."""
-    type: SegmentType                      # flight | lodging | car | train | transfer | activity
+
+    type: SegmentType  # flight | lodging | car | train | transfer | activity
     status: Literal["confirmed", "tentative", "cancelled"] = "confirmed"
     confirmation_number: str | None = None
     provider: str | None = None
@@ -131,16 +132,18 @@ class SegmentDraft(BaseModel):
     end_location: dict[str, Any] | None = None
     details: dict[str, Any] = {}
 
+
 class ParseResult(BaseModel):
-    segments: list[SegmentDraft]           # 0 or more — empty == "no segments here"
-    confidence: float                       # 0..1
-    source: str                             # "json-ld" | "rules:air_france" | "llm:haiku-4-5"
+    segments: list[SegmentDraft]  # 0 or more — empty == "no segments here"
+    confidence: float  # 0..1
+    source: str  # "json-ld" | "rules:air_france" | "llm:haiku-4-5"
     warnings: list[str] = []
 
+
 class VendorParser(ABC):
-    name: ClassVar[str]                              # unique key
-    sender_patterns: ClassVar[list[re.Pattern[str]]] # From: matchers
-    confidence_floor: ClassVar[float] = 0.85         # below = fall through to next strategy
+    name: ClassVar[str]  # unique key
+    sender_patterns: ClassVar[list[re.Pattern[str]]]  # From: matchers
+    confidence_floor: ClassVar[float] = 0.85  # below = fall through to next strategy
 
     @abstractmethod
     def parse(self, msg: EmailMessage) -> ParseResult: ...

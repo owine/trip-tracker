@@ -118,10 +118,13 @@ New module `src/trip_tracker/documents/storage.py`:
 class StorageBackend(Protocol):
     async def put(self, sha256: str, content: AsyncIterator[bytes]) -> str:
         """Stream content to storage. Returns the storage_key."""
+
     async def open(self, storage_key: str) -> AsyncIterator[bytes]:
         """Open for reading. Caller is responsible for closing."""
+
     async def delete(self, storage_key: str) -> None:
         """Idempotent: missing key is not an error."""
+
     def absolute_path(self, storage_key: str) -> str | None:
         """Return a local FS path for X-Accel, or None if backend can't."""
 ```
@@ -240,8 +243,7 @@ If no rule matches, return `None` → caller leaves `segment_id` NULL (= "trip-l
 New module `src/trip_tracker/documents/extract.py`:
 
 ```python
-async def extract_document(ctx: ExtractCtx, *, document_id: str) -> None:
-    ...
+async def extract_document(ctx: ExtractCtx, *, document_id: str) -> None: ...
 ```
 
 Registered in `worker.settings["functions"]` alongside `parse_raw_email` and `sync_meili`. `ExtractCtx` has the same shape as the existing parser context: `engine`, `settings`, `storage` (new — built at worker startup). The startup hook (`worker.startup`) gains:
@@ -279,7 +281,7 @@ ctx["storage"] = LocalFsStorage(Path(settings.documents_dir))
 
 ```python
 _DOCUMENTS_FILTERABLE = ["traveler_ids", "trip_id", "segment_id", "owner_user_id"]
-_DOCUMENTS_SORTABLE   = ["created_at_unix"]
+_DOCUMENTS_SORTABLE = ["created_at_unix"]
 ```
 
 ### 9.2 `document_to_doc(doc, db) -> dict`

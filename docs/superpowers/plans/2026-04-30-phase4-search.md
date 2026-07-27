@@ -305,15 +305,21 @@ def test_protocol_methods_exist() -> None:
 
 
 def test_build_client_uses_settings() -> None:
-    s = Settings(_env_file=None,
-                 database_url="postgresql+asyncpg://u:p@h/d",
-                 session_secret="x" * 32,
-                 oidc_issuer="https://x", oidc_client_id="x",
-                 oidc_client_secret="x", oidc_redirect_uri="https://x",
-                 base_url="https://x", webhook_secret="x" * 32,
-                 anthropic_api_key="sk-ant-test", redis_url="redis://x",
-                 meili_url="http://meili-test:7700",
-                 meili_master_key="key32bytes")
+    s = Settings(
+        _env_file=None,
+        database_url="postgresql+asyncpg://u:p@h/d",
+        session_secret="x" * 32,
+        oidc_issuer="https://x",
+        oidc_client_id="x",
+        oidc_client_secret="x",
+        oidc_redirect_uri="https://x",
+        base_url="https://x",
+        webhook_secret="x" * 32,
+        anthropic_api_key="sk-ant-test",
+        redis_url="redis://x",
+        meili_url="http://meili-test:7700",
+        meili_master_key="key32bytes",
+    )
     client = build_client(s)
     assert client is not None
     # The client should have an index() method (Protocol-conformant)
@@ -353,9 +359,7 @@ class MeiliClientProtocol(Protocol):
     """The subset of meilisearch_python_sdk.AsyncClient we use."""
 
     def index(self, uid: str) -> MeiliIndexProtocol: ...
-    async def create_index(
-        self, uid: str, primary_key: str | None = None
-    ) -> Any: ...
+    async def create_index(self, uid: str, primary_key: str | None = None) -> Any: ...
     async def delete_index(self, uid: str) -> Any: ...
 
 
@@ -465,20 +469,28 @@ async def test_segment_to_doc_flight(db_session: AsyncSession) -> None:
     db_session.add(user)
     await db_session.flush()
     trip = Trip(
-        title="Trip", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
+        title="Trip",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 5),
         created_by=user.id,
     )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = Segment(
-        trip_id=trip.id, owner_user_id=user.id, type="flight", status="confirmed",
-        provider="Air France", confirmation_number="ABC123",
-        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC), start_tz="UTC",
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="flight",
+        status="confirmed",
+        provider="Air France",
+        confirmation_number="ABC123",
+        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC),
+        start_tz="UTC",
         start_location={"iata": "JFK", "city": "New York"},
         end_location={"iata": "CDG", "city": "Paris"},
         details={"flight_number": "AF44", "notes": "anniversary trip", "seat": "12A"},
-        parse_source="manual", parse_confidence=1.0,
+        parse_source="manual",
+        parse_confidence=1.0,
     )
     db_session.add(seg)
     await db_session.commit()
@@ -505,17 +517,23 @@ async def test_segment_to_doc_lodging_no_vehicle_number(
     user = User(oidc_subject="u3", email="u3@x.com", display_name="U3")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
-                created_by=user.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = Segment(
-        trip_id=trip.id, owner_user_id=user.id, type="lodging", status="confirmed",
-        start_at=datetime(2026, 6, 1, 15, tzinfo=UTC), start_tz="UTC",
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="lodging",
+        status="confirmed",
+        start_at=datetime(2026, 6, 1, 15, tzinfo=UTC),
+        start_tz="UTC",
         start_location={"name": "Le Marais Hotel", "city": "Paris"},
         details={"room_type": "Deluxe Suite"},
-        parse_source="manual", parse_confidence=1.0,
+        parse_source="manual",
+        parse_confidence=1.0,
     )
     db_session.add(seg)
     await db_session.commit()
@@ -535,16 +553,22 @@ async def test_segment_to_doc_car_no_vehicle_number(
     user = User(oidc_subject="u_car", email="ucar@x.com", display_name="UCAR")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
-                created_by=user.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = Segment(
-        trip_id=trip.id, owner_user_id=user.id, type="car", status="confirmed",
-        start_at=datetime(2026, 6, 1, 14, tzinfo=UTC), start_tz="UTC",
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="car",
+        status="confirmed",
+        start_at=datetime(2026, 6, 1, 14, tzinfo=UTC),
+        start_tz="UTC",
         details={"car_class": "Compact"},
-        parse_source="manual", parse_confidence=1.0,
+        parse_source="manual",
+        parse_confidence=1.0,
     )
     db_session.add(seg)
     await db_session.commit()
@@ -560,18 +584,24 @@ async def test_segment_to_doc_train_uses_train_number(
     user = User(oidc_subject="u4", email="u4@x.com", display_name="U4")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
-                created_by=user.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     seg = Segment(
-        trip_id=trip.id, owner_user_id=user.id, type="train", status="confirmed",
-        start_at=datetime(2026, 6, 2, 9, tzinfo=UTC), start_tz="UTC",
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="train",
+        status="confirmed",
+        start_at=datetime(2026, 6, 2, 9, tzinfo=UTC),
+        start_tz="UTC",
         start_location={"name": "Paris Gare de Lyon"},
         end_location={"name": "Lyon Part Dieu"},
         details={"train_number": "9573"},
-        parse_source="manual", parse_confidence=1.0,
+        parse_source="manual",
+        parse_confidence=1.0,
     )
     db_session.add(seg)
     await db_session.commit()
@@ -610,10 +640,10 @@ _EPOCH = date(1970, 1, 1)
 
 async def _trip_traveler_ids(db: AsyncSession, trip_id: uuid.UUID) -> list[str]:
     rows = (
-        await db.execute(
-            select(TripTraveler.user_id).where(TripTraveler.trip_id == trip_id)
-        )
-    ).scalars().all()
+        (await db.execute(select(TripTraveler.user_id).where(TripTraveler.trip_id == trip_id)))
+        .scalars()
+        .all()
+    )
     return [str(uid) for uid in rows]
 
 
@@ -651,9 +681,7 @@ async def segment_to_doc(seg: Segment, *, db: AsyncSession) -> dict[str, Any]:
     return {
         "id": str(seg.id),
         "trip_id": str(seg.trip_id) if seg.trip_id else None,
-        "traveler_ids": (
-            await _trip_traveler_ids(db, seg.trip_id) if seg.trip_id else []
-        ),
+        "traveler_ids": (await _trip_traveler_ids(db, seg.trip_id) if seg.trip_id else []),
         "type": seg.type,
         "provider": seg.provider,
         "confirmation_number": seg.confirmation_number,
@@ -728,16 +756,15 @@ from trip_tracker.search.client import MeiliClientProtocol
 
 
 @pytest.mark.asyncio
-async def test_sync_meili_upserts_existing_trip(
-    db_url: str, db_session: AsyncSession
-) -> None:
+async def test_sync_meili_upserts_existing_trip(db_url: str, db_session: AsyncSession) -> None:
     from trip_tracker.worker import sync_meili
 
     user = User(oidc_subject="m1", email="m1@x.com", display_name="M1")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(title="T1", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
-                created_by=user.id)
+    trip = Trip(
+        title="T1", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
@@ -764,9 +791,7 @@ async def test_sync_meili_upserts_existing_trip(
 
 
 @pytest.mark.asyncio
-async def test_sync_meili_deletes_when_row_missing(
-    db_url: str, db_session: AsyncSession
-) -> None:
+async def test_sync_meili_deletes_when_row_missing(db_url: str, db_session: AsyncSession) -> None:
     """If the entity isn't in Postgres (deleted), issue a Meili delete instead."""
     from trip_tracker.worker import sync_meili
 
@@ -800,9 +825,7 @@ async def test_enqueue_meili_sync_uses_unique_key(
     fake_queue.enqueue = AsyncMock()
     fake_queue.disconnect = AsyncMock()
 
-    monkeypatch.setattr(
-        "trip_tracker.search.sync._build_queue", lambda settings: fake_queue
-    )
+    monkeypatch.setattr("trip_tracker.search.sync._build_queue", lambda settings: fake_queue)
 
     seg_id = uuid.uuid4()
     await enqueue_meili_sync(Settings(), entity="segment", entity_id=seg_id)
@@ -861,9 +884,7 @@ from trip_tracker.search.client import MeiliClientProtocol, build_client
 from trip_tracker.search.sync import segment_to_doc, trip_to_doc
 
 
-async def sync_meili(
-    ctx: dict[str, Any], *, entity: str, entity_id: str
-) -> None:
+async def sync_meili(ctx: dict[str, Any], *, entity: str, entity_id: str) -> None:
     """Upsert one Trip or Segment to Meili. On delete from Postgres, the
     entity is gone — issue a Meili delete instead."""
     settings: Settings = ctx["settings"]
@@ -1195,9 +1216,7 @@ async def test_search_segments_filters_by_user(
 
 
 @pytest.mark.asyncio
-async def test_search_requires_session(
-    db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_search_requires_session(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """No session cookie → 401."""
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
@@ -1300,6 +1319,7 @@ async def search(
 
 ```python
 from trip_tracker.search.proxy import router as search_router
+
 # in create_app:
 app.include_router(search_router)
 ```
@@ -1594,7 +1614,9 @@ async def test_ensure_indexes_configured_calls_settings() -> None:
 
     await ensure_indexes_configured(fake_meili)
 
-    fake_idx_trips.update_filterable_attributes.assert_awaited_with(["traveler_ids", "start_date", "end_date"])
+    fake_idx_trips.update_filterable_attributes.assert_awaited_with(
+        ["traveler_ids", "start_date", "end_date"]
+    )
     fake_idx_trips.update_sortable_attributes.assert_awaited_with(["start_date"])
     fake_idx_segments.update_filterable_attributes.assert_awaited_with(
         ["traveler_ids", "trip_id", "type", "start_at_unix"]
@@ -1708,22 +1730,28 @@ from trip_tracker.search.reindex import reindex_all
 
 
 @pytest.mark.asyncio
-async def test_reindex_walks_all_rows(
-    db_url: str, db_session: AsyncSession
-) -> None:
+async def test_reindex_walks_all_rows(db_url: str, db_session: AsyncSession) -> None:
     user = User(oidc_subject="r1", email="r1@x.com", display_name="R1")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
-                created_by=user.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
-    db_session.add(Segment(
-        trip_id=trip.id, owner_user_id=user.id, type="flight", status="confirmed",
-        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC), start_tz="UTC",
-        parse_source="manual", parse_confidence=1.0,
-    ))
+    db_session.add(
+        Segment(
+            trip_id=trip.id,
+            owner_user_id=user.id,
+            type="flight",
+            status="confirmed",
+            start_at=datetime(2026, 6, 1, 13, tzinfo=UTC),
+            start_tz="UTC",
+            parse_source="manual",
+            parse_confidence=1.0,
+        )
+    )
     await db_session.commit()
 
     fake_idx_trips = MagicMock()
@@ -1733,7 +1761,9 @@ async def test_reindex_walks_all_rows(
     fake_meili = MagicMock()
     fake_meili.delete_index = AsyncMock()
     fake_meili.create_index = AsyncMock()
-    fake_meili.index = MagicMock(side_effect=lambda n: {"trips": fake_idx_trips, "segments": fake_idx_segments}[n])
+    fake_meili.index = MagicMock(
+        side_effect=lambda n: {"trips": fake_idx_trips, "segments": fake_idx_segments}[n]
+    )
 
     engine = create_async_engine(db_url)
     counts = await reindex_all(engine, fake_meili, batch_size=100)
@@ -1746,9 +1776,7 @@ async def test_reindex_walks_all_rows(
 
 
 @pytest.mark.asyncio
-async def test_reindex_dry_run_skips_meili(
-    db_url: str, db_session: AsyncSession
-) -> None:
+async def test_reindex_dry_run_skips_meili(db_url: str, db_session: AsyncSession) -> None:
     fake_meili = MagicMock()
     fake_meili.delete_index = AsyncMock()
     fake_meili.create_index = AsyncMock()

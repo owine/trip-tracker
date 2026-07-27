@@ -83,7 +83,7 @@ In `src/trip_tracker/config.py` add a new `SecretStr` field. Keep it required (n
 forwardemail_relay_token: SecretStr = Field(
     ...,
     description="Shared secret for the ForwardEmail webhook adapter. "
-                "Compared with the ?token= query param via hmac.compare_digest.",
+    "Compared with the ?token= query param via hmac.compare_digest.",
 )
 ```
 
@@ -254,7 +254,9 @@ async def ingest_forwardemail(
     except json.JSONDecodeError:
         return JSONResponse({"error": "bad_request", "detail": "invalid JSON"}, status_code=400)
     if not isinstance(payload, dict):
-        return JSONResponse({"error": "bad_request", "detail": "expected JSON object"}, status_code=400)
+        return JSONResponse(
+            {"error": "bad_request", "detail": "expected JSON object"}, status_code=400
+        )
 
     raw_str = payload.get("raw")
     if not isinstance(raw_str, str) or not raw_str:
@@ -298,6 +300,7 @@ In `src/trip_tracker/app.py`, alongside the existing `app.include_router(ingest_
 
 ```python
 from trip_tracker.ingest.forwardemail import router as forwardemail_router
+
 app.include_router(forwardemail_router)
 ```
 
@@ -338,7 +341,9 @@ from sqlalchemy import select
 
 from trip_tracker.models.raw_email import RawEmail
 
-_FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "forwardemail_payload.json").read_text())
+_FIXTURE = json.loads(
+    (Path(__file__).parent / "fixtures" / "forwardemail_payload.json").read_text()
+)
 
 
 @pytest.mark.asyncio

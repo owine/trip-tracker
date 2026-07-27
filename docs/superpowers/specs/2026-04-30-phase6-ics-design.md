@@ -88,7 +88,7 @@ import secrets
 
 def generate_token() -> tuple[str, str]:
     """Returns (plaintext, hash). Caller stores ONLY the hash."""
-    plaintext = secrets.token_urlsafe(32)   # ~43 URL-safe chars
+    plaintext = secrets.token_urlsafe(32)  # ~43 URL-safe chars
     hash_ = hashlib.sha256(plaintext.encode()).hexdigest()
     return plaintext, hash_
 
@@ -99,9 +99,7 @@ def hash_token(plaintext: str) -> str:
 
 async def resolve_token(plaintext: str, db: AsyncSession) -> User | None:
     h = hash_token(plaintext)
-    return (
-        await db.execute(select(User).where(User.ics_token_hash == h))
-    ).scalar_one_or_none()
+    return (await db.execute(select(User).where(User.ics_token_hash == h))).scalar_one_or_none()
 ```
 
 ### 5.2 Operations
@@ -240,15 +238,20 @@ async def ics_feed(
     if user is None:
         raise HTTPException(status_code=404, detail="Not found")
 
-    segments = (await db.execute(
-        select(Segment)
-        .join(TripTraveler, TripTraveler.trip_id == Segment.trip_id)
-        .where(TripTraveler.user_id == user.id)
-        .order_by(Segment.start_at)
-    )).scalars().all()
+    segments = (
+        (
+            await db.execute(
+                select(Segment)
+                .join(TripTraveler, TripTraveler.trip_id == Segment.trip_id)
+                .where(TripTraveler.user_id == user.id)
+                .order_by(Segment.start_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
-    body = render_calendar(user=user, segments=segments,
-                           base_url=str(settings.base_url))
+    body = render_calendar(user=user, segments=segments, base_url=str(settings.base_url))
     return Response(
         content=body,
         media_type="text/calendar; charset=utf-8",
