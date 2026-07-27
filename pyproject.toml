@@ -5,7 +5,7 @@ description = "Self-hosted itinerary aggregator (TripIt replacement)."
 readme = "README.md"
 requires-python = "==3.14.6"
 dependencies = [
-    "fastapi==0.139.2",
+    "fastapi==0.140.0",
     "uvicorn[standard]==0.51.0",
     "jinja2==3.1.6",
     "pydantic==2.13.4",
