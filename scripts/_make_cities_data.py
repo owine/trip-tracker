@@ -21,7 +21,7 @@ OUT = Path(__file__).parent.parent / "src" / "trip_tracker" / "static" / "data" 
 
 def main() -> None:
     print(f"Downloading {GEONAMES_URL} ...")
-    with urllib.request.urlopen(GEONAMES_URL) as resp:  # noqa: S310
+    with urllib.request.urlopen(GEONAMES_URL) as resp:
         zip_bytes = resp.read()
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
         raw = zf.read("cities1000.txt").decode("utf-8")

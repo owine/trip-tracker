@@ -35,11 +35,11 @@ dev = [
     "pytest-postgresql==8.1.0",
     "psycopg[binary]==3.3.4",          # used by pytest-postgresql
     "respx==0.23.1",                   # mock httpx
-    "ruff==0.15.22",
+    "ruff==0.16.0",
     "mypy==2.3.0",
     "types-passlib==1.7.7.20260211",
-    "pre-commit==4.6.0",
-    "djlint==1.40.8",
+    "pre-commit==4.6.1",
+    "djlint==1.42.3",
     "bandit[toml]==1.9.4",
     "pip-audit==2.10.1",
     "icalendar==7.2.2",
@@ -59,6 +59,9 @@ packages = ["src/trip_tracker"]
 line-length = 100
 target-version = "py313"  # ruff doesn't yet recognize py314; py313 is a safe subset
 src = ["src", "tests"]
+# ruff >=0.16 formats python code blocks inside markdown. The specs/plans under
+# docs/ are archival records of what was written at the time — don't rewrite them.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = [
