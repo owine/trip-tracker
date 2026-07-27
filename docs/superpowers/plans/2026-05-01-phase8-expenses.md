@@ -131,17 +131,23 @@ async def test_expense_cascades_with_trip(db_session: AsyncSession) -> None:
     user = User(oidc_subject="e1", email="e1@x.com", display_name="E1")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
-                created_by=user.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
 
     exp = Expense(
-        trip_id=trip.id, owner_user_id=user.id,
-        amount_minor=3800, currency="EUR",
-        fx_rate=Decimal("1.0700000000"), amount_home_minor=4066,
-        home_currency="USD", category="food", incurred_on=date(2026, 6, 4),
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        amount_minor=3800,
+        currency="EUR",
+        fx_rate=Decimal("1.0700000000"),
+        amount_home_minor=4066,
+        home_currency="USD",
+        category="food",
+        incurred_on=date(2026, 6, 4),
         status="paid",
     )
     db_session.add(exp)
@@ -158,28 +164,45 @@ async def test_expense_cascades_with_trip(db_session: AsyncSession) -> None:
 async def test_expense_segment_set_null_on_segment_delete(db_session: AsyncSession) -> None:
     """Segment delete → expense.segment_id becomes NULL but row survives."""
     from datetime import datetime as _dt
+
     user = User(oidc_subject="e2", email="e2@x.com", display_name="E2")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
-                created_by=user.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     from trip_tracker.models.segment import Segment
+
     seg = Segment(
-        trip_id=trip.id, owner_user_id=user.id, type="lodging", status="confirmed",
-        provider="Hotel X", start_at=_dt(2026, 6, 2, 15, 0, tzinfo=UTC), start_tz="UTC",
-        end_at=_dt(2026, 6, 3, 11, 0, tzinfo=UTC), end_tz="UTC",
-        details={}, parse_source="manual", parse_confidence=1.0,
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="lodging",
+        status="confirmed",
+        provider="Hotel X",
+        start_at=_dt(2026, 6, 2, 15, 0, tzinfo=UTC),
+        start_tz="UTC",
+        end_at=_dt(2026, 6, 3, 11, 0, tzinfo=UTC),
+        end_tz="UTC",
+        details={},
+        parse_source="manual",
+        parse_confidence=1.0,
     )
     db_session.add(seg)
     await db_session.flush()
     exp = Expense(
-        trip_id=trip.id, owner_user_id=user.id, segment_id=seg.id,
-        amount_minor=20000, currency="USD",
-        fx_rate=Decimal("1.0000000000"), amount_home_minor=20000,
-        home_currency="USD", category="lodging", incurred_on=date(2026, 6, 2),
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        segment_id=seg.id,
+        amount_minor=20000,
+        currency="USD",
+        fx_rate=Decimal("1.0000000000"),
+        amount_home_minor=20000,
+        home_currency="USD",
+        category="lodging",
+        incurred_on=date(2026, 6, 2),
         status="paid",
     )
     db_session.add(exp)
@@ -196,25 +219,38 @@ async def test_expense_segment_set_null_on_segment_delete(db_session: AsyncSessi
 async def test_expense_document_set_null_on_document_delete(db_session: AsyncSession) -> None:
     """Document delete → expense.document_id becomes NULL but row survives."""
     from trip_tracker.models.document import Document
+
     user = User(oidc_subject="e3", email="e3@x.com", display_name="E3")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
-                created_by=user.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     doc = Document(
-        owner_user_id=user.id, filename="receipt.pdf", mime_type="application/pdf",
-        size_bytes=1024, sha256="a" * 64, storage_key="docs/x.pdf",
+        owner_user_id=user.id,
+        filename="receipt.pdf",
+        mime_type="application/pdf",
+        size_bytes=1024,
+        sha256="a" * 64,
+        storage_key="docs/x.pdf",
     )
     db_session.add(doc)
     await db_session.flush()
     exp = Expense(
-        trip_id=trip.id, owner_user_id=user.id, document_id=doc.id,
-        amount_minor=3800, currency="EUR",
-        fx_rate=Decimal("1.0700000000"), amount_home_minor=4066,
-        home_currency="USD", category="food", incurred_on=date(2026, 6, 4), status="paid",
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        document_id=doc.id,
+        amount_minor=3800,
+        currency="EUR",
+        fx_rate=Decimal("1.0700000000"),
+        amount_home_minor=4066,
+        home_currency="USD",
+        category="food",
+        incurred_on=date(2026, 6, 4),
+        status="paid",
     )
     db_session.add(exp)
     await db_session.commit()
@@ -231,16 +267,23 @@ async def test_expense_owner_cascade_on_user_delete(db_session: AsyncSession) ->
     user = User(oidc_subject="e4", email="e4@x.com", display_name="E4")
     db_session.add(user)
     await db_session.flush()
-    trip = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5),
-                created_by=user.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
     exp = Expense(
-        trip_id=trip.id, owner_user_id=user.id,
-        amount_minor=3800, currency="EUR",
-        fx_rate=Decimal("1.0700000000"), amount_home_minor=4066,
-        home_currency="USD", category="food", incurred_on=date(2026, 6, 4), status="paid",
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        amount_minor=3800,
+        currency="EUR",
+        fx_rate=Decimal("1.0700000000"),
+        amount_home_minor=4066,
+        home_currency="USD",
+        category="food",
+        incurred_on=date(2026, 6, 4),
+        status="paid",
     )
     db_session.add(exp)
     await db_session.commit()
@@ -337,8 +380,12 @@ class Expense(Base):
 def upgrade() -> None:
     op.create_table(
         "expenses",
-        sa.Column("id", postgresql.UUID(as_uuid=True),
-                  server_default=sa.text("gen_random_uuid()"), primary_key=True),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("gen_random_uuid()"),
+            primary_key=True,
+        ),
         sa.Column("trip_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("segment_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("document_id", postgresql.UUID(as_uuid=True), nullable=True),
@@ -355,10 +402,18 @@ def upgrade() -> None:
         sa.Column("deposit_minor", sa.BigInteger(), nullable=True),
         sa.Column("cancellation_deadline", sa.Date(), nullable=True),
         sa.Column("cancellation_fee_minor", sa.BigInteger(), nullable=True),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["trip_id"], ["trips.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["segment_id"], ["segments.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["document_id"], ["documents.id"], ondelete="SET NULL"),
@@ -415,9 +470,7 @@ async def test_user_default_home_currency(db_session: AsyncSession) -> None:
 - [ ] **Step 2.3:** Add to `User` model:
 
 ```python
-home_currency: Mapped[str] = mapped_column(
-    String(3), nullable=False, server_default="USD"
-)
+home_currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="USD")
 ```
 
 - [ ] **Step 2.4:** `uv run alembic revision -m "phase8_home_currency"`. Set `down_revision` to the revision id generated by Task 1 (run `uv run alembic heads` after Task 1's migration is in place — it should be Task 1's id). Body:
@@ -426,9 +479,9 @@ home_currency: Mapped[str] = mapped_column(
 def upgrade() -> None:
     op.add_column(
         "users",
-        sa.Column("home_currency", sa.String(length=3),
-                  nullable=False, server_default="USD"),
+        sa.Column("home_currency", sa.String(length=3), nullable=False, server_default="USD"),
     )
+
 
 def downgrade() -> None:
     op.drop_column("users", "home_currency")
@@ -462,13 +515,24 @@ git commit -am "feat(expenses): add users.home_currency (default USD)"
 # tests/test_expenses_categories.py
 from trip_tracker.expenses.categories import Category, CATEGORY_LABELS
 
+
 def test_category_values_are_lowercase_snake() -> None:
-    expected = {"food", "transit", "lodging", "activities", "shopping",
-                "gratuities", "connectivity", "other"}
+    expected = {
+        "food",
+        "transit",
+        "lodging",
+        "activities",
+        "shopping",
+        "gratuities",
+        "connectivity",
+        "other",
+    }
     assert {c.value for c in Category} == expected
+
 
 def test_category_labels_cover_all_values() -> None:
     assert set(CATEGORY_LABELS) == set(Category)
+
 
 def test_category_label_examples() -> None:
     assert CATEGORY_LABELS[Category.FOOD] == "Food"
@@ -481,13 +545,16 @@ def test_category_label_examples() -> None:
 # tests/test_expenses_currencies.py
 from trip_tracker.expenses.currencies import CURRENCY_MINOR, minor_digits
 
+
 def test_zero_decimal_currencies() -> None:
     for code in ("JPY", "KRW", "VND", "CLP", "ISK"):
         assert minor_digits(code) == 0
 
+
 def test_three_decimal_currencies() -> None:
     for code in ("BHD", "JOD", "KWD", "OMR", "TND"):
         assert minor_digits(code) == 3
+
 
 def test_default_two_decimals() -> None:
     assert minor_digits("USD") == 2
@@ -537,8 +604,16 @@ CATEGORY_LABELS: dict[Category, str] = {
 from __future__ import annotations
 
 CURRENCY_MINOR: dict[str, int] = {
-    "JPY": 0, "KRW": 0, "VND": 0, "CLP": 0, "ISK": 0,
-    "BHD": 3, "JOD": 3, "KWD": 3, "OMR": 3, "TND": 3,
+    "JPY": 0,
+    "KRW": 0,
+    "VND": 0,
+    "CLP": 0,
+    "ISK": 0,
+    "BHD": 3,
+    "JOD": 3,
+    "KWD": 3,
+    "OMR": 3,
+    "TND": 3,
 }
 
 
@@ -655,8 +730,9 @@ async def test_get_rate_cache_hit_no_fetch() -> None:
 @pytest.mark.asyncio
 async def test_get_rate_missing_target_raises() -> None:
     fake = FakeRedis()
-    with patch("trip_tracker.expenses.fx.fetch_rates",
-               AsyncMock(return_value={"EUR": Decimal("0.93")})):
+    with patch(
+        "trip_tracker.expenses.fx.fetch_rates", AsyncMock(return_value={"EUR": Decimal("0.93")})
+    ):
         with pytest.raises(FxError):
             await get_rate("USD", "ZZZ", fake)  # type: ignore[arg-type]
 
@@ -666,8 +742,9 @@ async def test_fetch_rates_parses_decimal_from_string() -> None:
     """Rates parsed via parse_float=Decimal so we never round-trip via float."""
     fake_response = AsyncMock()
     fake_response.status_code = 200
-    fake_response.text = json.dumps({"base": "USD", "date": "2026-05-01",
-                                     "rates": {"EUR": 0.9300000123, "JPY": 156.4}})
+    fake_response.text = json.dumps(
+        {"base": "USD", "date": "2026-05-01", "rates": {"EUR": 0.9300000123, "JPY": 156.4}}
+    )
     fake_response.raise_for_status = lambda: None
     fake_client = AsyncMock()
     fake_client.__aenter__.return_value = fake_client
@@ -683,6 +760,7 @@ async def test_fetch_rates_parses_decimal_from_string() -> None:
 @pytest.mark.asyncio
 async def test_fetch_rates_5xx_raises_fxerror() -> None:
     import httpx
+
     fake_response = AsyncMock()
     fake_response.raise_for_status = lambda: (_ for _ in ()).throw(
         httpx.HTTPStatusError("503", request=AsyncMock(), response=AsyncMock())
@@ -891,9 +969,7 @@ class _RedisLike(Protocol):
     async def set(self, key: str, value: str | bytes, ex: int | None = None) -> object: ...
 
 
-def recompute_home_minor(
-    amount_minor: int, native: str, home: str, fx_rate: Decimal
-) -> int:
+def recompute_home_minor(amount_minor: int, native: str, home: str, fx_rate: Decimal) -> int:
     """Recompute the home-currency minor-unit equivalent for a known fx_rate.
 
     Used on the edit path when amount_minor changes but currency does not — we
@@ -1022,13 +1098,15 @@ logger = logging.getLogger(__name__)
 
 @router.get("/trips/{trip_id}/expenses/new", response_class=HTMLResponse)
 async def new_expense_form(
-    request: Request, trip_id: uuid.UUID,
+    request: Request,
+    trip_id: uuid.UUID,
     user: User = Depends(require_user),  # noqa: B008
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> HTMLResponse:
     if not await _user_can_access_trip(db, user, trip_id):
         raise HTTPException(404)
     return _render_form(request, user, trip_id, values={}, errors={})
+
 
 _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
@@ -1065,7 +1143,10 @@ async def create_expense(
 
     if form.home_currency_at_load != user.home_currency:
         return _render_form(
-            request, user, trip_id, form_data,
+            request,
+            user,
+            trip_id,
+            form_data,
             errors={"_form": "Your home currency changed in another tab — review and resubmit."},
         )
 
@@ -1076,7 +1157,10 @@ async def create_expense(
     except FxError as exc:
         logger.warning("FX unavailable on create: %s", exc)
         return _render_form(
-            request, user, trip_id, form_data,
+            request,
+            user,
+            trip_id,
+            form_data,
             errors={"_form": "Currency rates unavailable. Try again in a few minutes."},
         )
 
@@ -1101,11 +1185,13 @@ async def create_expense(
     db.add(exp)
     await db.commit()
     if "session" in request.scope:
-        request.session["flash"] = {"kind": "expense_saved",
-                                    "amount_minor": form.amount_minor,
-                                    "currency": form.currency,
-                                    "home_minor": home_minor,
-                                    "home_currency": user.home_currency}
+        request.session["flash"] = {
+            "kind": "expense_saved",
+            "amount_minor": form.amount_minor,
+            "currency": form.currency,
+            "home_minor": home_minor,
+            "home_currency": user.home_currency,
+        }
     return RedirectResponse(f"/trips/{trip_id}", status_code=303)
 
 
@@ -1118,12 +1204,13 @@ async def edit_expense_form(
 ) -> HTMLResponse:
     exp = await db.get(Expense, expense_id)
     if exp is None or not (
-        exp.owner_user_id == user.id
-        or await _user_can_access_trip(db, user, exp.trip_id)
+        exp.owner_user_id == user.id or await _user_can_access_trip(db, user, exp.trip_id)
     ):
         raise HTTPException(404)
     return _render_form(
-        request, user, exp.trip_id,
+        request,
+        user,
+        exp.trip_id,
         values=_expense_to_form_values(exp),
         errors={},
         edit_id=expense_id,
@@ -1140,8 +1227,7 @@ async def update_expense(
 ) -> Response:
     exp = await db.get(Expense, expense_id)
     if exp is None or not (
-        exp.owner_user_id == user.id
-        or await _user_can_access_trip(db, user, exp.trip_id)
+        exp.owner_user_id == user.id or await _user_can_access_trip(db, user, exp.trip_id)
     ):
         raise HTTPException(404)
 
@@ -1149,12 +1235,16 @@ async def update_expense(
     try:
         form = ExpenseForm(**form_data)
     except ValidationError as exc:
-        return _render_form(request, user, exp.trip_id, form_data,
-                             errors=_pydantic_errors(exc), edit_id=expense_id)
+        return _render_form(
+            request, user, exp.trip_id, form_data, errors=_pydantic_errors(exc), edit_id=expense_id
+        )
 
     if form.home_currency_at_load != user.home_currency:
         return _render_form(
-            request, user, exp.trip_id, form_data,
+            request,
+            user,
+            exp.trip_id,
+            form_data,
             errors={"_form": "Your home currency changed in another tab — review and resubmit."},
             edit_id=expense_id,
         )
@@ -1170,7 +1260,10 @@ async def update_expense(
             )
         except FxError:
             return _render_form(
-                request, user, exp.trip_id, form_data,
+                request,
+                user,
+                exp.trip_id,
+                form_data,
                 errors={"_form": "Currency rates unavailable. Try again in a few minutes."},
                 edit_id=expense_id,
             )
@@ -1207,8 +1300,7 @@ async def delete_expense(
 ) -> Response:
     exp = await db.get(Expense, expense_id)
     if exp is None or not (
-        exp.owner_user_id == user.id
-        or await _user_can_access_trip(db, user, exp.trip_id)
+        exp.owner_user_id == user.id or await _user_can_access_trip(db, user, exp.trip_id)
     ):
         raise HTTPException(404)
     trip_id = exp.trip_id
@@ -1218,14 +1310,26 @@ async def delete_expense(
 
 
 def _render_form(
-    request: Request, user: User, trip_id: uuid.UUID,
-    values: dict, *, errors: dict, edit_id: uuid.UUID | None = None,
+    request: Request,
+    user: User,
+    trip_id: uuid.UUID,
+    values: dict,
+    *,
+    errors: dict,
+    edit_id: uuid.UUID | None = None,
 ) -> HTMLResponse:
     return templates.TemplateResponse(
-        request, "expenses/form.html",
-        {"user": user, "trip_id": trip_id, "values": values, "errors": errors,
-         "edit_id": edit_id, "category_labels": CATEGORY_LABELS,
-         "home_currency": user.home_currency},
+        request,
+        "expenses/form.html",
+        {
+            "user": user,
+            "trip_id": trip_id,
+            "values": values,
+            "errors": errors,
+            "edit_id": edit_id,
+            "category_labels": CATEGORY_LABELS,
+            "home_currency": user.home_currency,
+        },
     )
 
 
@@ -1235,12 +1339,18 @@ def _pydantic_errors(exc: ValidationError) -> dict[str, str]:
 
 def _expense_to_form_values(e: Expense) -> dict:
     return {
-        "amount_minor": e.amount_minor, "currency": e.currency, "category": e.category,
-        "notes": e.notes or "", "incurred_on": e.incurred_on.isoformat(), "status": e.status,
+        "amount_minor": e.amount_minor,
+        "currency": e.currency,
+        "category": e.category,
+        "notes": e.notes or "",
+        "incurred_on": e.incurred_on.isoformat(),
+        "status": e.status,
         "segment_id": str(e.segment_id) if e.segment_id else "",
         "document_id": str(e.document_id) if e.document_id else "",
         "deposit_minor": e.deposit_minor or "",
-        "cancellation_deadline": e.cancellation_deadline.isoformat() if e.cancellation_deadline else "",
+        "cancellation_deadline": e.cancellation_deadline.isoformat()
+        if e.cancellation_deadline
+        else "",
         "cancellation_fee_minor": e.cancellation_fee_minor or "",
     }
 ```
@@ -1265,6 +1375,7 @@ Tests cover (file: `tests/test_routes_expenses_crud.py`):
 
 ```python
 from trip_tracker.routes import expenses as expenses_routes
+
 ...
 app.include_router(expenses_routes.router)
 ```
@@ -1502,10 +1613,17 @@ from redis.asyncio import Redis as AsyncRedis
 # ... inside trip_detail(...) handler signature, add:
 #     redis: AsyncRedis = Depends(_redis),
 
-expenses = (await db.execute(
-    select(Expense).where(Expense.trip_id == trip.id)
-    .order_by(Expense.incurred_on.desc(), Expense.created_at.desc())
-)).scalars().all()
+expenses = (
+    (
+        await db.execute(
+            select(Expense)
+            .where(Expense.trip_id == trip.id)
+            .order_by(Expense.incurred_on.desc(), Expense.created_at.desc())
+        )
+    )
+    .scalars()
+    .all()
+)
 
 home_currency = user.home_currency
 total_paid_home = sum(e.amount_home_minor for e in expenses if e.status == "paid")
@@ -1525,12 +1643,16 @@ try:
         eq_rate = await get_rate(award["cash_equivalent_currency"], home_currency, redis)
         cp_rate = await get_rate(award["cash_copay_currency"], home_currency, redis)
         eq_home = recompute_home_minor(
-            award["cash_equivalent_minor"], award["cash_equivalent_currency"],
-            home_currency, eq_rate,
+            award["cash_equivalent_minor"],
+            award["cash_equivalent_currency"],
+            home_currency,
+            eq_rate,
         )
         cp_home = recompute_home_minor(
-            award["cash_copay_minor"], award["cash_copay_currency"],
-            home_currency, cp_rate,
+            award["cash_copay_minor"],
+            award["cash_copay_currency"],
+            home_currency,
+            cp_rate,
         )
         total_saved_home += eq_home - cp_home
 except FxError:
@@ -1538,18 +1660,20 @@ except FxError:
     total_saved_home = None
 
 # Add to context dict:
-context.update({
-    "expenses": expenses,
-    "total_paid_home": total_paid_home,
-    "total_expected_home": total_expected_home,
-    "by_category": by_category,
-    "total_saved_home": total_saved_home,
-    "home_currency": home_currency,
-    "category_labels": CATEGORY_LABELS,
-    "Category": Category,
-    "minor_digits": minor_digits,
-    "today": _date_cls.today(),
-})
+context.update(
+    {
+        "expenses": expenses,
+        "total_paid_home": total_paid_home,
+        "total_expected_home": total_expected_home,
+        "by_category": by_category,
+        "total_saved_home": total_saved_home,
+        "home_currency": home_currency,
+        "category_labels": CATEGORY_LABELS,
+        "Category": Category,
+        "minor_digits": minor_digits,
+        "today": _date_cls.today(),
+    }
+)
 ```
 
 ### Step 8.3 — Template insert (`trips/detail.html`)
@@ -1693,8 +1817,10 @@ from pydantic import ValidationError
 from trip_tracker.expenses.awards import AwardDetails, k_format, program_short
 
 
-@pytest.mark.parametrize("inp,exp", [(75000, "75k"), (1500, "1.5k"), (1000, "1k"), (100, "100"),
-                                       (999, "999"), (12345, "12.3k")])
+@pytest.mark.parametrize(
+    "inp,exp",
+    [(75000, "75k"), (1500, "1.5k"), (1000, "1k"), (100, "100"), (999, "999"), (12345, "12.3k")],
+)
 def test_k_format(inp: int, exp: str) -> None:
     assert k_format(inp) == exp
 
@@ -1709,21 +1835,23 @@ def test_program_short_unknown_passthrough() -> None:
 
 
 def test_award_details_valid() -> None:
-    a = AwardDetails(program="Chase Ultimate Rewards", points_spent=75000,
-                     cash_copay_minor=560, cash_copay_currency="usd")
+    a = AwardDetails(
+        program="Chase Ultimate Rewards",
+        points_spent=75000,
+        cash_copay_minor=560,
+        cash_copay_currency="usd",
+    )
     assert a.cash_copay_currency == "USD"  # upper validator
 
 
 def test_award_details_zero_points_rejected() -> None:
     with pytest.raises(ValidationError):
-        AwardDetails(program="X", points_spent=0,
-                     cash_copay_minor=0, cash_copay_currency="USD")
+        AwardDetails(program="X", points_spent=0, cash_copay_minor=0, cash_copay_currency="USD")
 
 
 def test_award_details_negative_copay_rejected() -> None:
     with pytest.raises(ValidationError):
-        AwardDetails(program="X", points_spent=1,
-                     cash_copay_minor=-1, cash_copay_currency="USD")
+        AwardDetails(program="X", points_spent=1, cash_copay_minor=-1, cash_copay_currency="USD")
 ```
 
 ### Step 9.3 — `routes/segments.py` integration
@@ -1734,6 +1862,7 @@ In the existing flight + lodging POST/edit handlers, after parsing common fields
 from sqlalchemy.orm.attributes import flag_modified
 from pydantic import ValidationError as _VE
 from trip_tracker.expenses.awards import AwardDetails
+
 
 def _apply_award_from_form(seg: Segment, form: dict[str, str]) -> dict | None:
     """Mutate seg.details based on award fields in form. Returns errors dict or None."""
@@ -1750,7 +1879,8 @@ def _apply_award_from_form(seg: Segment, form: dict[str, str]) -> dict | None:
             cash_copay_minor=int(form.get("award_cash_copay_minor") or 0),
             cash_copay_currency=form.get("award_cash_copay_currency", "USD"),
             cash_equivalent_minor=int(form["award_cash_equivalent_minor"])
-                if form.get("award_cash_equivalent_minor") else None,
+            if form.get("award_cash_equivalent_minor")
+            else None,
             cash_equivalent_currency=form.get("award_cash_equivalent_currency") or None,
         )
     except (_VE, ValueError) as exc:
@@ -1778,9 +1908,12 @@ if award_errors:
     return templates.TemplateResponse(
         request,
         f"segments/{seg.type}_form.html",
-        {"user": user, "values": form_data,
-         "errors": award_errors,
-         "existing_award": (seg.details or {}).get("award")},
+        {
+            "user": user,
+            "values": form_data,
+            "errors": award_errors,
+            "existing_award": (seg.details or {}).get("award"),
+        },
     )
 # … existing db.commit() runs unchanged …
 ```
@@ -1978,6 +2111,7 @@ Then in **every** route module that instantiates `templates = Jinja2Templates(..
 
 ```python
 from trip_tracker.templating import register_globals
+
 register_globals(templates)
 ```
 
@@ -2038,6 +2172,7 @@ async def award_programs_autocomplete(
     """Return up to 20 most recent distinct `program` values from this user's
     award segments, ordered by recency."""
     from sqlalchemy import func as _f
+
     # Use jsonb_extract_path_text for nested JSONB key lookup. SQLAlchemy 2.x
     # does NOT chain `details["award"]["program"]` cleanly to text — we must
     # call the Postgres function explicitly.

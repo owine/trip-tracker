@@ -207,9 +207,7 @@ def test_signature_header_empty_rejected(monkeypatch: pytest.MonkeyPatch) -> Non
     "header",
     ["Authorization", "cookie", "Host", "Content-Length", "X-Forwarded-For"],
 )
-def test_signature_header_reserved_rejected(
-    monkeypatch: pytest.MonkeyPatch, header: str
-) -> None:
+def test_signature_header_reserved_rejected(monkeypatch: pytest.MonkeyPatch, header: str) -> None:
     _base_env(monkeypatch)
     monkeypatch.setenv("WEBHOOK_SIGNATURE_HEADER", header)
     with pytest.raises(ValidationError):
@@ -217,9 +215,7 @@ def test_signature_header_reserved_rejected(
 
 
 @pytest.mark.parametrize("seconds", [0, -1, 3601, 100_000])
-def test_tolerance_out_of_range_rejected(
-    monkeypatch: pytest.MonkeyPatch, seconds: int
-) -> None:
+def test_tolerance_out_of_range_rejected(monkeypatch: pytest.MonkeyPatch, seconds: int) -> None:
     _base_env(monkeypatch)
     monkeypatch.setenv("WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS", str(seconds))
     with pytest.raises(ValidationError):
@@ -227,9 +223,7 @@ def test_tolerance_out_of_range_rejected(
 
 
 @pytest.mark.parametrize("size", [0, -1, 200 * 1024 * 1024])
-def test_max_body_out_of_range_rejected(
-    monkeypatch: pytest.MonkeyPatch, size: int
-) -> None:
+def test_max_body_out_of_range_rejected(monkeypatch: pytest.MonkeyPatch, size: int) -> None:
     _base_env(monkeypatch)
     monkeypatch.setenv("WEBHOOK_MAX_BODY_BYTES", str(size))
     with pytest.raises(ValidationError):
@@ -339,14 +333,25 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("local_part", sa.String(64), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_forwarding_aliases")),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"],
-                                name=op.f("fk_forwarding_aliases_user_id_users"),
-                                ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(
+            ["user_id"],
+            ["users.id"],
+            name=op.f("fk_forwarding_aliases_user_id_users"),
+            ondelete="CASCADE",
+        ),
         sa.UniqueConstraint("local_part", name=op.f("uq_forwarding_aliases_local_part")),
     )
 
@@ -361,14 +366,25 @@ def upgrade() -> None:
         sa.Column("notes", sa.Text(), nullable=True),
         sa.Column("cover_color", sa.String(16), nullable=True),
         sa.Column("created_by", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_trips")),
-        sa.ForeignKeyConstraint(["created_by"], ["users.id"],
-                                name=op.f("fk_trips_created_by_users"),
-                                ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(
+            ["created_by"],
+            ["users.id"],
+            name=op.f("fk_trips_created_by_users"),
+            ondelete="RESTRICT",
+        ),
         sa.CheckConstraint("end_date >= start_date", name=op.f("ck_trips_date_range")),
     )
 
@@ -378,36 +394,54 @@ def upgrade() -> None:
         sa.Column("trip_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("role", sa.String(16), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("trip_id", "user_id", name=op.f("pk_trip_travelers")),
-        sa.ForeignKeyConstraint(["trip_id"], ["trips.id"],
-                                name=op.f("fk_trip_travelers_trip_id_trips"),
-                                ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["user_id"], ["users.id"],
-                                name=op.f("fk_trip_travelers_user_id_users"),
-                                ondelete="CASCADE"),
-        sa.CheckConstraint("role IN ('owner', 'companion')",
-                           name=op.f("ck_trip_travelers_role")),
+        sa.ForeignKeyConstraint(
+            ["trip_id"],
+            ["trips.id"],
+            name=op.f("fk_trip_travelers_trip_id_trips"),
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["user_id"],
+            ["users.id"],
+            name=op.f("fk_trip_travelers_user_id_users"),
+            ondelete="CASCADE",
+        ),
+        sa.CheckConstraint("role IN ('owner', 'companion')", name=op.f("ck_trip_travelers_role")),
     )
 
     # raw_emails (created BEFORE segments since segments.raw_email_id FKs into it)
     op.create_table(
         "raw_emails",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
-        sa.Column("received_at", sa.DateTime(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "received_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.Column("to_address", sa.String(320), nullable=False),
         sa.Column("from_address", sa.String(320), nullable=False),
         sa.Column("subject", sa.Text(), nullable=True),
         sa.Column("message_id", sa.String(998), nullable=False),
         sa.Column("mime_blob", sa.LargeBinary(), nullable=False),
         sa.Column("headers", postgresql.JSONB(), nullable=False),
-        sa.Column("parse_status", sa.String(16),
-                  server_default=sa.text("'pending'"), nullable=False),
+        sa.Column(
+            "parse_status", sa.String(16), server_default=sa.text("'pending'"), nullable=False
+        ),
         sa.Column("parse_error", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_raw_emails")),
         sa.UniqueConstraint("message_id", name=op.f("uq_raw_emails_message_id")),
         sa.CheckConstraint(
@@ -415,8 +449,7 @@ def upgrade() -> None:
             name=op.f("ck_raw_emails_parse_status"),
         ),
     )
-    op.create_index("ix_raw_emails_received_at", "raw_emails",
-                    [sa.text("received_at DESC")])
+    op.create_index("ix_raw_emails_received_at", "raw_emails", [sa.text("received_at DESC")])
     op.create_index("ix_raw_emails_parse_status", "raw_emails", ["parse_status"])
     op.create_index("ix_raw_emails_to_address", "raw_emails", ["to_address"])
 
@@ -427,8 +460,7 @@ def upgrade() -> None:
         sa.Column("trip_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("owner_user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("type", sa.String(16), nullable=False),
-        sa.Column("status", sa.String(16),
-                  server_default=sa.text("'confirmed'"), nullable=False),
+        sa.Column("status", sa.String(16), server_default=sa.text("'confirmed'"), nullable=False),
         sa.Column("confirmation_number", sa.String(64), nullable=True),
         sa.Column("provider", sa.String(128), nullable=True),
         sa.Column("start_at", sa.DateTime(timezone=True), nullable=False),
@@ -437,41 +469,62 @@ def upgrade() -> None:
         sa.Column("end_tz", sa.String(64), nullable=True),
         sa.Column("start_location", postgresql.JSONB(), nullable=True),
         sa.Column("end_location", postgresql.JSONB(), nullable=True),
-        sa.Column("details", postgresql.JSONB(),
-                  server_default=sa.text("'{}'::jsonb"), nullable=False),
+        sa.Column(
+            "details", postgresql.JSONB(), server_default=sa.text("'{}'::jsonb"), nullable=False
+        ),
         sa.Column("parse_source", sa.String(64), nullable=False),
         sa.Column("parse_confidence", sa.Float(precision=53), nullable=False),
-        sa.Column("search_text", postgresql.TSVECTOR(),
-                  sa.Computed(
-                      "to_tsvector('simple'::regconfig, "
-                      "coalesce(provider, '') || ' ' || "
-                      "coalesce(confirmation_number, '') || ' ' || "
-                      "coalesce(start_location ->> 'name', '') || ' ' || "
-                      "coalesce(end_location   ->> 'name', '') || ' ' || "
-                      "coalesce(start_location ->> 'city', '') || ' ' || "
-                      "coalesce(end_location   ->> 'city', '')",
-                      persisted=True,
-                  ),
-                  nullable=True),
+        sa.Column(
+            "search_text",
+            postgresql.TSVECTOR(),
+            sa.Computed(
+                "to_tsvector('simple'::regconfig, "
+                "coalesce(provider, '') || ' ' || "
+                "coalesce(confirmation_number, '') || ' ' || "
+                "coalesce(start_location ->> 'name', '') || ' ' || "
+                "coalesce(end_location   ->> 'name', '') || ' ' || "
+                "coalesce(start_location ->> 'city', '') || ' ' || "
+                "coalesce(end_location   ->> 'city', '')",
+                persisted=True,
+            ),
+            nullable=True,
+        ),
         sa.Column("raw_email_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("superseded_by", postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_segments")),
-        sa.ForeignKeyConstraint(["trip_id"], ["trips.id"],
-                                name=op.f("fk_segments_trip_id_trips"),
-                                ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["owner_user_id"], ["users.id"],
-                                name=op.f("fk_segments_owner_user_id_users"),
-                                ondelete="RESTRICT"),
-        sa.ForeignKeyConstraint(["raw_email_id"], ["raw_emails.id"],
-                                name=op.f("fk_segments_raw_email_id_raw_emails"),
-                                ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["superseded_by"], ["segments.id"],
-                                name=op.f("fk_segments_superseded_by_segments"),
-                                ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(
+            ["trip_id"], ["trips.id"], name=op.f("fk_segments_trip_id_trips"), ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["owner_user_id"],
+            ["users.id"],
+            name=op.f("fk_segments_owner_user_id_users"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["raw_email_id"],
+            ["raw_emails.id"],
+            name=op.f("fk_segments_raw_email_id_raw_emails"),
+            ondelete="SET NULL",
+        ),
+        sa.ForeignKeyConstraint(
+            ["superseded_by"],
+            ["segments.id"],
+            name=op.f("fk_segments_superseded_by_segments"),
+            ondelete="SET NULL",
+        ),
         sa.CheckConstraint(
             "type IN ('flight', 'lodging', 'car', 'train', 'transfer', 'activity')",
             name=op.f("ck_segments_type"),
@@ -486,11 +539,9 @@ def upgrade() -> None:
         ),
     )
     op.create_index("ix_segments_trip_id", "segments", ["trip_id"])
-    op.create_index("ix_segments_owner_user_id_start_at", "segments",
-                    ["owner_user_id", "start_at"])
+    op.create_index("ix_segments_owner_user_id_start_at", "segments", ["owner_user_id", "start_at"])
     op.create_index("ix_segments_start_at", "segments", ["start_at"])
-    op.create_index("ix_segments_search_text", "segments", ["search_text"],
-                    postgresql_using="gin")
+    op.create_index("ix_segments_search_text", "segments", ["search_text"], postgresql_using="gin")
 
     # webhook_replay_cache
     op.create_table(
@@ -498,11 +549,9 @@ def upgrade() -> None:
         sa.Column("ts_seconds", sa.BigInteger(), nullable=False),
         sa.Column("nonce", sa.String(64), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.PrimaryKeyConstraint("ts_seconds", "nonce",
-                                name=op.f("pk_webhook_replay_cache")),
+        sa.PrimaryKeyConstraint("ts_seconds", "nonce", name=op.f("pk_webhook_replay_cache")),
     )
-    op.create_index("ix_webhook_replay_cache_expires_at",
-                    "webhook_replay_cache", ["expires_at"])
+    op.create_index("ix_webhook_replay_cache_expires_at", "webhook_replay_cache", ["expires_at"])
 
 
 def downgrade() -> None:
@@ -664,9 +713,7 @@ from trip_tracker.models.base import Base
 class ForwardingAlias(Base):
     __tablename__ = "forwarding_aliases"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -795,8 +842,11 @@ async def test_message_id_unique(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_parse_status_check(db_session: AsyncSession) -> None:
     e = RawEmail(
-        to_address="o@x.com", from_address="f@x.com",
-        message_id="<x@x.com>", mime_blob=b"", headers={},
+        to_address="o@x.com",
+        from_address="f@x.com",
+        message_id="<x@x.com>",
+        mime_blob=b"",
+        headers={},
         parse_status="bogus",
     )
     db_session.add(e)
@@ -881,9 +931,7 @@ class RawEmail(Base):
         ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -900,9 +948,7 @@ class RawEmail(Base):
     message_id: Mapped[str] = mapped_column(String(998), unique=True, nullable=False)
     mime_blob: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     headers: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    parse_status: Mapped[str] = mapped_column(
-        String(16), nullable=False, server_default="pending"
-    )
+    parse_status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="pending")
     parse_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -936,9 +982,7 @@ class WebhookReplay(Base):
     # owns `ix_*` index creation. The composite PK already covers (ts_seconds,
     # nonce) lookups; the explicit `ix_webhook_replay_cache_expires_at` exists
     # only to make the prune query fast.
-    expires_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 ```
 
 - [ ] **Step 4.5 — Register in models package**
@@ -1018,7 +1062,9 @@ async def test_create(db_session: AsyncSession) -> None:
 async def test_date_range_check(db_session: AsyncSession) -> None:
     user = await _user(db_session)
     t = Trip(
-        title="Bad", start_date=date(2026, 5, 8), end_date=date(2026, 5, 1),
+        title="Bad",
+        start_date=date(2026, 5, 8),
+        end_date=date(2026, 5, 1),
         created_by=user.id,
     )
     db_session.add(t)
@@ -1049,8 +1095,7 @@ async def _trip_with_user(db: AsyncSession) -> tuple[Trip, User]:
     u = User(oidc_subject="x", email="x@example.com", display_name="X")
     db.add(u)
     await db.flush()
-    t = Trip(title="T", start_date=date(2026, 1, 1),
-             end_date=date(2026, 1, 2), created_by=u.id)
+    t = Trip(title="T", start_date=date(2026, 1, 1), end_date=date(2026, 1, 2), created_by=u.id)
     db.add(t)
     await db.commit()
     return t, u
@@ -1103,13 +1148,9 @@ from trip_tracker.models.base import Base
 
 class Trip(Base):
     __tablename__ = "trips"
-    __table_args__ = (
-        CheckConstraint("end_date >= start_date", name="ck_trips_date_range"),
-    )
+    __table_args__ = (CheckConstraint("end_date >= start_date", name="ck_trips_date_range"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -1154,9 +1195,7 @@ from trip_tracker.models.base import Base
 class TripTraveler(Base):
     __tablename__ = "trip_travelers"
     __table_args__ = (
-        CheckConstraint(
-            "role IN ('owner', 'companion')", name="ck_trip_travelers_role"
-        ),
+        CheckConstraint("role IN ('owner', 'companion')", name="ck_trip_travelers_role"),
     )
 
     trip_id: Mapped[uuid.UUID] = mapped_column(
@@ -1229,8 +1268,7 @@ async def _trip_with_user(db: AsyncSession) -> tuple[Trip, User]:
     u = User(oidc_subject="s", email="s@example.com", display_name="S")
     db.add(u)
     await db.flush()
-    t = Trip(title="T", start_date=date(2026, 6, 1),
-             end_date=date(2026, 6, 5), created_by=u.id)
+    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=u.id)
     db.add(t)
     await db.commit()
     return t, u
@@ -1269,13 +1307,18 @@ async def test_create_flight(db_session: AsyncSession) -> None:
 async def test_search_text_generated(db_session: AsyncSession) -> None:
     trip, user = await _trip_with_user(db_session)
     seg = Segment(
-        trip_id=trip.id, owner_user_id=user.id, type="flight", status="confirmed",
-        provider="Delta", confirmation_number="ABC123",
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="flight",
+        status="confirmed",
+        provider="Delta",
+        confirmation_number="ABC123",
         start_at=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
         start_tz="UTC",
         start_location={"name": "JFK", "city": "New York"},
         end_location={"name": "CDG", "city": "Paris"},
-        parse_source="manual", parse_confidence=1.0,
+        parse_source="manual",
+        parse_confidence=1.0,
     )
     db_session.add(seg)
     await db_session.commit()
@@ -1296,10 +1339,14 @@ async def test_search_text_generated(db_session: AsyncSession) -> None:
 async def test_type_check(db_session: AsyncSession) -> None:
     trip, user = await _trip_with_user(db_session)
     seg = Segment(
-        trip_id=trip.id, owner_user_id=user.id, type="bogus",
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="bogus",
         status="confirmed",
-        start_at=datetime(2026, 6, 1, tzinfo=timezone.utc), start_tz="UTC",
-        parse_source="manual", parse_confidence=1.0,
+        start_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        start_tz="UTC",
+        parse_source="manual",
+        parse_confidence=1.0,
     )
     db_session.add(seg)
     with pytest.raises(IntegrityError):
@@ -1310,9 +1357,14 @@ async def test_type_check(db_session: AsyncSession) -> None:
 async def test_confidence_range(db_session: AsyncSession) -> None:
     trip, user = await _trip_with_user(db_session)
     seg = Segment(
-        trip_id=trip.id, owner_user_id=user.id, type="flight", status="confirmed",
-        start_at=datetime(2026, 6, 1, tzinfo=timezone.utc), start_tz="UTC",
-        parse_source="manual", parse_confidence=1.5,
+        trip_id=trip.id,
+        owner_user_id=user.id,
+        type="flight",
+        status="confirmed",
+        start_at=datetime(2026, 6, 1, tzinfo=timezone.utc),
+        start_tz="UTC",
+        parse_source="manual",
+        parse_confidence=1.5,
     )
     db_session.add(seg)
     with pytest.raises(IntegrityError):
@@ -1375,9 +1427,7 @@ class Segment(Base):
         ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     # NO `index=True` on these columns — see RawEmail comment. Alembic owns
     # all `ix_*` index creation; ORM-level index=True would collide.
     trip_id: Mapped[uuid.UUID] = mapped_column(
@@ -1391,24 +1441,16 @@ class Segment(Base):
         nullable=False,
     )
     type: Mapped[str] = mapped_column(String(16), nullable=False)
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, server_default="confirmed"
-    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="confirmed")
     confirmation_number: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    start_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     start_tz: Mapped[str] = mapped_column(String(64), nullable=False)
-    end_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    end_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     end_tz: Mapped[str | None] = mapped_column(String(64), nullable=True)
     start_location: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     end_location: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    details: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, nullable=False, server_default="{}"
-    )
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
     parse_source: Mapped[str] = mapped_column(String(64), nullable=False)
     parse_confidence: Mapped[float] = mapped_column(Float(precision=53), nullable=False)
     # `Mapped[str | None]`: SQLAlchemy's TSVECTOR adapter round-trips as text.
@@ -1538,7 +1580,8 @@ async def test_prune_replay_cache_removes_expired(db_session: AsyncSession) -> N
     db_session.add(WebhookReplay(ts_seconds=10, nonce="old", expires_at=past))
     db_session.add(
         WebhookReplay(
-            ts_seconds=11, nonce="fresh",
+            ts_seconds=11,
+            nonce="fresh",
             expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
         )
     )
@@ -1605,9 +1648,7 @@ def verify_signature(body: bytes, header_value: str, secret: bytes) -> bool:
     return hmac.compare_digest(provided_hex, expected_hex)
 
 
-async def record_nonce(
-    session: AsyncSession, *, ts_seconds: int, nonce: str
-) -> bool:
+async def record_nonce(session: AsyncSession, *, ts_seconds: int, nonce: str) -> bool:
     """Insert ``(ts_seconds, nonce)`` into webhook_replay_cache.
 
     Returns True if newly recorded, False if PK conflict (replay seen before).
@@ -1731,8 +1772,10 @@ def test_parse_basic() -> None:
     assert isinstance(parsed, ParsedEmail)
     assert parsed.message_id == "<abc123-confirm@delta.com>"
     assert parsed.to_address == "oliver@trips.example.com"
-    assert parsed.from_address.endswith("confirmations@delta.com>") or \
-           parsed.from_address == "confirmations@delta.com"
+    assert (
+        parsed.from_address.endswith("confirmations@delta.com>")
+        or parsed.from_address == "confirmations@delta.com"
+    )
     assert parsed.subject == "Your Trip Confirmation - DL44"
     assert "Delta" in parsed.headers["From"]
 
@@ -1892,9 +1935,7 @@ def _headers(body: bytes, *, ts: int | None = None, nonce: str = "n1") -> dict[s
     }
 
 
-async def _post(
-    app, body: bytes, headers: dict[str, str], db_url: str
-) -> httpx.Response:
+async def _post(app, body: bytes, headers: dict[str, str], db_url: str) -> httpx.Response:
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
@@ -1919,9 +1960,7 @@ async def test_happy_path_persists_raw_email(
 
 
 @pytest.mark.asyncio
-async def test_hmac_missing_returns_401(
-    db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_hmac_missing_returns_401(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", db_url)
     monkeypatch.setenv("WEBHOOK_SECRET", SECRET)
     app = create_app()
@@ -1933,9 +1972,7 @@ async def test_hmac_missing_returns_401(
 
 
 @pytest.mark.asyncio
-async def test_hmac_no_prefix_returns_401(
-    db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_hmac_no_prefix_returns_401(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", db_url)
     monkeypatch.setenv("WEBHOOK_SECRET", SECRET)
     app = create_app()
@@ -1947,9 +1984,7 @@ async def test_hmac_no_prefix_returns_401(
 
 
 @pytest.mark.asyncio
-async def test_body_too_big_returns_413(
-    db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_body_too_big_returns_413(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", db_url)
     monkeypatch.setenv("WEBHOOK_SECRET", SECRET)
     monkeypatch.setenv("WEBHOOK_MAX_BODY_BYTES", "1024")  # tiny limit
@@ -1960,9 +1995,7 @@ async def test_body_too_big_returns_413(
 
 
 @pytest.mark.asyncio
-async def test_timestamp_skew_returns_400(
-    db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_timestamp_skew_returns_400(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", db_url)
     monkeypatch.setenv("WEBHOOK_SECRET", SECRET)
     app = create_app()
@@ -2007,9 +2040,7 @@ async def test_duplicate_message_id_returns_202_silently(
 
 
 @pytest.mark.asyncio
-async def test_missing_nonce_returns_400(
-    db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_missing_nonce_returns_400(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", db_url)
     monkeypatch.setenv("WEBHOOK_SECRET", SECRET)
     app = create_app()
@@ -2021,9 +2052,7 @@ async def test_missing_nonce_returns_400(
 
 
 @pytest.mark.asyncio
-async def test_oversized_nonce_returns_400(
-    db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_oversized_nonce_returns_400(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", db_url)
     monkeypatch.setenv("WEBHOOK_SECRET", SECRET)
     app = create_app()
@@ -2076,9 +2105,7 @@ async def test_missing_message_id_synthesizes(
     monkeypatch.setenv("DATABASE_URL", db_url)
     monkeypatch.setenv("WEBHOOK_SECRET", SECRET)
     app = create_app()
-    body = FIXTURE.read_bytes().replace(
-        b"Message-ID: <abc123-confirm@delta.com>\r\n", b""
-    )
+    body = FIXTURE.read_bytes().replace(b"Message-ID: <abc123-confirm@delta.com>\r\n", b"")
     expected_hex = _hashlib.sha256(body).hexdigest()
     r = await _post(app, body, _headers(body, nonce="synth"), db_url)
     assert r.status_code == 202
@@ -2088,9 +2115,7 @@ async def test_missing_message_id_synthesizes(
 
 
 @pytest.mark.asyncio
-async def test_crlf_bom_body_round_trips_hmac(
-    db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_crlf_bom_body_round_trips_hmac(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """A BOM-prefixed CRLF body must HMAC-verify against the exact bytes sent.
 
     Validates that no middleware (uvicorn/ASGITransport) silently rewrites the
@@ -2190,9 +2215,7 @@ async def ingest_email(
         return JSONResponse({"error": "bad_request", "detail": "bad nonce"}, 400)
     skew = abs(int(time.time()) - ts)
     if skew > settings.webhook_timestamp_tolerance_seconds:
-        return JSONResponse(
-            {"error": "bad_request", "detail": "timestamp skew"}, 400
-        )
+        return JSONResponse({"error": "bad_request", "detail": "timestamp skew"}, 400)
 
     # Step 4: Periodic prune (best-effort). Run BEFORE opening the main txn so
     # this is a separate, committed unit of work — pruning is hygiene, not
@@ -2312,8 +2335,11 @@ from trip_tracker.models.user import User
 
 def _user(*, admin: bool = False) -> User:
     return User(
-        id=uuid.uuid4(), oidc_subject="s", email="x@y.com",
-        display_name="X", is_admin=admin,
+        id=uuid.uuid4(),
+        oidc_subject="s",
+        email="x@y.com",
+        display_name="X",
+        is_admin=admin,
     )
 
 
@@ -2337,8 +2363,9 @@ async def test_require_traveler_allows_member(db_session: AsyncSession) -> None:
     creator = User(oidc_subject="c", email="c@x.com", display_name="C")
     db_session.add(creator)
     await db_session.flush()
-    trip = Trip(title="T", start_date=date(2026, 1, 1),
-                end_date=date(2026, 1, 2), created_by=creator.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 1, 1), end_date=date(2026, 1, 2), created_by=creator.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=creator.id, role="owner"))
@@ -2354,8 +2381,9 @@ async def test_require_traveler_404_for_non_member(db_session: AsyncSession) -> 
     other = User(oidc_subject="o", email="o@x.com", display_name="O")
     db_session.add_all([creator, other])
     await db_session.flush()
-    trip = Trip(title="T", start_date=date(2026, 1, 1),
-                end_date=date(2026, 1, 2), created_by=creator.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 1, 1), end_date=date(2026, 1, 2), created_by=creator.id
+    )
     db_session.add(trip)
     await db_session.commit()
 
@@ -2500,6 +2528,7 @@ class TripSelector(BaseModel):
 
 class _SegmentBase(BaseModel):
     """Common fields for all segment types."""
+
     trip_selector: TripSelector
     status: SegmentStatus = "confirmed"
     confirmation_number: str | None = Field(default=None, max_length=64)
@@ -2568,8 +2597,12 @@ class ActivitySegmentForm(_SegmentBase):
 
 
 SegmentForm = Annotated[
-    FlightSegmentForm | LodgingSegmentForm | CarSegmentForm
-    | TrainSegmentForm | TransferSegmentForm | ActivitySegmentForm,
+    FlightSegmentForm
+    | LodgingSegmentForm
+    | CarSegmentForm
+    | TrainSegmentForm
+    | TransferSegmentForm
+    | ActivitySegmentForm,
     Field(discriminator="type"),
 ]
 ```
@@ -2688,8 +2721,10 @@ async def _user(db: AsyncSession, *, email: str = "u@example.com") -> User:
 
 async def _trip(db: AsyncSession, owner: User, **overrides) -> Trip:
     fields = dict(
-        title="Default", start_date=date(2026, 6, 1),
-        end_date=date(2026, 6, 5), created_by=owner.id,
+        title="Default",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 5),
+        created_by=owner.id,
     )
     fields.update(overrides)
     t = Trip(**fields)
@@ -2834,9 +2869,7 @@ async def list_trips(
         )
     )
     trips = (await db.execute(stmt)).scalars().all()
-    return templates.TemplateResponse(
-        request, "trips/list.html", {"trips": trips, "user": user}
-    )
+    return templates.TemplateResponse(request, "trips/list.html", {"trips": trips, "user": user})
 
 
 @router.get("/{trip_id}", response_class=HTMLResponse)
@@ -2849,12 +2882,17 @@ async def trip_detail(
     from trip_tracker.models.segment import Segment
 
     segments = (
-        await db.execute(
-            select(Segment).where(Segment.trip_id == trip.id).order_by(Segment.start_at)
+        (
+            await db.execute(
+                select(Segment).where(Segment.trip_id == trip.id).order_by(Segment.start_at)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return templates.TemplateResponse(
-        request, "trips/detail.html",
+        request,
+        "trips/detail.html",
         {"trip": trip, "segments": segments, "user": user},
     )
 
@@ -2885,13 +2923,17 @@ async def update_trip(
 ):
     try:
         form = TripForm(
-            title=title, start_date=start_date, end_date=end_date,
-            primary_destination=primary_destination, notes=notes,
+            title=title,
+            start_date=start_date,
+            end_date=end_date,
+            primary_destination=primary_destination,
+            notes=notes,
             cover_color=cover_color,
         )
     except Exception as e:
         return templates.TemplateResponse(
-            request, "trips/edit.html",
+            request,
+            "trips/edit.html",
             {"trip": trip, "user": user, "errors": {"_form": str(e)}},
         )
     trip.title = form.title
@@ -3048,6 +3090,7 @@ Add:
 
 ```python
 from trip_tracker.routes.trips import router as trips_router
+
 # inside create_app, after auth:
 app.include_router(trips_router)
 ```
@@ -3134,7 +3177,8 @@ async def test_type_picker(
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test",
+            transport=transport,
+            base_url="http://test",
             cookies=_cookie(user, settings),
         ) as c:
             r = await c.get("/segments/new")
@@ -3154,7 +3198,8 @@ async def test_create_flight_with_new_trip(
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test",
+            transport=transport,
+            base_url="http://test",
             cookies=_cookie(user, settings),
         ) as c:
             r = await c.post(
@@ -3205,7 +3250,8 @@ async def test_create_lodging_destination_from_start(
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test",
+            transport=transport,
+            base_url="http://test",
             cookies=_cookie(user, settings),
         ) as c:
             r = await c.post(
@@ -3236,8 +3282,9 @@ async def test_create_segment_existing_trip_widens_dates(
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
     user = await _user(db_session)
-    trip = Trip(title="T", start_date=date(2026, 6, 5),
-                end_date=date(2026, 6, 7), created_by=user.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 5), end_date=date(2026, 6, 7), created_by=user.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
@@ -3247,7 +3294,8 @@ async def test_create_segment_existing_trip_widens_dates(
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test",
+            transport=transport,
+            base_url="http://test",
             cookies=_cookie(user, settings),
         ) as c:
             r = await c.post(
@@ -3264,7 +3312,7 @@ async def test_create_segment_existing_trip_widens_dates(
     assert r.status_code == 303
     await db_session.refresh(trip)
     assert trip.start_date == date(2026, 6, 1)  # widened
-    assert trip.end_date == date(2026, 6, 7)    # unchanged
+    assert trip.end_date == date(2026, 6, 7)  # unchanged
 ```
 
 - [ ] **Step 13.2 — Implement `routes/segments.py`**
@@ -3311,9 +3359,7 @@ _TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 # Pre-load IANA tz list once.
-_TZ_FIXTURE = (
-    Path(__file__).parent.parent / "static" / "iana_timezones.json"
-)
+_TZ_FIXTURE = Path(__file__).parent.parent / "static" / "iana_timezones.json"
 TIMEZONES = json.loads(_TZ_FIXTURE.read_text())
 
 FORM_BY_TYPE = {
@@ -3329,9 +3375,7 @@ DESTINATION_FROM_END = {"flight", "train", "transfer"}
 
 
 def _to_utc(local: datetime, tz: str) -> datetime:
-    return local.replace(tzinfo=zoneinfo.ZoneInfo(tz)).astimezone(
-        zoneinfo.ZoneInfo("UTC")
-    )
+    return local.replace(tzinfo=zoneinfo.ZoneInfo(tz)).astimezone(zoneinfo.ZoneInfo("UTC"))
 
 
 def _user_trips(db: AsyncSession, user_id: uuid.UUID):
@@ -3351,17 +3395,20 @@ async def new_segment(
     db: AsyncSession = Depends(get_session),
 ) -> HTMLResponse:
     if type is None:
-        return templates.TemplateResponse(
-            request, "segments/type_picker.html", {"user": user}
-        )
+        return templates.TemplateResponse(request, "segments/type_picker.html", {"user": user})
     if type not in FORM_BY_TYPE:
         raise HTTPException(400, detail="unknown segment type")
     trips = (await db.execute(_user_trips(db, user.id))).scalars().all()
     return templates.TemplateResponse(
-        request, f"segments/{type}_form.html",
+        request,
+        f"segments/{type}_form.html",
         {
-            "user": user, "trips": trips, "timezones": TIMEZONES,
-            "values": {}, "errors": {}, "type": type,
+            "user": user,
+            "trips": trips,
+            "timezones": TIMEZONES,
+            "values": {},
+            "errors": {},
+            "type": type,
         },
     )
 
@@ -3389,10 +3436,15 @@ async def create_segment(
     except ValidationError as e:
         trips = (await db.execute(_user_trips(db, user.id))).scalars().all()
         return templates.TemplateResponse(
-            request, f"segments/{seg_type}_form.html",
+            request,
+            f"segments/{seg_type}_form.html",
             {
-                "user": user, "trips": trips, "timezones": TIMEZONES,
-                "values": raw, "errors": {"_form": str(e)}, "type": seg_type,
+                "user": user,
+                "trips": trips,
+                "timezones": TIMEZONES,
+                "values": raw,
+                "errors": {"_form": str(e)},
+                "type": seg_type,
             },
             status_code=200,
         )
@@ -3472,10 +3524,10 @@ def _shape_payload(
     t = form.type
 
     if t == "flight":
-        start = _drop_none(name=form.origin_iata, iata=form.origin_iata,
-                           city=form.origin_city)
-        end = _drop_none(name=form.destination_iata, iata=form.destination_iata,
-                         city=form.destination_city)
+        start = _drop_none(name=form.origin_iata, iata=form.origin_iata, city=form.origin_city)
+        end = _drop_none(
+            name=form.destination_iata, iata=form.destination_iata, city=form.destination_city
+        )
         if form.flight_number:
             details["flight_number"] = form.flight_number
         if form.seat:
@@ -3483,8 +3535,9 @@ def _shape_payload(
         return start or None, end or None, details
 
     if t == "lodging":
-        loc = _drop_none(name=form.hotel_name, address=form.address,
-                        city=form.city, country=form.country)
+        loc = _drop_none(
+            name=form.hotel_name, address=form.address, city=form.city, country=form.country
+        )
         if form.room_type:
             details["room_type"] = form.room_type
         return loc or None, loc or None, details
@@ -3506,8 +3559,7 @@ def _shape_payload(
         return start or None, end or None, details
 
     if t == "transfer":
-        return ({"name": form.pickup_location},
-                {"name": form.dropoff_location}, details)
+        return ({"name": form.pickup_location}, {"name": form.dropoff_location}, details)
 
     if t == "activity":
         loc = _drop_none(name=form.venue_name, address=form.address, city=form.city)
@@ -3527,11 +3579,7 @@ def _derive_destination(
 ) -> str | None:
     primary_side = end_loc if seg_type in DESTINATION_FROM_END else start_loc
     fallback_side = start_loc if seg_type in DESTINATION_FROM_END else end_loc
-    return (
-        (primary_side or {}).get("city")
-        or (fallback_side or {}).get("city")
-        or None
-    )
+    return (primary_side or {}).get("city") or (fallback_side or {}).get("city") or None
 ```
 
 - [ ] **Step 13.3 — Templates**
@@ -3773,6 +3821,7 @@ Create `src/trip_tracker/templates/segments/_row.html`:
 
 ```python
 from trip_tracker.routes.segments import router as segments_router
+
 # inside create_app:
 app.include_router(segments_router)
 ```
@@ -3802,9 +3851,7 @@ git commit -m "feat(routes): segments type picker + per-type forms + create"
 Append to `tests/test_routes_segments.py`. Each test creates state via direct ORM inserts (faster than going through the `POST /segments` form for setup) and only exercises the new edit/delete routes via HTTP:
 
 ```python
-async def _seed_flight(
-    db: AsyncSession, owner: User, trip: Trip
-) -> Segment:
+async def _seed_flight(db: AsyncSession, owner: User, trip: Trip) -> Segment:
     seg = Segment(
         trip_id=trip.id,
         owner_user_id=owner.id,
@@ -3814,7 +3861,7 @@ async def _seed_flight(
         confirmation_number="ABC123",
         start_at=datetime(2026, 6, 1, 13, 0, tzinfo=timezone.utc),  # 09:00 EDT
         start_tz="America/New_York",
-        end_at=datetime(2026, 6, 2, 2, 0, tzinfo=timezone.utc),     # 22:00 CEST
+        end_at=datetime(2026, 6, 2, 2, 0, tzinfo=timezone.utc),  # 22:00 CEST
         end_tz="Europe/Paris",
         start_location={"iata": "JFK", "city": "New York"},
         end_location={"iata": "CDG", "city": "Paris"},
@@ -3834,8 +3881,9 @@ async def test_edit_segment_renders_prefilled_form(
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
     user = await _user(db_session)
-    trip = Trip(title="T", start_date=date(2026, 6, 1),
-                end_date=date(2026, 6, 5), created_by=user.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
@@ -3845,7 +3893,8 @@ async def test_edit_segment_renders_prefilled_form(
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test",
+            transport=transport,
+            base_url="http://test",
             cookies=_cookie(user, settings),
         ) as c:
             r = await c.get(f"/trips/{trip.id}/segments/{seg.id}/edit")
@@ -3868,8 +3917,9 @@ async def test_edit_segment_round_trip_updates_db(
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
     user = await _user(db_session)
-    trip = Trip(title="T", start_date=date(2026, 6, 1),
-                end_date=date(2026, 6, 5), created_by=user.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
@@ -3879,7 +3929,8 @@ async def test_edit_segment_round_trip_updates_db(
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test",
+            transport=transport,
+            base_url="http://test",
             cookies=_cookie(user, settings),
         ) as c:
             r = await c.post(
@@ -3919,8 +3970,9 @@ async def test_delete_segment_removes_row(
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
     user = await _user(db_session)
-    trip = Trip(title="T", start_date=date(2026, 6, 1),
-                end_date=date(2026, 6, 5), created_by=user.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=user.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=user.id, role="owner"))
@@ -3930,7 +3982,8 @@ async def test_delete_segment_removes_row(
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test",
+            transport=transport,
+            base_url="http://test",
             cookies=_cookie(user, settings),
         ) as c:
             r = await c.post(
@@ -3954,8 +4007,9 @@ async def test_edit_segment_404_for_non_traveler(
     other = User(oidc_subject="other", email="other@x.com", display_name="O")
     db_session.add(other)
     await db_session.flush()
-    trip = Trip(title="T", start_date=date(2026, 6, 1),
-                end_date=date(2026, 6, 5), created_by=creator.id)
+    trip = Trip(
+        title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 5), created_by=creator.id
+    )
     db_session.add(trip)
     await db_session.flush()
     db_session.add(TripTraveler(trip_id=trip.id, user_id=creator.id, role="owner"))
@@ -3965,13 +4019,15 @@ async def test_edit_segment_404_for_non_traveler(
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test",
+            transport=transport,
+            base_url="http://test",
             cookies=_cookie(other, settings),
         ) as c:
             r_edit = await c.get(f"/trips/{trip.id}/segments/{seg.id}/edit")
             r_post = await c.post(
                 f"/trips/{trip.id}/segments/{seg.id}",
-                data={"type": "flight"}, follow_redirects=False,
+                data={"type": "flight"},
+                follow_redirects=False,
             )
             r_del = await c.post(
                 f"/trips/{trip.id}/segments/{seg.id}/delete",
@@ -4000,11 +4056,16 @@ async def edit_segment_form(
     seg = await _load_segment_for_user(db, trip_id, segment_id, user.id)
     trips = (await db.execute(_user_trips(db, user.id))).scalars().all()
     return templates.TemplateResponse(
-        request, f"segments/{seg.type}_form.html",
+        request,
+        f"segments/{seg.type}_form.html",
         {
-            "user": user, "trips": trips, "timezones": TIMEZONES,
-            "values": _segment_to_form_values(seg), "errors": {},
-            "type": seg.type, "edit_segment_id": str(seg.id),
+            "user": user,
+            "trips": trips,
+            "timezones": TIMEZONES,
+            "values": _segment_to_form_values(seg),
+            "errors": {},
+            "type": seg.type,
+            "edit_segment_id": str(seg.id),
         },
     )
 
@@ -4029,9 +4090,7 @@ async def update_segment(
     """
     seg = await _load_segment_for_user(db, trip_id, segment_id, user.id)
     # Re-load the trip so we can widen its dates after recomputing.
-    trip = (
-        await db.execute(select(Trip).where(Trip.id == trip_id))
-    ).scalar_one()
+    trip = (await db.execute(select(Trip).where(Trip.id == trip_id))).scalar_one()
 
     form_data = await request.form()
     seg_type = form_data.get("type")
@@ -4042,9 +4101,7 @@ async def update_segment(
 
     raw: dict[str, Any] = dict(form_data)
     # Force the trip selector to the current trip — edits never re-route trips.
-    raw["trip_selector"] = TripSelector(
-        existing_trip_id=trip.id, new_trip_title=None
-    ).model_dump()
+    raw["trip_selector"] = TripSelector(existing_trip_id=trip.id, new_trip_title=None).model_dump()
     raw.pop("trip_selector_existing_trip_id", None)
     raw.pop("trip_selector_new_trip_title", None)
 
@@ -4052,20 +4109,22 @@ async def update_segment(
         form = form_cls.model_validate(raw)
     except ValidationError as e:
         return templates.TemplateResponse(
-            request, f"segments/{seg_type}_form.html",
+            request,
+            f"segments/{seg_type}_form.html",
             {
-                "user": user, "trips": [trip], "timezones": TIMEZONES,
-                "values": raw, "errors": {"_form": str(e)}, "type": seg_type,
+                "user": user,
+                "trips": [trip],
+                "timezones": TIMEZONES,
+                "values": raw,
+                "errors": {"_form": str(e)},
+                "type": seg_type,
                 "edit_segment_id": str(seg.id),
             },
             status_code=200,
         )
 
     start_at = _to_utc(form.start_local, form.start_tz)
-    end_at = (
-        _to_utc(form.end_local, form.end_tz)
-        if form.end_local and form.end_tz else None
-    )
+    end_at = _to_utc(form.end_local, form.end_tz) if form.end_local and form.end_tz else None
     start_loc, end_loc, details = _shape_payload(form)
 
     async with db.begin():
@@ -4134,32 +4193,41 @@ def _segment_to_form_values(seg: Segment) -> dict[str, Any]:
         "status": seg.status,
         "provider": seg.provider or "",
         "confirmation_number": seg.confirmation_number or "",
-        "start_local": seg.start_at.astimezone(zoneinfo.ZoneInfo(seg.start_tz))
-                                  .strftime("%Y-%m-%dT%H:%M"),
+        "start_local": seg.start_at.astimezone(zoneinfo.ZoneInfo(seg.start_tz)).strftime(
+            "%Y-%m-%dT%H:%M"
+        ),
         "start_tz": seg.start_tz,
         "end_local": (
             seg.end_at.astimezone(zoneinfo.ZoneInfo(seg.end_tz)).strftime("%Y-%m-%dT%H:%M")
-            if seg.end_at and seg.end_tz else ""
+            if seg.end_at and seg.end_tz
+            else ""
         ),
         "end_tz": seg.end_tz or "",
         "notes": d.get("notes", ""),
     }
     if seg.type == "flight":
         base.update(
-            flight_number=d.get("flight_number", ""), seat=d.get("seat", ""),
-            origin_iata=sl.get("iata", ""), origin_city=sl.get("city", ""),
-            destination_iata=el.get("iata", ""), destination_city=el.get("city", ""),
+            flight_number=d.get("flight_number", ""),
+            seat=d.get("seat", ""),
+            origin_iata=sl.get("iata", ""),
+            origin_city=sl.get("city", ""),
+            destination_iata=el.get("iata", ""),
+            destination_city=el.get("city", ""),
         )
     elif seg.type == "lodging":
         base.update(
-            hotel_name=sl.get("name", ""), address=sl.get("address", ""),
-            city=sl.get("city", ""), country=sl.get("country", ""),
+            hotel_name=sl.get("name", ""),
+            address=sl.get("address", ""),
+            city=sl.get("city", ""),
+            country=sl.get("country", ""),
             room_type=d.get("room_type", ""),
         )
     elif seg.type == "car":
         base.update(
-            pickup_location=sl.get("name", ""), pickup_city=sl.get("city", ""),
-            dropoff_location=el.get("name", ""), dropoff_city=el.get("city", ""),
+            pickup_location=sl.get("name", ""),
+            pickup_city=sl.get("city", ""),
+            dropoff_location=el.get("name", ""),
+            dropoff_city=el.get("city", ""),
             car_class=d.get("car_class", ""),
         )
     elif seg.type == "train":
@@ -4176,7 +4244,8 @@ def _segment_to_form_values(seg: Segment) -> dict[str, Any]:
         )
     elif seg.type == "activity":
         base.update(
-            venue_name=sl.get("name", ""), address=sl.get("address", ""),
+            venue_name=sl.get("name", ""),
+            address=sl.get("address", ""),
             city=sl.get("city", ""),
         )
     return base
@@ -4243,12 +4312,15 @@ async def test_non_admin_blocked(
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
     user = User(oidc_subject="x", email="x@x.com", display_name="X", is_admin=False)
-    db_session.add(user); await db_session.commit()
+    db_session.add(user)
+    await db_session.commit()
     app = create_app(settings=settings)
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test", cookies=_cookie(user, settings),
+            transport=transport,
+            base_url="http://test",
+            cookies=_cookie(user, settings),
         ) as c:
             r = await c.get("/admin/aliases")
     assert r.status_code == 403
@@ -4261,27 +4333,33 @@ async def test_alias_crud(
     monkeypatch.setenv("DATABASE_URL", db_url)
     settings = Settings()
     admin = User(oidc_subject="a", email="a@x.com", display_name="A", is_admin=True)
-    db_session.add(admin); await db_session.commit()
+    db_session.add(admin)
+    await db_session.commit()
     app = create_app(settings=settings)
     transport = httpx.ASGITransport(app=app)
     async with app.router.lifespan_context(app):
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test", cookies=_cookie(admin, settings),
+            transport=transport,
+            base_url="http://test",
+            cookies=_cookie(admin, settings),
         ) as c:
-            r = await c.post("/admin/aliases",
-                             data={"local_part": "oliver", "user_id": str(admin.id)},
-                             follow_redirects=False)
+            r = await c.post(
+                "/admin/aliases",
+                data={"local_part": "oliver", "user_id": str(admin.id)},
+                follow_redirects=False,
+            )
             assert r.status_code == 303
 
             r = await c.get("/admin/aliases")
             assert "oliver" in r.text
 
-            alias = (await db_session.execute(
-                select(ForwardingAlias).where(ForwardingAlias.local_part == "oliver")
-            )).scalar_one()
+            alias = (
+                await db_session.execute(
+                    select(ForwardingAlias).where(ForwardingAlias.local_part == "oliver")
+                )
+            ).scalar_one()
 
-            r = await c.post(f"/admin/aliases/{alias.id}/delete",
-                             follow_redirects=False)
+            r = await c.post(f"/admin/aliases/{alias.id}/delete", follow_redirects=False)
             assert r.status_code == 303
             rows = (await db_session.execute(select(ForwardingAlias))).scalars().all()
             assert rows == []
@@ -4335,7 +4413,8 @@ async def alias_list(
         )
     ).all()
     return templates.TemplateResponse(
-        request, "admin/alias_list.html",
+        request,
+        "admin/alias_list.html",
         {"user": user, "rows": rows},
     )
 
@@ -4348,7 +4427,8 @@ async def alias_new_form(
 ) -> HTMLResponse:
     users = (await db.execute(select(User).order_by(User.email))).scalars().all()
     return templates.TemplateResponse(
-        request, "admin/alias_form.html",
+        request,
+        "admin/alias_form.html",
         {"user": user, "users": users, "alias": None, "errors": {}},
     )
 
@@ -4370,9 +4450,12 @@ async def alias_create(
     if not _LOCAL_PART_RE.match(normalized) or len(normalized) > 64:
         users = (await db.execute(select(User).order_by(User.email))).scalars().all()
         return templates.TemplateResponse(
-            request, "admin/alias_form.html",
+            request,
+            "admin/alias_form.html",
             {
-                "user": user, "users": users, "alias": None,
+                "user": user,
+                "users": users,
+                "alias": None,
                 "errors": {"_form": "invalid local part"},
             },
             status_code=200,
@@ -4384,9 +4467,12 @@ async def alias_create(
         await db.rollback()
         users = (await db.execute(select(User).order_by(User.email))).scalars().all()
         return templates.TemplateResponse(
-            request, "admin/alias_form.html",
+            request,
+            "admin/alias_form.html",
             {
-                "user": user, "users": users, "alias": None,
+                "user": user,
+                "users": users,
+                "alias": None,
                 "errors": {"_form": f"alias {normalized!r} already exists"},
             },
             status_code=200,
@@ -4470,6 +4556,7 @@ Create `src/trip_tracker/templates/admin/alias_form.html`:
 ```python
 # app.py
 from trip_tracker.routes.admin import router as admin_router
+
 app.include_router(admin_router)
 ```
 
@@ -4521,7 +4608,8 @@ async def raw_email_list(
     # Need an `import sqlalchemy as sa` at top for sa.func.
     rows = (await db.execute(stmt)).all()
     return templates.TemplateResponse(
-        request, "admin/raw_email_list.html",
+        request,
+        "admin/raw_email_list.html",
         {"user": user, "rows": rows, "page": page},
     )
 
@@ -4546,7 +4634,8 @@ async def raw_email_detail(
     else:
         text_body = msg.get_content() if msg.get_content_type() == "text/plain" else ""
     return templates.TemplateResponse(
-        request, "admin/raw_email_detail.html",
+        request,
+        "admin/raw_email_detail.html",
         {"user": user, "re": re, "text_body": text_body},
     )
 

@@ -30,7 +30,10 @@ repos:
         name: ruff-format (uv run)
         entry: uv run ruff format
         language: system
-        types_or: [python, pyi]
+        # markdown included: ruff >=0.16 formats python code blocks in docs,
+        # and CI's `ruff format --check .` covers them. `ruff check` does not
+        # lint markdown, so the lint hook above stays python-only.
+        types_or: [python, pyi, markdown]
         require_serial: true
       - id: mypy
         name: mypy (uv run)

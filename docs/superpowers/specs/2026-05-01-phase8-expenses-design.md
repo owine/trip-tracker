@@ -152,10 +152,19 @@ Default `USD`. Settable in the existing Settings page (Phase 6). **Changing it d
 ```python
 # src/trip_tracker/expenses/currencies.py
 CURRENCY_MINOR: dict[str, int] = {
-    "JPY": 0, "KRW": 0, "VND": 0, "CLP": 0, "ISK": 0,   # zero-decimal
-    "BHD": 3, "JOD": 3, "KWD": 3, "OMR": 3, "TND": 3,   # three-decimal
+    "JPY": 0,
+    "KRW": 0,
+    "VND": 0,
+    "CLP": 0,
+    "ISK": 0,  # zero-decimal
+    "BHD": 3,
+    "JOD": 3,
+    "KWD": 3,
+    "OMR": 3,
+    "TND": 3,  # three-decimal
     # everything else defaults to 2
 }
+
 
 def minor_digits(code: str) -> int:
     return CURRENCY_MINOR.get(code, 2)
@@ -216,11 +225,11 @@ No schema change — `Segment.details` is `Mapped[dict[str, Any] | None]` (JSONB
 
 ```python
 segment.details["award"] = {
-    "program": "Chase Ultimate Rewards",   # free-text; autocomplete from prior entries
+    "program": "Chase Ultimate Rewards",  # free-text; autocomplete from prior entries
     "points_spent": 75000,
-    "cash_copay_minor": 560,               # 5.60 in cash_copay_currency
+    "cash_copay_minor": 560,  # 5.60 in cash_copay_currency
     "cash_copay_currency": "USD",
-    "cash_equivalent_minor": 112500,       # optional self-reported "would have cost cash"
+    "cash_equivalent_minor": 112500,  # optional self-reported "would have cost cash"
     "cash_equivalent_currency": "USD",
 }
 ```
@@ -290,9 +299,11 @@ async def get_cached_rates(base: str, redis: Redis) -> dict[str, Decimal] | None
     """Returns parsed rates if cached, else None. Today's date is the cache key
     component — auto-rolls when the calendar day changes."""
 
+
 async def set_cached_rates(base: str, rates: dict[str, Decimal], redis: Redis) -> None:
     """Caches under fx:<base>:<today_iso> with 24h TTL. Stores rate values as
     strings to preserve Decimal precision through Redis."""
+
 
 async def get_rate(base: str, target: str, redis: Redis) -> Decimal:
     """Convert between any two currencies. Returns the rate `1 base = X target`.
@@ -349,11 +360,17 @@ The list view lives **inline on trip detail** (no separate `/trips/<id>/expenses
 `src/trip_tracker/routes/trips.py::trip_detail` gains:
 
 ```python
-expenses = (await db.execute(
-    select(Expense)
-    .where(Expense.trip_id == trip.id)
-    .order_by(Expense.incurred_on.desc(), Expense.created_at.desc())
-)).scalars().all()
+expenses = (
+    (
+        await db.execute(
+            select(Expense)
+            .where(Expense.trip_id == trip.id)
+            .order_by(Expense.incurred_on.desc(), Expense.created_at.desc())
+        )
+    )
+    .scalars()
+    .all()
+)
 
 home_currency = user.home_currency
 
@@ -379,12 +396,15 @@ try:
         eq_home_rate = await get_rate(award["cash_equivalent_currency"], home_currency, redis)
         cp_home_rate = await get_rate(award["cash_copay_currency"], home_currency, redis)
         # convert minor-units across digit differences then sum (eq - copay)
-        total_saved_home += _convert_to_home(award["cash_equivalent_minor"],
-                                             award["cash_equivalent_currency"],
-                                             eq_home_rate, home_currency)
-        total_saved_home -= _convert_to_home(award["cash_copay_minor"],
-                                             award["cash_copay_currency"],
-                                             cp_home_rate, home_currency)
+        total_saved_home += _convert_to_home(
+            award["cash_equivalent_minor"],
+            award["cash_equivalent_currency"],
+            eq_home_rate,
+            home_currency,
+        )
+        total_saved_home -= _convert_to_home(
+            award["cash_copay_minor"], award["cash_copay_currency"], cp_home_rate, home_currency
+        )
 except FxError:
     # Frankfurter unreachable AND no cache. Hide the line entirely.
     total_saved_home = None

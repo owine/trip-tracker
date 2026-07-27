@@ -134,6 +134,7 @@ Revision ID: <auto>
 Revises: <auto>
 Create Date: 2026-05-03 ...
 """
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -142,10 +143,12 @@ def upgrade() -> None:
     # No-op DDL. Documented vocabulary extension only.
     # Verify no CHECK constraint exists at upgrade time.
     bind = op.get_bind()
-    result = bind.execute(sa.text(
-        "SELECT 1 FROM information_schema.check_constraints "
-        "WHERE constraint_name LIKE 'ck_raw_emails_parse_status%'"
-    )).first()
+    result = bind.execute(
+        sa.text(
+            "SELECT 1 FROM information_schema.check_constraints "
+            "WHERE constraint_name LIKE 'ck_raw_emails_parse_status%'"
+        )
+    ).first()
     assert result is None, (
         "A CHECK constraint exists on raw_emails.parse_status. "
         "Update this migration to extend it to include 'duplicate'."
@@ -184,6 +187,7 @@ git commit -m "feat(phase9a): document parse_status='duplicate' vocabulary"
 ```python
 # tests/test_parsers_dedup.py
 """Dedup gate: strong match on (provider_normalized, confirmation_number)."""
+
 from __future__ import annotations
 
 import uuid
@@ -234,7 +238,8 @@ async def _seed_segment(
 
 @pytest.mark.asyncio
 async def test_strong_match_same_conf_same_provider(
-    db_session, user_with_trip,
+    db_session,
+    user_with_trip,
 ):
     user, trip = user_with_trip
     seeded = await _seed_segment(db_session, user=user, trip=trip)
@@ -254,7 +259,8 @@ async def test_strong_match_same_conf_same_provider(
 
 @pytest.mark.asyncio
 async def test_strong_match_case_insensitive_provider(
-    db_session, user_with_trip,
+    db_session,
+    user_with_trip,
 ):
     user, trip = user_with_trip
     seeded = await _seed_segment(db_session, user=user, trip=trip, provider="AIR FRANCE")
@@ -272,7 +278,8 @@ async def test_strong_match_case_insensitive_provider(
 
 @pytest.mark.asyncio
 async def test_strong_match_different_provider_returns_none(
-    db_session, user_with_trip,
+    db_session,
+    user_with_trip,
 ):
     user, trip = user_with_trip
     await _seed_segment(db_session, user=user, trip=trip, provider="Air France")
@@ -288,7 +295,8 @@ async def test_strong_match_different_provider_returns_none(
 
 @pytest.mark.asyncio
 async def test_strong_match_null_conf_returns_none(
-    db_session, user_with_trip,
+    db_session,
+    user_with_trip,
 ):
     user, trip = user_with_trip
     await _seed_segment(db_session, user=user, trip=trip, confirmation=None)
@@ -304,7 +312,9 @@ async def test_strong_match_null_conf_returns_none(
 
 @pytest.mark.asyncio
 async def test_owner_scope_excludes_other_users(
-    db_session, user_with_trip, other_user_with_trip,
+    db_session,
+    user_with_trip,
+    other_user_with_trip,
 ):
     user, trip = user_with_trip
     other, _other_trip = other_user_with_trip
@@ -321,7 +331,8 @@ async def test_owner_scope_excludes_other_users(
 
 @pytest.mark.asyncio
 async def test_cancelled_segments_excluded(
-    db_session, user_with_trip,
+    db_session,
+    user_with_trip,
 ):
     user, trip = user_with_trip
     await _seed_segment(db_session, user=user, trip=trip, status="cancelled")
@@ -356,6 +367,7 @@ Match rules in priority order:
 
 Match candidates are scoped to owner_user_id and exclude cancelled segments.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -375,7 +387,9 @@ def _normalize_provider(value: str | None) -> str | None:
 
 
 async def _strong_match(
-    db: AsyncSession, owner_user_id: uuid.UUID, draft: SegmentDraft,
+    db: AsyncSession,
+    owner_user_id: uuid.UUID,
+    draft: SegmentDraft,
 ) -> Segment | None:
     if not draft.confirmation_number:
         return None
@@ -396,7 +410,9 @@ async def _strong_match(
 
 
 async def find_existing_segment(
-    db: AsyncSession, owner_user_id: uuid.UUID, draft: SegmentDraft,
+    db: AsyncSession,
+    owner_user_id: uuid.UUID,
+    draft: SegmentDraft,
 ) -> Segment | None:
     """Return the first existing Segment matching draft, or None."""
     if hit := await _strong_match(db, owner_user_id, draft):
@@ -430,14 +446,19 @@ git commit -m "feat(phase9a): dedup strong match on conf# + provider"
 ```python
 # tests/test_parsers_dedup.py — additions
 
+
 @pytest.mark.asyncio
 async def test_medium_flight_within_30min_iata_match(db_session, user_with_trip):
     user, trip = user_with_trip
     seeded = await _seed_segment(
-        db_session, user=user, trip=trip,
-        confirmation=None, provider=None,  # no strong-match data
+        db_session,
+        user=user,
+        trip=trip,
+        confirmation=None,
+        provider=None,  # no strong-match data
         start_at=datetime(2026, 6, 4, 16, 55, tzinfo=UTC),
-        start_iata="JFK", end_iata="CDG",
+        start_iata="JFK",
+        end_iata="CDG",
     )
     draft = SegmentDraft(
         type="flight",
@@ -456,16 +477,23 @@ async def test_medium_flight_within_30min_iata_match(db_session, user_with_trip)
 async def test_medium_flight_31min_apart_returns_none(db_session, user_with_trip):
     user, trip = user_with_trip
     await _seed_segment(
-        db_session, user=user, trip=trip,
-        confirmation=None, provider=None,
+        db_session,
+        user=user,
+        trip=trip,
+        confirmation=None,
+        provider=None,
         start_at=datetime(2026, 6, 4, 16, 55, tzinfo=UTC),
-        start_iata="JFK", end_iata="CDG",
+        start_iata="JFK",
+        end_iata="CDG",
     )
     draft = SegmentDraft(
-        type="flight", confirmation_number=None, provider=None,
+        type="flight",
+        confirmation_number=None,
+        provider=None,
         start_at=datetime(2026, 6, 4, 17, 26, tzinfo=UTC),  # +31 min
         start_tz="UTC",
-        start_location={"iata": "JFK"}, end_location={"iata": "CDG"},
+        start_location={"iata": "JFK"},
+        end_location={"iata": "CDG"},
     )
     assert await find_existing_segment(db_session, user.id, draft) is None
 
@@ -474,15 +502,22 @@ async def test_medium_flight_31min_apart_returns_none(db_session, user_with_trip
 async def test_medium_flight_different_iata_returns_none(db_session, user_with_trip):
     user, trip = user_with_trip
     await _seed_segment(
-        db_session, user=user, trip=trip,
-        confirmation=None, provider=None,
-        start_iata="JFK", end_iata="CDG",
+        db_session,
+        user=user,
+        trip=trip,
+        confirmation=None,
+        provider=None,
+        start_iata="JFK",
+        end_iata="CDG",
     )
     draft = SegmentDraft(
-        type="flight", confirmation_number=None, provider=None,
+        type="flight",
+        confirmation_number=None,
+        provider=None,
         start_at=datetime(2026, 6, 4, 17, 0, tzinfo=UTC),
         start_tz="UTC",
-        start_location={"iata": "JFK"}, end_location={"iata": "ORY"},
+        start_location={"iata": "JFK"},
+        end_location={"iata": "ORY"},
     )
     assert await find_existing_segment(db_session, user.id, draft) is None
 
@@ -491,15 +526,22 @@ async def test_medium_flight_different_iata_returns_none(db_session, user_with_t
 async def test_medium_lodging_same_hotel_same_date(db_session, user_with_trip):
     user, trip = user_with_trip
     seeded = await _seed_segment(
-        db_session, user=user, trip=trip, type_="lodging",
-        confirmation=None, provider=None,
+        db_session,
+        user=user,
+        trip=trip,
+        type_="lodging",
+        confirmation=None,
+        provider=None,
         start_at=datetime(2026, 6, 5, 15, 0, tzinfo=UTC),
-        start_iata=None, end_iata=None,
+        start_iata=None,
+        end_iata=None,
     )
     seeded.start_location = {"name": "Hotel des Grands Boulevards"}
     await db_session.flush()
     draft = SegmentDraft(
-        type="lodging", confirmation_number=None, provider=None,
+        type="lodging",
+        confirmation_number=None,
+        provider=None,
         start_at=datetime(2026, 6, 5, 17, 30, tzinfo=UTC),  # same date
         start_tz="UTC",
         start_location={"name": "HOTEL DES GRANDS BOULEVARDS"},  # case differs
@@ -513,12 +555,19 @@ async def test_cross_type_conf_does_not_collide(db_session, user_with_trip):
     """Lodging conf# 'ABC123' must NOT match a flight with conf# 'ABC123'."""
     user, trip = user_with_trip
     await _seed_segment(
-        db_session, user=user, trip=trip, type_="lodging",
-        provider="Marriott", confirmation="ABC123",
+        db_session,
+        user=user,
+        trip=trip,
+        type_="lodging",
+        provider="Marriott",
+        confirmation="ABC123",
     )
     draft = SegmentDraft(
-        type="flight", confirmation_number="ABC123", provider="Marriott",
-        start_at=datetime(2026, 6, 4, 17, 0, tzinfo=UTC), start_tz="UTC",
+        type="flight",
+        confirmation_number="ABC123",
+        provider="Marriott",
+        start_at=datetime(2026, 6, 4, 17, 0, tzinfo=UTC),
+        start_tz="UTC",
     )
     # Strong match still hits (conf+provider both equal). This is correct
     # per the spec — it's a TYPE-collision, not a key-collision. Verify:
@@ -548,7 +597,9 @@ _TRANSIT_TYPES = frozenset({"flight", "train", "transfer"})
 
 
 async def _medium_transit_match(
-    db: AsyncSession, owner_user_id: uuid.UUID, draft: SegmentDraft,
+    db: AsyncSession,
+    owner_user_id: uuid.UUID,
+    draft: SegmentDraft,
 ) -> Segment | None:
     if draft.type not in _TRANSIT_TYPES:
         return None
@@ -573,7 +624,9 @@ async def _medium_transit_match(
 
 
 async def _medium_lodging_match(
-    db: AsyncSession, owner_user_id: uuid.UUID, draft: SegmentDraft,
+    db: AsyncSession,
+    owner_user_id: uuid.UUID,
+    draft: SegmentDraft,
 ) -> Segment | None:
     if draft.type != "lodging":
         return None
@@ -595,7 +648,9 @@ async def _medium_lodging_match(
 
 
 async def find_existing_segment(
-    db: AsyncSession, owner_user_id: uuid.UUID, draft: SegmentDraft,
+    db: AsyncSession,
+    owner_user_id: uuid.UUID,
+    draft: SegmentDraft,
 ) -> Segment | None:
     if hit := await _strong_match(db, owner_user_id, draft):
         return hit
@@ -708,8 +763,7 @@ if matched:
     raw.headers = {
         **(raw.headers or {}),
         "X-Tt-Dedup-Partial": [
-            {"draft_summary": str(d), "existing_id": str(s.id)}
-            for d, s in matched
+            {"draft_summary": str(d), "existing_id": str(s.id)} for d, s in matched
         ],
     }
 
@@ -870,12 +924,17 @@ git commit -m "feat(phase9a): populate inbox duplicates bucket"
 ```python
 # tests/test_routes_inbox.py — additions
 
+
 @pytest.mark.asyncio
 async def test_not_a_duplicate_resets_to_pending_and_clears_header(
-    client, seeded_user, db_session, mock_enqueue_parse,
+    client,
+    seeded_user,
+    db_session,
+    mock_enqueue_parse,
 ):
     raw = await _seed_raw_email(
-        db_session, user=seeded_user,
+        db_session,
+        user=seeded_user,
         parse_status="duplicate",
         headers={"X-Tt-Dedup-Against": ["abc"]},
     )
@@ -894,7 +953,10 @@ async def test_not_a_duplicate_resets_to_pending_and_clears_header(
 
 @pytest.mark.asyncio
 async def test_not_a_duplicate_other_user_returns_404(
-    client, seeded_user, other_user, db_session,
+    client,
+    seeded_user,
+    other_user,
+    db_session,
 ):
     raw = await _seed_raw_email(db_session, user=other_user, parse_status="duplicate")
     r = await client.post(
@@ -910,6 +972,7 @@ async def test_not_a_duplicate_other_user_returns_404(
 
 ```python
 # src/trip_tracker/routes/inbox.py — add near reparse
+
 
 @router.post("/{raw_id}/not-a-duplicate", response_model=None)
 async def not_a_duplicate(
@@ -1032,6 +1095,7 @@ Revision ID: <auto>
 Revises: <previous>
 Create Date: 2026-05-<DD> ...
 """
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -1042,15 +1106,19 @@ def upgrade() -> None:
     op.add_column(
         "trips",
         sa.Column(
-            "merged_into_id", postgresql.UUID(as_uuid=True), nullable=True,
+            "merged_into_id",
+            postgresql.UUID(as_uuid=True),
+            nullable=True,
         ),
     )
     op.add_column("trips", sa.Column("merged_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("trips", sa.Column("merge_audit", postgresql.JSONB, nullable=True))
     op.create_foreign_key(
         "fk_trips_merged_into",
-        "trips", "trips",
-        ["merged_into_id"], ["id"],
+        "trips",
+        "trips",
+        ["merged_into_id"],
+        ["id"],
         ondelete="SET NULL",
     )
     # SET NULL not CASCADE — if the target of a merge is later hard-deleted,
@@ -1072,8 +1140,10 @@ def upgrade() -> None:
         sa.Column("trip_a_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("trip_b_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column(
-            "dismissed_at", sa.DateTime(timezone=True),
-            server_default=sa.func.now(), nullable=False,
+            "dismissed_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
         ),
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["trip_a_id"], ["trips.id"], ondelete="CASCADE"),
@@ -1082,8 +1152,9 @@ def upgrade() -> None:
         # all three columns. Pair-uniqueness across LEAST/GREATEST is layered
         # on top via the UNIQUE INDEX below — the PK is plain (A,B) order,
         # the unique index canonicalizes pair order.
-        sa.PrimaryKeyConstraint("user_id", "trip_a_id", "trip_b_id",
-                                name="pk_trip_merge_dismissals"),
+        sa.PrimaryKeyConstraint(
+            "user_id", "trip_a_id", "trip_b_id", name="pk_trip_merge_dismissals"
+        ),
     )
     # Pair-uniqueness via expression UNIQUE INDEX. Postgres allows this
     # in a UNIQUE INDEX even though it can't be used as a PRIMARY KEY
@@ -1149,6 +1220,7 @@ git commit -m "feat(phase9bc): trip soft-delete columns + dismissals table"
 from typing import Any
 from sqlalchemy.dialects.postgresql import JSONB
 
+
 class Trip(Base):
     # ... existing columns ...
     merged_into_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -1157,10 +1229,12 @@ class Trip(Base):
         nullable=True,
     )
     merged_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
     merge_audit: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, nullable=True,
+        JSONB,
+        nullable=True,
     )
 ```
 
@@ -1169,6 +1243,7 @@ class Trip(Base):
 ```python
 # src/trip_tracker/models/trip_merge_dismissal.py
 """Dismissed trip-merge suggestions, per-user, per-pair."""
+
 from __future__ import annotations
 
 import uuid
@@ -1203,7 +1278,9 @@ class TripMergeDismissal(Base):
         primary_key=True,
     )
     dismissed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False,
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
     )
 ```
 
@@ -1238,6 +1315,7 @@ git commit -m "feat(phase9bc): Trip soft-delete columns + TripMergeDismissal mod
 ```python
 # tests/test_trips_home.py
 """infer_home: dominant endpoint city across last 20 confirmed segments."""
+
 import pytest
 from datetime import UTC, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1245,7 +1323,10 @@ from trip_tracker.trips.home import infer_home
 
 
 async def _seed_segments(
-    db: AsyncSession, user, *, endpoints: list[tuple[str, str]],  # (start, end)
+    db: AsyncSession,
+    user,
+    *,
+    endpoints: list[tuple[str, str]],  # (start, end)
     status: str = "confirmed",
     start_at_base: datetime | None = None,
 ) -> None:
@@ -1336,6 +1417,7 @@ Used by the consolidation candidate scorer to decide if a trip is 'open'
 
 No persisted column — recomputed per query. Cheap given the partial index.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -1414,11 +1496,19 @@ from trip_tracker.trips.consolidation import ConsolidationTarget
 
 def test_from_drafts_extracts_endpoints():
     drafts = [
-        SegmentDraft(type="flight", start_at=..., end_at=...,
-                     start_location={"city": "JFK", "iata": "JFK"},
-                     end_location={"city": "Paris", "iata": "CDG"}),
-        SegmentDraft(type="lodging", start_at=..., end_at=...,
-                     start_location={"name": "Hotel des Grands Boulevards", "city": "Paris"}),
+        SegmentDraft(
+            type="flight",
+            start_at=...,
+            end_at=...,
+            start_location={"city": "JFK", "iata": "JFK"},
+            end_location={"city": "Paris", "iata": "CDG"},
+        ),
+        SegmentDraft(
+            type="lodging",
+            start_at=...,
+            end_at=...,
+            start_location={"name": "Hotel des Grands Boulevards", "city": "Paris"},
+        ),
     ]
     target = ConsolidationTarget.from_drafts(drafts)
     assert target.start_city == "JFK"
@@ -1431,6 +1521,7 @@ def test_from_drafts_extracts_endpoints():
 ```python
 # src/trip_tracker/trips/consolidation.py
 """Trip consolidation suggestions — home-anchored with geometric fallback."""
+
 from __future__ import annotations
 
 import uuid
@@ -1464,7 +1555,9 @@ class ConsolidationTarget:
 
     @classmethod
     def from_trip(
-        cls, trip: Trip, segments: Sequence[Segment],
+        cls,
+        trip: Trip,
+        segments: Sequence[Segment],
     ) -> "ConsolidationTarget":
         ordered = sorted(segments, key=lambda s: s.start_at)
         start_city = (ordered[0].start_location or {}).get("city") if ordered else None
@@ -1551,7 +1644,9 @@ _DISTANCE_KM_LOW = 500
 
 
 async def _user_trips_within_window(
-    db: AsyncSession, user: User, target: ConsolidationTarget,
+    db: AsyncSession,
+    user: User,
+    target: ConsolidationTarget,
 ) -> list[Trip]:
     window = timedelta(days=_GAP_DAYS_FALLBACK)
     clauses = [
@@ -1565,26 +1660,24 @@ async def _user_trips_within_window(
     # target.trip_id is None and there's nothing to exclude.
     if target.trip_id is not None:
         clauses.append(Trip.id != target.trip_id)
-    stmt = (
-        select(Trip)
-        .where(*clauses)
-        .order_by(Trip.start_date.desc())
-        .limit(50)
-    )
+    stmt = select(Trip).where(*clauses).order_by(Trip.start_date.desc()).limit(50)
     return list((await db.execute(stmt)).scalars().all())
 
 
 async def _dismissed_pair_ids(
-    db: AsyncSession, user: User, target_trip_id: uuid.UUID | None,
+    db: AsyncSession,
+    user: User,
+    target_trip_id: uuid.UUID | None,
 ) -> frozenset[uuid.UUID]:
     if target_trip_id is None:
         return frozenset()
     stmt = select(
-        TripMergeDismissal.trip_a_id, TripMergeDismissal.trip_b_id,
+        TripMergeDismissal.trip_a_id,
+        TripMergeDismissal.trip_b_id,
     ).where(
         TripMergeDismissal.user_id == user.id,
-        (TripMergeDismissal.trip_a_id == target_trip_id) |
-        (TripMergeDismissal.trip_b_id == target_trip_id),
+        (TripMergeDismissal.trip_a_id == target_trip_id)
+        | (TripMergeDismissal.trip_b_id == target_trip_id),
     )
     rows = (await db.execute(stmt)).all()
     out: set[uuid.UUID] = set()
@@ -1594,7 +1687,9 @@ async def _dismissed_pair_ids(
 
 
 async def consolidation_candidates(
-    db: AsyncSession, user: User, target: ConsolidationTarget,
+    db: AsyncSession,
+    user: User,
+    target: ConsolidationTarget,
 ) -> list[ConsolidationCandidate]:
     home = await infer_home(db, user.id)
     dismissed = await _dismissed_pair_ids(db, user, target.trip_id)
@@ -1660,19 +1755,26 @@ This is a single bulk task because each site is a one-line addition. Do them in 
 # tests/test_routes_trip_filters.py
 """Soft-deleted trips must NOT appear in any user-facing listing."""
 
-@pytest.mark.parametrize("path", [
-    "/trips",
-    "/segments",
-    "/documents",
-    "/map",
-    # Add other listings that surface trips by id
-])
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/trips",
+        "/segments",
+        "/documents",
+        "/map",
+        # Add other listings that surface trips by id
+    ],
+)
 @pytest.mark.asyncio
 async def test_soft_deleted_trip_excluded(client, seeded_user, db_session, path):
     trip_active = await _seed_trip(db_session, seeded_user, title="Active Trip")
     trip_merged = await _seed_trip(
-        db_session, seeded_user, title="Merged Trip",
-        merged_into_id=trip_active.id, merged_at=datetime.now(UTC),
+        db_session,
+        seeded_user,
+        title="Merged Trip",
+        merged_into_id=trip_active.id,
+        merged_at=datetime.now(UTC),
     )
     r = await client.get(path, headers=auth_headers(seeded_user))
     assert "Active Trip" in r.text
@@ -1726,8 +1828,11 @@ git commit -m "feat(phase9bc): filter soft-deleted trips from every Trip query"
 async def test_soft_deleted_trip_returns_410(client, seeded_user, db_session):
     target = await _seed_trip(db_session, seeded_user, title="Target")
     source = await _seed_trip(
-        db_session, seeded_user, title="Merged",
-        merged_into_id=target.id, merged_at=datetime.now(UTC),
+        db_session,
+        seeded_user,
+        title="Merged",
+        merged_into_id=target.id,
+        merged_at=datetime.now(UTC),
     )
     r = await client.get(f"/trips/{source.id}", headers=auth_headers(seeded_user))
     assert r.status_code == 410
@@ -1738,8 +1843,11 @@ async def test_soft_deleted_trip_returns_410(client, seeded_user, db_session):
 async def test_soft_deleted_ics_returns_410(client, seeded_user, db_session):
     target = await _seed_trip(db_session, seeded_user, title="Target")
     source = await _seed_trip(
-        db_session, seeded_user, title="Merged",
-        merged_into_id=target.id, merged_at=datetime.now(UTC),
+        db_session,
+        seeded_user,
+        title="Merged",
+        merged_into_id=target.id,
+        merged_at=datetime.now(UTC),
     )
     r = await client.get(f"/ics/{source.id}.ics")  # ICS may be unauth
     assert r.status_code == 410
@@ -1754,7 +1862,7 @@ if trip.merged_into_id is not None:
     return Response(
         status_code=410,
         content=f"This trip was merged into {trip.merged_into_id}. "
-                f"Visit /trips/{trip.merged_into_id} instead.",
+        f"Visit /trips/{trip.merged_into_id} instead.",
         media_type="text/plain",
     )
 ```
@@ -1789,6 +1897,7 @@ Cover: happy path, 403 on non-owner source, 403 on non-owner target, 400 self-me
 
 Builds the merge_audit JSONB so undo can be lossless. See spec §3.3.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -1805,51 +1914,67 @@ from trip_tracker.models.trip_traveler import TripTraveler
 
 
 async def merge_trip_into(
-    db: AsyncSession, source: Trip, target: Trip,
+    db: AsyncSession,
+    source: Trip,
+    target: Trip,
 ) -> dict:
     """Reassign FKs from source → target, populate merge_audit, soft-delete source.
     Returns the audit payload for the caller to flash.
     """
     # 1. Capture moved IDs for the audit
-    moved_segment_ids = (await db.execute(
-        select(Segment.id).where(Segment.trip_id == source.id)
-    )).scalars().all()
-    moved_expense_ids = (await db.execute(
-        select(Expense.id).where(Expense.trip_id == source.id)
-    )).scalars().all()
-    moved_document_ids = (await db.execute(
-        select(Document.id).where(Document.trip_id == source.id)
-    )).scalars().all()
+    moved_segment_ids = (
+        (await db.execute(select(Segment.id).where(Segment.trip_id == source.id))).scalars().all()
+    )
+    moved_expense_ids = (
+        (await db.execute(select(Expense.id).where(Expense.trip_id == source.id))).scalars().all()
+    )
+    moved_document_ids = (
+        (await db.execute(select(Document.id).where(Document.trip_id == source.id))).scalars().all()
+    )
 
     # 2. Compute trip_traveler diff: which user_ids are on source but NOT on target
-    source_users = (await db.execute(
-        select(TripTraveler.user_id).where(TripTraveler.trip_id == source.id)
-    )).scalars().all()
-    target_users = (await db.execute(
-        select(TripTraveler.user_id).where(TripTraveler.trip_id == target.id)
-    )).scalars().all()
+    source_users = (
+        (await db.execute(select(TripTraveler.user_id).where(TripTraveler.trip_id == source.id)))
+        .scalars()
+        .all()
+    )
+    target_users = (
+        (await db.execute(select(TripTraveler.user_id).where(TripTraveler.trip_id == target.id)))
+        .scalars()
+        .all()
+    )
     added_traveler_user_ids = list(set(source_users) - set(target_users))
 
     # 3. Reassign FKs
     await db.execute(update(Segment).where(Segment.trip_id == source.id).values(trip_id=target.id))
     await db.execute(update(Expense).where(Expense.trip_id == source.id).values(trip_id=target.id))
-    await db.execute(update(Document).where(Document.trip_id == source.id).values(trip_id=target.id))
+    await db.execute(
+        update(Document).where(Document.trip_id == source.id).values(trip_id=target.id)
+    )
 
     # 4. Trip_travelers: insert added rows, then delete source rows
     if added_traveler_user_ids:
         # Re-fetch the source rows to get role + other columns
-        added_rows = (await db.execute(
-            select(TripTraveler).where(
-                TripTraveler.trip_id == source.id,
-                TripTraveler.user_id.in_(added_traveler_user_ids),
+        added_rows = (
+            (
+                await db.execute(
+                    select(TripTraveler).where(
+                        TripTraveler.trip_id == source.id,
+                        TripTraveler.user_id.in_(added_traveler_user_ids),
+                    )
+                )
             )
-        )).scalars().all()
+            .scalars()
+            .all()
+        )
         for r in added_rows:
-            db.add(TripTraveler(
-                trip_id=target.id,
-                user_id=r.user_id,
-                role=r.role,  # adjust to actual schema
-            ))
+            db.add(
+                TripTraveler(
+                    trip_id=target.id,
+                    user_id=r.user_id,
+                    role=r.role,  # adjust to actual schema
+                )
+            )
     await db.execute(delete(TripTraveler).where(TripTraveler.trip_id == source.id))
 
     # 5. Recompute target dates
@@ -1874,7 +1999,9 @@ async def merge_trip_into(
         "schema_version": 1,
     }
     await db.execute(
-        update(Trip).where(Trip.id == source.id).values(
+        update(Trip)
+        .where(Trip.id == source.id)
+        .values(
             merged_into_id=target.id,
             merged_at=datetime.now(UTC),
             merge_audit=audit,
@@ -1887,6 +2014,7 @@ async def merge_trip_into(
 
 ```python
 # src/trip_tracker/routes/trips.py — additions
+
 
 @router.post("/{source_id}/merge-into/{target_id}", response_model=None)
 async def merge_into(
@@ -2155,6 +2283,7 @@ that idiom. The shape is roughly:
 ```python
 # src/trip_tracker/worker.py — add (adjust to match the existing
 # session-acquire idiom in this file; do NOT invent a new pattern)
+
 
 async def purge_merged_trips(ctx: dict[str, Any]) -> None:
     """Hard-delete trips that have been soft-merged for >= 7 days.

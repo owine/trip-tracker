@@ -114,7 +114,7 @@ exclude cancelled segments.
 ```python
 drafts = await run_strategies(raw)
 matched: list[tuple[SegmentDraft, Segment]] = []
-fresh:   list[SegmentDraft] = []
+fresh: list[SegmentDraft] = []
 for d in drafts:
     existing = await find_existing_segment(db, owner_user_id, d)
     if existing:
@@ -122,18 +122,19 @@ for d in drafts:
     else:
         fresh.append(d)
 
-if drafts and not fresh:                        # all drafts deduped
+if drafts and not fresh:  # all drafts deduped
     raw.parse_status = "duplicate"
     raw.headers = {**(raw.headers or {}), "X-Tt-Dedup-Against": [str(s.id) for _, s in matched]}
     # NO segments persisted, NO auto-Expense
-elif matched:                                   # mixed — partial dedup
+elif matched:  # mixed — partial dedup
     raw.parse_status = "review"
-    raw.headers = {**(raw.headers or {}), "X-Tt-Dedup-Partial": [
-        {"draft": d.summary(), "existing": str(s.id)} for d, s in matched
-    ]}
+    raw.headers = {
+        **(raw.headers or {}),
+        "X-Tt-Dedup-Partial": [{"draft": d.summary(), "existing": str(s.id)} for d, s in matched],
+    }
     persist_segments(fresh)
 else:
-    raw.parse_status = "review"                 # current behavior
+    raw.parse_status = "review"  # current behavior
     persist_segments(fresh)
 ```
 
@@ -314,12 +315,12 @@ populate it with the rows actually moved/added:
 
 ```python
 merge_audit = {
-    "source_segment_ids":   [...],
-    "source_expense_ids":   [...],
-    "source_document_ids":  [...],
-    "added_traveler_user_ids": [...],   # rows actually inserted into target
-    "source_start_date": "...",         # for target date recomputation on undo
-    "source_end_date":   "...",
+    "source_segment_ids": [...],
+    "source_expense_ids": [...],
+    "source_document_ids": [...],
+    "added_traveler_user_ids": [...],  # rows actually inserted into target
+    "source_start_date": "...",  # for target date recomputation on undo
+    "source_end_date": "...",
     "schema_version": 1,
 }
 ```

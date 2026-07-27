@@ -92,7 +92,7 @@ name <TAB> asciiname <TAB> country_code <TAB> population <TAB> lat <TAB> lon
 class City:
     name: str
     asciiname: str
-    country_code: str   # ISO 3166-1 alpha-2
+    country_code: str  # ISO 3166-1 alpha-2
     population: int
     lat: float
     lon: float
@@ -140,9 +140,9 @@ Implementation: convert to 3D unit-sphere vectors, slerp at uniformly-spaced `t 
 ```python
 def resolve_point(loc: dict[str, Any] | None) -> tuple[float, float] | None:
     """Pick the best (lat, lng) for a JSONB location dict, in priority order:
-       1. iata → airports lookup
-       2. (city, country) → cities1000 lookup
-       3. None
+    1. iata → airports lookup
+    2. (city, country) → cities1000 lookup
+    3. None
     """
 ```
 
@@ -248,8 +248,8 @@ class DailyForecast(BaseModel):
     date: date
     temp_max_c: float
     temp_min_c: float
-    weather_code: int      # WMO code; mapped to emoji + label client-side
-    precip_prob: int       # 0-100
+    weather_code: int  # WMO code; mapped to emoji + label client-side
+    precip_prob: int  # 0-100
 
 
 class Forecast(BaseModel):
@@ -284,15 +284,18 @@ The map handler for `/trips/<id>/map` does this for each unique destination:
 
 ```python
 forecasts: dict[tuple[float, float], Forecast | None] = {}
-for (lat, lng) in unique_destinations:
+for lat, lng in unique_destinations:
     cached = await get_cached(lat, lng, redis)
     if cached is not None:
         forecasts[(lat, lng)] = cached
         continue
     # Cache miss: fire-and-forget saq refresh; render this card as "loading"
     await queue.enqueue(
-        "refresh_weather", lat=lat, lng=lng,
-        unique=True, key=f"weather:{lat:.2f}:{lng:.2f}",
+        "refresh_weather",
+        lat=lat,
+        lng=lng,
+        unique=True,
+        key=f"weather:{lat:.2f}:{lng:.2f}",
     )
     forecasts[(lat, lng)] = None
 ```

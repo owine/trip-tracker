@@ -223,9 +223,7 @@ Replace with tests against saq's `startup` / `shutdown` functions directly:
 
 ```python
 @pytest.mark.asyncio
-async def test_worker_startup_creates_engine(
-    db_url: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_worker_startup_creates_engine(db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """startup() populates ctx['engine'] and ctx['settings']."""
     monkeypatch.setenv("DATABASE_URL", db_url)
     from trip_tracker.worker import shutdown, startup

@@ -417,9 +417,9 @@ Server-rendered: form has `<input type="datetime-local">` (browser-local time) p
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-local_dt = datetime.fromisoformat(form.start_local)         # naive
-aware_dt = local_dt.replace(tzinfo=ZoneInfo(form.start_tz)) # localize via tzinfo attach
-utc_dt = aware_dt.astimezone(ZoneInfo("UTC"))               # convert
+local_dt = datetime.fromisoformat(form.start_local)  # naive
+aware_dt = local_dt.replace(tzinfo=ZoneInfo(form.start_tz))  # localize via tzinfo attach
+utc_dt = aware_dt.astimezone(ZoneInfo("UTC"))  # convert
 # store: start_at=utc_dt, start_tz=form.start_tz
 ```
 The Pydantic form model validates `form.start_tz in zoneinfo.available_timezones()` and rejects unknown names with a clear field error. (Note: the stdlib idiom is `replace(tzinfo=...)`, **not** `.localize()` — that's a pytz API.)

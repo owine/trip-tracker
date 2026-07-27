@@ -130,9 +130,7 @@ class Document(Base):
         UniqueConstraint("owner_user_id", "sha256", name="uq_documents_owner_sha256"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     owner_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -161,11 +159,10 @@ class Document(Base):
         String, nullable=False, default="pending", server_default="pending"
     )
     extract_method: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        nullable=False, default=lambda: datetime.now(UTC)
-    )
+    created_at: Mapped[datetime] = mapped_column(nullable=False, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
-        nullable=False, default=lambda: datetime.now(UTC),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
 
@@ -227,10 +224,12 @@ def _document_after_delete(_mapper: Any, _connection: Any, target: Document) -> 
     if _storage is None:
         _logger.warning(
             "Document %s deleted but storage not set; orphan file at %s",
-            target.id, target.storage_key,
+            target.id,
+            target.storage_key,
         )
         return
     import asyncio
+
     storage = _storage
     key = target.storage_key
     asyncio.create_task(_safe_delete(storage, key))
@@ -276,8 +275,12 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.create_table(
         "documents",
-        sa.Column("id", postgresql.UUID(as_uuid=True),
-                  server_default=sa.text("gen_random_uuid()"), primary_key=True),
+        sa.Column(
+            "id",
+            postgresql.UUID(as_uuid=True),
+            server_default=sa.text("gen_random_uuid()"),
+            primary_key=True,
+        ),
         sa.Column("owner_user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("trip_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("segment_id", postgresql.UUID(as_uuid=True), nullable=True),
@@ -290,26 +293,33 @@ def upgrade() -> None:
         sa.Column("extracted_text", sa.Text(), nullable=True),
         sa.Column("extract_status", sa.Text(), nullable=False, server_default="pending"),
         sa.Column("extract_method", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.TIMESTAMP(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.TIMESTAMP(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.TIMESTAMP(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["owner_user_id"], ["users.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["trip_id"], ["trips.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["segment_id"], ["segments.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["raw_email_id"], ["raw_emails.id"], ondelete="SET NULL"),
-        sa.UniqueConstraint("owner_user_id", "sha256",
-                            name="uq_documents_owner_sha256"),
+        sa.UniqueConstraint("owner_user_id", "sha256", name="uq_documents_owner_sha256"),
     )
-    op.create_index("ix_documents_trip_id",    "documents", ["trip_id"])
+    op.create_index("ix_documents_trip_id", "documents", ["trip_id"])
     op.create_index("ix_documents_segment_id", "documents", ["segment_id"])
-    op.create_index("ix_documents_owner",      "documents", ["owner_user_id"])
+    op.create_index("ix_documents_owner", "documents", ["owner_user_id"])
 
 
 def downgrade() -> None:
-    op.drop_index("ix_documents_owner",      table_name="documents")
+    op.drop_index("ix_documents_owner", table_name="documents")
     op.drop_index("ix_documents_segment_id", table_name="documents")
-    op.drop_index("ix_documents_trip_id",    table_name="documents")
+    op.drop_index("ix_documents_trip_id", table_name="documents")
     op.drop_table("documents")
 ```
 
@@ -339,16 +349,29 @@ from trip_tracker.models.user import User
 @pytest.mark.asyncio
 async def test_document_unique_owner_sha256(db_session: AsyncSession) -> None:
     u = User(oidc_subject="d1", email="d1@x.com", display_name="D1")
-    db_session.add(u); await db_session.flush()
-    db_session.add(Document(
-        owner_user_id=u.id, filename="a.pdf", mime_type="application/pdf",
-        size_bytes=10, sha256="a" * 64, storage_key="aa/" + "a" * 64,
-    ))
+    db_session.add(u)
+    await db_session.flush()
+    db_session.add(
+        Document(
+            owner_user_id=u.id,
+            filename="a.pdf",
+            mime_type="application/pdf",
+            size_bytes=10,
+            sha256="a" * 64,
+            storage_key="aa/" + "a" * 64,
+        )
+    )
     await db_session.commit()
-    db_session.add(Document(
-        owner_user_id=u.id, filename="b.pdf", mime_type="application/pdf",
-        size_bytes=10, sha256="a" * 64, storage_key="aa/" + "a" * 64,
-    ))
+    db_session.add(
+        Document(
+            owner_user_id=u.id,
+            filename="b.pdf",
+            mime_type="application/pdf",
+            size_bytes=10,
+            sha256="a" * 64,
+            storage_key="aa/" + "a" * 64,
+        )
+    )
     with pytest.raises(IntegrityError):
         await db_session.commit()
 
@@ -356,16 +379,23 @@ async def test_document_unique_owner_sha256(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_trip_delete_cascades_documents(db_session: AsyncSession) -> None:
     u = User(oidc_subject="d2", email="d2@x.com", display_name="D2")
-    db_session.add(u); await db_session.flush()
-    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2),
-             created_by=u.id)
-    db_session.add(t); await db_session.flush()
+    db_session.add(u)
+    await db_session.flush()
+    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2), created_by=u.id)
+    db_session.add(t)
+    await db_session.flush()
     db_session.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
-    db_session.add(Document(
-        owner_user_id=u.id, trip_id=t.id, filename="x.pdf",
-        mime_type="application/pdf", size_bytes=10, sha256="b" * 64,
-        storage_key="bb/" + "b" * 64,
-    ))
+    db_session.add(
+        Document(
+            owner_user_id=u.id,
+            trip_id=t.id,
+            filename="x.pdf",
+            mime_type="application/pdf",
+            size_bytes=10,
+            sha256="b" * 64,
+            storage_key="bb/" + "b" * 64,
+        )
+    )
     await db_session.commit()
     await db_session.delete(t)
     await db_session.commit()
@@ -376,19 +406,32 @@ async def test_trip_delete_cascades_documents(db_session: AsyncSession) -> None:
 @pytest.mark.asyncio
 async def test_segment_delete_sets_segment_id_null(db_session: AsyncSession) -> None:
     u = User(oidc_subject="d3", email="d3@x.com", display_name="D3")
-    db_session.add(u); await db_session.flush()
-    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2),
-             created_by=u.id)
-    db_session.add(t); await db_session.flush()
+    db_session.add(u)
+    await db_session.flush()
+    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2), created_by=u.id)
+    db_session.add(t)
+    await db_session.flush()
     db_session.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
-    s = Segment(trip_id=t.id, owner_user_id=u.id, type="flight",
-                status="confirmed",
-                start_at=datetime(2026, 6, 1, 13, tzinfo=UTC), start_tz="UTC",
-                parse_source="manual", parse_confidence=1.0)
-    db_session.add(s); await db_session.flush()
+    s = Segment(
+        trip_id=t.id,
+        owner_user_id=u.id,
+        type="flight",
+        status="confirmed",
+        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC),
+        start_tz="UTC",
+        parse_source="manual",
+        parse_confidence=1.0,
+    )
+    db_session.add(s)
+    await db_session.flush()
     d = Document(
-        owner_user_id=u.id, trip_id=t.id, segment_id=s.id, filename="x.pdf",
-        mime_type="application/pdf", size_bytes=10, sha256="c" * 64,
+        owner_user_id=u.id,
+        trip_id=t.id,
+        segment_id=s.id,
+        filename="x.pdf",
+        mime_type="application/pdf",
+        size_bytes=10,
+        sha256="c" * 64,
         storage_key="cc/" + "c" * 64,
     )
     db_session.add(d)
@@ -467,11 +510,11 @@ GOOD_KEY = "ab/" + "a" * 64
 BAD_KEYS = [
     "../etc/passwd",
     "ab/../../../tmp/x",
-    "AB/" + "a" * 64,           # non-lower hex prefix
-    "ab/" + "a" * 63,           # short
-    "ab/" + "a" * 65,           # long
-    "ab/" + "g" * 64,           # non-hex
-    "abc/" + "a" * 64,          # 3-char prefix
+    "AB/" + "a" * 64,  # non-lower hex prefix
+    "ab/" + "a" * 63,  # short
+    "ab/" + "a" * 65,  # long
+    "ab/" + "g" * 64,  # non-hex
+    "abc/" + "a" * 64,  # 3-char prefix
     "/absolute",
 ]
 
@@ -818,10 +861,11 @@ PDF_BODY = b"%PDF-1.4\n%fake content for tests\n"
 
 async def _seed(db: AsyncSession) -> tuple[User, Trip]:
     u = User(oidc_subject="up1", email="up1@x.com", display_name="UP1")
-    db.add(u); await db.flush()
-    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2),
-             created_by=u.id)
-    db.add(t); await db.flush()
+    db.add(u)
+    await db.flush()
+    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2), created_by=u.id)
+    db.add(t)
+    await db.flush()
     db.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
     await db.commit()
     return u, t
@@ -829,7 +873,8 @@ async def _seed(db: AsyncSession) -> tuple[User, Trip]:
 
 @pytest.mark.asyncio
 async def test_upload_to_trip_creates_document(
-    db_session: AsyncSession, authenticated_client_factory  # provided by conftest
+    db_session: AsyncSession,
+    authenticated_client_factory,  # provided by conftest
 ) -> None:
     u, t = await _seed(db_session)
     async with authenticated_client_factory(u) as client:
@@ -838,7 +883,9 @@ async def test_upload_to_trip_creates_document(
             files={"file": ("boarding-pass.pdf", io.BytesIO(PDF_BODY), "application/pdf")},
         )
     assert r.status_code in (200, 303)
-    docs = (await db_session.execute(select(Document).where(Document.trip_id == t.id))).scalars().all()
+    docs = (
+        (await db_session.execute(select(Document).where(Document.trip_id == t.id))).scalars().all()
+    )
     assert len(docs) == 1
     assert docs[0].filename == "boarding-pass.pdf"
     assert docs[0].extract_status == "pending"
@@ -900,7 +947,8 @@ async def test_upload_requires_traveler_membership(
 ) -> None:
     owner, t = await _seed(db_session)
     other = User(oidc_subject="up2", email="up2@x.com", display_name="UP2")
-    db_session.add(other); await db_session.commit()
+    db_session.add(other)
+    await db_session.commit()
     async with authenticated_client_factory(other) as client:
         r = await client.post(
             f"/trips/{t.id}/documents",
@@ -926,11 +974,13 @@ from trip_tracker.config import Settings
 
 
 def _cookie(user, settings):
-    return {"tt_session": encode_session(
-        SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-        secret=settings.session_secret.get_secret_value(),
-        max_age=3600,
-    )}
+    return {
+        "tt_session": encode_session(
+            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
+            secret=settings.session_secret.get_secret_value(),
+            max_age=3600,
+        )
+    }
 
 
 @asynccontextmanager
@@ -939,7 +989,8 @@ async def _ctx(app, settings, user):
     async with (
         app.router.lifespan_context(app),
         httpx.AsyncClient(
-            transport=transport, base_url="http://test",
+            transport=transport,
+            base_url="http://test",
             cookies=_cookie(user, settings),
         ) as client,
     ):
@@ -958,6 +1009,7 @@ def authenticated_client_factory(db_url, monkeypatch):
 
     def _make(user):
         return _ctx(app, settings, user)
+
     return _make
 ```
 
@@ -988,18 +1040,33 @@ from trip_tracker.models.user import User
 
 async def _seed_with_segment_and_doc(db: AsyncSession) -> tuple[User, Trip, Segment, Document]:
     u = User(oidc_subject="lk1", email="lk1@x.com", display_name="LK1")
-    db.add(u); await db.flush()
-    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2),
-             created_by=u.id)
-    db.add(t); await db.flush()
+    db.add(u)
+    await db.flush()
+    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2), created_by=u.id)
+    db.add(t)
+    await db.flush()
     db.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
-    s = Segment(trip_id=t.id, owner_user_id=u.id, type="flight", status="confirmed",
-                start_at=datetime(2026, 6, 1, 13, tzinfo=UTC), start_tz="UTC",
-                parse_source="manual", parse_confidence=1.0)
-    db.add(s); await db.flush()
-    d = Document(owner_user_id=u.id, trip_id=t.id, filename="x.pdf",
-                 mime_type="application/pdf", size_bytes=10,
-                 sha256="d" * 64, storage_key="dd/" + "d" * 64)
+    s = Segment(
+        trip_id=t.id,
+        owner_user_id=u.id,
+        type="flight",
+        status="confirmed",
+        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC),
+        start_tz="UTC",
+        parse_source="manual",
+        parse_confidence=1.0,
+    )
+    db.add(s)
+    await db.flush()
+    d = Document(
+        owner_user_id=u.id,
+        trip_id=t.id,
+        filename="x.pdf",
+        mime_type="application/pdf",
+        size_bytes=10,
+        sha256="d" * 64,
+        storage_key="dd/" + "d" * 64,
+    )
     db.add(d)
     await db.commit()
     return u, t, s, d
@@ -1019,7 +1086,8 @@ async def test_link_attaches_segment_id(db_session, authenticated_client_factory
 async def test_unlink_clears_segment_id(db_session, authenticated_client_factory) -> None:
     u, t, s, d = await _seed_with_segment_and_doc(db_session)
     d.segment_id = s.id
-    db_session.add(d); await db_session.commit()
+    db_session.add(d)
+    await db_session.commit()
     async with authenticated_client_factory(u) as client:
         r = await client.post(f"/documents/{d.id}/unlink")
     assert r.status_code in (200, 303)
@@ -1038,12 +1106,11 @@ async def test_delete_removes_row(db_session, authenticated_client_factory) -> N
 
 
 @pytest.mark.asyncio
-async def test_delete_forbidden_for_non_owner(
-    db_session, authenticated_client_factory
-) -> None:
+async def test_delete_forbidden_for_non_owner(db_session, authenticated_client_factory) -> None:
     u, t, s, d = await _seed_with_segment_and_doc(db_session)
     other = User(oidc_subject="lk2", email="lk2@x.com", display_name="LK2")
-    db_session.add(other); await db_session.commit()
+    db_session.add(other)
+    await db_session.commit()
     async with authenticated_client_factory(other) as client:
         r = await client.delete(f"/documents/{d.id}")
     assert r.status_code in (403, 404)
@@ -1103,9 +1170,7 @@ async def _user_can_access_trip(db: AsyncSession, user: User, trip_id: uuid.UUID
     ).scalar_one_or_none() is not None
 
 
-async def _read_upload(
-    file: UploadFile, max_bytes: int
-) -> bytes:
+async def _read_upload(file: UploadFile, max_bytes: int) -> bytes:
     """Read the upload, enforcing the size cap as we go."""
     chunks: list[bytes] = []
     total = 0
@@ -1153,9 +1218,7 @@ async def _upsert_and_enqueue(
     if inserted_id is not None:
         await storage.put(sha, content)
         await db.commit()
-        doc = (await db.execute(
-            select(Document).where(Document.id == inserted_id)
-        )).scalar_one()
+        doc = (await db.execute(select(Document).where(Document.id == inserted_id))).scalar_one()
         # Enqueue extraction (saq dispatches by string name; function lives in worker)
         q = Queue.from_url(str(settings.redis_url))
         try:
@@ -1165,11 +1228,11 @@ async def _upsert_and_enqueue(
         return doc, True
 
     # Existing row — fetch it.
-    existing = (await db.execute(
-        select(Document).where(
-            Document.owner_user_id == user.id, Document.sha256 == sha
+    existing = (
+        await db.execute(
+            select(Document).where(Document.owner_user_id == user.id, Document.sha256 == sha)
         )
-    )).scalar_one()
+    ).scalar_one()
     return existing, False
 
 
@@ -1192,8 +1255,12 @@ async def upload_to_trip(
     if not is_pdf(content):
         raise HTTPException(400, detail="not a PDF (magic-byte check failed)")
     doc, is_new = await _upsert_and_enqueue(
-        db, storage, settings,
-        user=user, trip_id=trip_id, segment_id=None,
+        db,
+        storage,
+        settings,
+        user=user,
+        trip_id=trip_id,
+        segment_id=None,
         filename=file.filename or "document.pdf",
         content=content,
     )
@@ -1214,9 +1281,7 @@ async def upload_to_segment(
     settings: Settings = Depends(get_settings),  # noqa: B008
     storage: StorageBackend = Depends(_storage_dep),  # noqa: B008
 ) -> Response:
-    seg = (await db.execute(
-        select(Segment).where(Segment.id == segment_id)
-    )).scalar_one_or_none()
+    seg = (await db.execute(select(Segment).where(Segment.id == segment_id))).scalar_one_or_none()
     if seg is None or not await _user_can_access_trip(db, user, seg.trip_id):
         raise HTTPException(404)
     try:
@@ -1226,8 +1291,12 @@ async def upload_to_segment(
     if not is_pdf(content):
         raise HTTPException(400, detail="not a PDF")
     doc, is_new = await _upsert_and_enqueue(
-        db, storage, settings,
-        user=user, trip_id=seg.trip_id, segment_id=segment_id,
+        db,
+        storage,
+        settings,
+        user=user,
+        trip_id=seg.trip_id,
+        segment_id=segment_id,
         filename=file.filename or "document.pdf",
         content=content,
     )
@@ -1245,9 +1314,7 @@ async def link_to_segment(
     db: AsyncSession = Depends(get_session),  # noqa: B008
 ) -> Response:
     doc = await _get_owned(db, document_id, user)
-    seg = (await db.execute(
-        select(Segment).where(Segment.id == segment_id)
-    )).scalar_one_or_none()
+    seg = (await db.execute(select(Segment).where(Segment.id == segment_id))).scalar_one_or_none()
     if seg is None or seg.trip_id != doc.trip_id:
         raise HTTPException(400, detail="segment not on this document's trip")
     doc.segment_id = segment_id
@@ -1277,6 +1344,7 @@ async def delete_document(
     doc = await _get_owned(db, document_id, user)
     # Sync Meili delete BEFORE we remove the row so the entity_id is still valid.
     from trip_tracker.search.sync import enqueue_meili_sync
+
     await enqueue_meili_sync(settings, entity="document", entity_id=doc.id)
     await db.delete(doc)
     await db.commit()
@@ -1284,9 +1352,7 @@ async def delete_document(
 
 
 async def _get_owned(db: AsyncSession, doc_id: uuid.UUID, user: User) -> Document:
-    doc = (await db.execute(
-        select(Document).where(Document.id == doc_id)
-    )).scalar_one_or_none()
+    doc = (await db.execute(select(Document).where(Document.id == doc_id))).scalar_one_or_none()
     if doc is None:
         raise HTTPException(404)
     if doc.owner_user_id != user.id:
@@ -1302,6 +1368,7 @@ In `src/trip_tracker/app.py`, after the existing router includes:
 
 ```python
 from trip_tracker.routes.documents import router as documents_router
+
 app.include_router(documents_router)
 ```
 
@@ -1403,13 +1470,13 @@ async def test_download_x_accel_emits_redirect_header(
 
 
 @pytest.mark.asyncio
-async def test_download_403_for_non_owner(
-    db_session, authenticated_client_factory
-) -> None:
+async def test_download_403_for_non_owner(db_session, authenticated_client_factory) -> None:
     from trip_tracker.models.user import User
+
     u, t, s, d = await _seed_with_segment_and_doc(db_session)
     other = User(oidc_subject="dl1", email="dl1@x.com", display_name="DL1")
-    db_session.add(other); await db_session.commit()
+    db_session.add(other)
+    await db_session.commit()
     async with authenticated_client_factory(other) as client:
         r = await client.get(f"/documents/{d.id}/download")
     assert r.status_code in (403, 404)
@@ -1419,6 +1486,7 @@ async def test_download_403_for_non_owner(
 async def test_download_401_anonymous(db_session) -> None:
     from httpx import ASGITransport, AsyncClient
     from trip_tracker.app import create_app
+
     u, t, s, d = await _seed_with_segment_and_doc(db_session)
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -1444,16 +1512,16 @@ async def download(
     settings: Settings = Depends(get_settings),  # noqa: B008
     storage: StorageBackend = Depends(_storage_dep),  # noqa: B008
 ) -> Response:
-    doc = (await db.execute(
-        select(Document).where(Document.id == document_id)
-    )).scalar_one_or_none()
+    doc = (
+        await db.execute(select(Document).where(Document.id == document_id))
+    ).scalar_one_or_none()
     if doc is None:
         raise HTTPException(404)
     if not await _can_access_doc(db, user, doc):
         raise HTTPException(403)
 
     safe_filename = quote(doc.filename, safe="")
-    cd = f'attachment; filename="{escape(doc.filename)}"; filename*=UTF-8\'\'{safe_filename}'
+    cd = f"attachment; filename=\"{escape(doc.filename)}\"; filename*=UTF-8''{safe_filename}"
 
     if settings.documents_x_accel_prefix:
         return Response(
@@ -1555,18 +1623,29 @@ async def test_pdf_attachment_creates_document_with_owner(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
     u = User(oidc_subject="pa1", email="pa1@x.com", display_name="PA1")
-    db_session.add(u); await db_session.flush()
-    re_ = RawEmail(to_address="oliver@trips.example.com", from_address="x@x.com",
-                   subject="bp", message_id="<pa1@test>", mime_blob=b"",
-                   headers={}, parse_status="pending")
-    db_session.add(re_); await db_session.commit()
+    db_session.add(u)
+    await db_session.flush()
+    re_ = RawEmail(
+        to_address="oliver@trips.example.com",
+        from_address="x@x.com",
+        subject="bp",
+        message_id="<pa1@test>",
+        mime_blob=b"",
+        headers={},
+        parse_status="pending",
+    )
+    db_session.add(re_)
+    await db_session.commit()
 
     settings = Settings(documents_dir=tmp_path)
     body = _email_with(("bp.pdf", PDF))
 
     new_ids = await persist_pdf_attachments(
-        db_session, settings,
-        raw_email_id=re_.id, owner_user_id=u.id, body=body,
+        db_session,
+        settings,
+        raw_email_id=re_.id,
+        owner_user_id=u.id,
+        body=body,
     )
     await db_session.commit()  # caller commits; helper does not
 
@@ -1583,25 +1662,39 @@ async def test_pdf_attachment_creates_document_with_owner(
 
 
 @pytest.mark.asyncio
-async def test_idempotent_on_duplicate_sha256(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def test_idempotent_on_duplicate_sha256(db_session: AsyncSession, tmp_path: Path) -> None:
     u = User(oidc_subject="pa2", email="pa2@x.com", display_name="PA2")
-    db_session.add(u); await db_session.flush()
-    re_ = RawEmail(to_address="o@x", from_address="x", subject="x",
-                   message_id="<pa2@test>", mime_blob=b"", headers={},
-                   parse_status="pending")
-    db_session.add(re_); await db_session.commit()
+    db_session.add(u)
+    await db_session.flush()
+    re_ = RawEmail(
+        to_address="o@x",
+        from_address="x",
+        subject="x",
+        message_id="<pa2@test>",
+        mime_blob=b"",
+        headers={},
+        parse_status="pending",
+    )
+    db_session.add(re_)
+    await db_session.commit()
 
     settings = Settings(documents_dir=tmp_path)
     body = _email_with(("bp.pdf", PDF))
 
     first_ids = await persist_pdf_attachments(
-        db_session, settings, raw_email_id=re_.id, owner_user_id=u.id, body=body,
+        db_session,
+        settings,
+        raw_email_id=re_.id,
+        owner_user_id=u.id,
+        body=body,
     )
     await db_session.commit()
     second_ids = await persist_pdf_attachments(
-        db_session, settings, raw_email_id=re_.id, owner_user_id=u.id, body=body,
+        db_session,
+        settings,
+        raw_email_id=re_.id,
+        owner_user_id=u.id,
+        body=body,
     )
     await db_session.commit()
 
@@ -1612,21 +1705,31 @@ async def test_idempotent_on_duplicate_sha256(
 
 
 @pytest.mark.asyncio
-async def test_non_pdf_attachment_dropped(
-    db_session: AsyncSession, tmp_path: Path
-) -> None:
+async def test_non_pdf_attachment_dropped(db_session: AsyncSession, tmp_path: Path) -> None:
     u = User(oidc_subject="pa3", email="pa3@x.com", display_name="PA3")
-    db_session.add(u); await db_session.flush()
-    re_ = RawEmail(to_address="o@x", from_address="x", subject="x",
-                   message_id="<pa3@test>", mime_blob=b"", headers={},
-                   parse_status="pending")
-    db_session.add(re_); await db_session.commit()
+    db_session.add(u)
+    await db_session.flush()
+    re_ = RawEmail(
+        to_address="o@x",
+        from_address="x",
+        subject="x",
+        message_id="<pa3@test>",
+        mime_blob=b"",
+        headers={},
+        parse_status="pending",
+    )
+    db_session.add(re_)
+    await db_session.commit()
 
     settings = Settings(documents_dir=tmp_path)
     body = _email_with(non_pdf=b"\x89PNG\r\n")  # no PDFs, only an image
 
     new_ids = await persist_pdf_attachments(
-        db_session, settings, raw_email_id=re_.id, owner_user_id=u.id, body=body,
+        db_session,
+        settings,
+        raw_email_id=re_.id,
+        owner_user_id=u.id,
+        body=body,
     )
     await db_session.commit()
 
@@ -1671,11 +1774,13 @@ def extract_attachments(body: bytes) -> list[Attachment]:
         if not isinstance(payload, bytes):
             # Text attachments come back as str — skip; we only care about PDFs.
             continue
-        out.append(Attachment(
-            filename=part.get_filename() or "attachment",
-            content_type=part.get_content_type() or "application/octet-stream",
-            payload=payload,
-        ))
+        out.append(
+            Attachment(
+                filename=part.get_filename() or "attachment",
+                content_type=part.get_content_type() or "application/octet-stream",
+                payload=payload,
+            )
+        )
     return out
 ```
 
@@ -1712,8 +1817,12 @@ _logger = logging.getLogger(__name__)
 
 
 async def persist_pdf_attachments(
-    db: AsyncSession, settings: Settings, *,
-    raw_email_id: uuid.UUID, owner_user_id: uuid.UUID, body: bytes,
+    db: AsyncSession,
+    settings: Settings,
+    *,
+    raw_email_id: uuid.UUID,
+    owner_user_id: uuid.UUID,
+    body: bytes,
 ) -> list[uuid.UUID]:
     """For each PDF attachment in `body`: UPSERT a Document row + write the file.
     Returns the IDs of newly-INSERTED documents (not UPSERTed-existing ones).
@@ -1735,7 +1844,9 @@ async def persist_pdf_attachments(
         if not is_pdf(att.payload):
             _logger.info(
                 "ingest: dropping non-PDF attachment %r (content_type=%s, size=%d)",
-                att.filename, att.content_type, len(att.payload),
+                att.filename,
+                att.content_type,
+                len(att.payload),
             )
             continue
         sha = sha256_hex(att.payload)
@@ -1781,8 +1892,10 @@ In `src/trip_tracker/worker.py`, inside `parse_raw_email`, **right after the ali
 # deferred to a separate call after segment dispatch (Task 7). The helper
 # does NOT commit — that happens after segment dispatch.
 from trip_tracker.documents.persist import persist_pdf_attachments
+
 new_doc_ids = await persist_pdf_attachments(
-    db, settings,
+    db,
+    settings,
     raw_email_id=raw.id,
     owner_user_id=owner.user_id,
     body=raw.mime_blob,
@@ -1866,11 +1979,14 @@ class FakeSeg:
     start_at: datetime
 
 
-def _seg(*, conf=None, fnum=None, tnum=None, type_="flight",
-         start=datetime(2026, 6, 1, 13, tzinfo=UTC)) -> FakeSeg:
+def _seg(
+    *, conf=None, fnum=None, tnum=None, type_="flight", start=datetime(2026, 6, 1, 13, tzinfo=UTC)
+) -> FakeSeg:
     details = {}
-    if fnum: details["flight_number"] = fnum
-    if tnum: details["train_number"] = tnum
+    if fnum:
+        details["flight_number"] = fnum
+    if tnum:
+        details["train_number"] = tnum
     return FakeSeg(uuid.uuid4(), type_, conf, details, start)
 
 
@@ -1909,9 +2025,7 @@ def test_ambiguous_date_returns_none() -> None:
 def test_first_match_wins_when_both_conf_and_date_apply() -> None:
     s_conf = _seg(conf="XYZ999")
     s_date = _seg(start=datetime(2026, 6, 5, tzinfo=UTC))
-    assert match_attachment_to_segment(
-        "BP_XYZ999_2026-06-05.pdf", [s_date, s_conf]
-    ) == s_conf.id
+    assert match_attachment_to_segment("BP_XYZ999_2026-06-05.pdf", [s_date, s_conf]) == s_conf.id
 ```
 
 - [ ] **Step 7.2 — Implement the heuristic**
@@ -1935,7 +2049,8 @@ _DATE_COMPACT = re.compile(r"\b(\d{4})(\d{2})(\d{2})\b")
 
 
 def match_attachment_to_segment(
-    filename: str, segments: Sequence["object"],
+    filename: str,
+    segments: Sequence["object"],
 ) -> uuid.UUID | None:
     """Return the matching segment.id or None.
 
@@ -1972,7 +2087,11 @@ def match_attachment_to_segment(
     if target is None:
         return None
 
-    same_day = [s for s in segments if getattr(s, "start_at", None) and getattr(s, "start_at").date() == target]
+    same_day = [
+        s
+        for s in segments
+        if getattr(s, "start_at", None) and getattr(s, "start_at").date() == target
+    ]
     if len(same_day) == 1:
         return getattr(same_day[0], "id")
     return None
@@ -2063,7 +2182,9 @@ Add the helper to `autolink.py`:
 
 ```python
 async def autolink_pending_for_email(
-    db: "AsyncSession", *, raw_email_id: uuid.UUID,
+    db: "AsyncSession",
+    *,
+    raw_email_id: uuid.UUID,
 ) -> None:
     """For each Document with raw_email_id=:rid AND segment_id IS NULL,
     look up that email's segments and run match_attachment_to_segment.
@@ -2073,18 +2194,26 @@ async def autolink_pending_for_email(
     from trip_tracker.models.document import Document
     from trip_tracker.models.segment import Segment
 
-    docs = (await db.execute(
-        select(Document).where(
-            Document.raw_email_id == raw_email_id,
-            Document.segment_id.is_(None),
+    docs = (
+        (
+            await db.execute(
+                select(Document).where(
+                    Document.raw_email_id == raw_email_id,
+                    Document.segment_id.is_(None),
+                )
+            )
         )
-    )).scalars().all()
+        .scalars()
+        .all()
+    )
     if not docs:
         return
 
-    segs = (await db.execute(
-        select(Segment).where(Segment.raw_email_id == raw_email_id)
-    )).scalars().all()
+    segs = (
+        (await db.execute(select(Segment).where(Segment.raw_email_id == raw_email_id)))
+        .scalars()
+        .all()
+    )
     if not segs:
         return
 
@@ -2104,6 +2233,7 @@ In `src/trip_tracker/worker.py`'s `parse_raw_email` body, after the segments-com
 
 ```python
 from trip_tracker.documents.autolink import autolink_pending_for_email
+
 await autolink_pending_for_email(db, raw_email_id=rid)
 ```
 
@@ -2160,11 +2290,13 @@ out.mkdir(parents=True, exist_ok=True)
 c = reportlab.pdfgen.canvas.Canvas(str(out / "tiny-text.pdf"))
 c.drawString(100, 750, "AIR FRANCE BOARDING PASS")
 c.drawString(100, 730, "Flight AF007 · JFK → CDG")
-c.showPage(); c.save()
+c.showPage()
+c.save()
 
 # Empty PDF: a blank page
 c = reportlab.pdfgen.canvas.Canvas(str(out / "tiny-empty.pdf"))
-c.showPage(); c.save()
+c.showPage()
+c.save()
 ```
 
 Run once locally, commit the resulting PDFs. Don't add `reportlab` to project deps.
@@ -2197,18 +2329,30 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures" / "documents"
 
 
 async def _seed_doc(
-    db: AsyncSession, *, storage: LocalFsStorage, fixture: str,
+    db: AsyncSession,
+    *,
+    storage: LocalFsStorage,
+    fixture: str,
 ) -> Document:
     u = User(oidc_subject="ex1", email="ex1@x.com", display_name="EX1")
-    db.add(u); await db.flush()
+    db.add(u)
+    await db.flush()
     payload = (FIXTURE_DIR / fixture).read_bytes()
     from trip_tracker.documents.helpers import sha256_hex
+
     sha = sha256_hex(payload)
     await storage.put(sha, payload)
-    d = Document(owner_user_id=u.id, filename=fixture, mime_type="application/pdf",
-                 size_bytes=len(payload), sha256=sha, storage_key=f"{sha[:2]}/{sha}",
-                 extract_status="pending")
-    db.add(d); await db.commit()
+    d = Document(
+        owner_user_id=u.id,
+        filename=fixture,
+        mime_type="application/pdf",
+        size_bytes=len(payload),
+        sha256=sha,
+        storage_key=f"{sha[:2]}/{sha}",
+        extract_status="pending",
+    )
+    db.add(d)
+    await db.commit()
     return d
 
 
@@ -2225,9 +2369,7 @@ async def test_extract_text_pdf_populates_extracted_text(
     await extract_document(ctx, document_id=str(d.id))
     await engine.dispose()
 
-    refreshed = (await db_session.execute(
-        select(Document).where(Document.id == d.id)
-    )).scalar_one()
+    refreshed = (await db_session.execute(select(Document).where(Document.id == d.id))).scalar_one()
     assert refreshed.extract_status == "extracted"
     assert refreshed.extract_method == "pdfplumber"
     assert "AIR FRANCE" in (refreshed.extracted_text or "")
@@ -2245,9 +2387,7 @@ async def test_extract_empty_pdf_marked_empty(
     await extract_document(ctx, document_id=str(d.id))
     await engine.dispose()
 
-    refreshed = (await db_session.execute(
-        select(Document).where(Document.id == d.id)
-    )).scalar_one()
+    refreshed = (await db_session.execute(select(Document).where(Document.id == d.id))).scalar_one()
     assert refreshed.extract_status == "empty"
     assert refreshed.extracted_text in (None, "")
 
@@ -2260,16 +2400,15 @@ async def test_extract_idempotent_on_already_extracted(
     d = await _seed_doc(db_session, storage=storage, fixture="tiny-text.pdf")
     d.extract_status = "extracted"
     d.extracted_text = "preserved"
-    db_session.add(d); await db_session.commit()
+    db_session.add(d)
+    await db_session.commit()
 
     engine = create_async_engine(db_url)
     ctx = {"engine": engine, "settings": Settings(), "storage": storage}
     await extract_document(ctx, document_id=str(d.id))
     await engine.dispose()
 
-    refreshed = (await db_session.execute(
-        select(Document).where(Document.id == d.id)
-    )).scalar_one()
+    refreshed = (await db_session.execute(select(Document).where(Document.id == d.id))).scalar_one()
     assert refreshed.extracted_text == "preserved"  # untouched
 
 
@@ -2283,6 +2422,7 @@ async def test_extract_marks_failed_on_pdfplumber_error(
 
     def _boom(buf):  # type: ignore[no-untyped-def]
         raise ValueError("simulated PDFSyntaxError")
+
     monkeypatch.setattr("trip_tracker.documents.extract._extract_pdf", _boom)
 
     engine = create_async_engine(db_url)
@@ -2290,9 +2430,7 @@ async def test_extract_marks_failed_on_pdfplumber_error(
     await extract_document(ctx, document_id=str(d.id))
     await engine.dispose()
 
-    refreshed = (await db_session.execute(
-        select(Document).where(Document.id == d.id)
-    )).scalar_one()
+    refreshed = (await db_session.execute(select(Document).where(Document.id == d.id))).scalar_one()
     assert refreshed.extract_status == "failed"
     assert refreshed.extracted_text is None
 
@@ -2304,21 +2442,26 @@ async def test_extract_marks_unsupported_for_non_pdf_mime(
     """A doc seeded with mime_type='image/png' → 'unsupported', no extraction."""
     storage = LocalFsStorage(tmp_path)
     u = User(oidc_subject="ex2", email="ex2@x.com", display_name="EX2")
-    db_session.add(u); await db_session.flush()
-    d = Document(owner_user_id=u.id, filename="x.png",
-                 mime_type="image/png", size_bytes=10,
-                 sha256="2" * 64, storage_key="22/" + "2" * 64,
-                 extract_status="pending")
-    db_session.add(d); await db_session.commit()
+    db_session.add(u)
+    await db_session.flush()
+    d = Document(
+        owner_user_id=u.id,
+        filename="x.png",
+        mime_type="image/png",
+        size_bytes=10,
+        sha256="2" * 64,
+        storage_key="22/" + "2" * 64,
+        extract_status="pending",
+    )
+    db_session.add(d)
+    await db_session.commit()
 
     engine = create_async_engine(db_url)
     ctx = {"engine": engine, "settings": Settings(), "storage": storage}
     await extract_document(ctx, document_id=str(d.id))
     await engine.dispose()
 
-    refreshed = (await db_session.execute(
-        select(Document).where(Document.id == d.id)
-    )).scalar_one()
+    refreshed = (await db_session.execute(select(Document).where(Document.id == d.id))).scalar_one()
     assert refreshed.extract_status == "unsupported"
     assert refreshed.extracted_text is None
 ```
@@ -2369,16 +2512,17 @@ async def extract_document(ctx: dict[str, Any], *, document_id: str) -> None:
     SM = async_sessionmaker(engine, expire_on_commit=False)
 
     async with SM() as db:
-        doc = (await db.execute(
-            select(Document).where(Document.id == document_id)
-        )).scalar_one_or_none()
+        doc = (
+            await db.execute(select(Document).where(Document.id == document_id))
+        ).scalar_one_or_none()
         if doc is None:
             _logger.warning("extract_document: id=%s not found", document_id)
             return
         if doc.extract_status != "pending":
             _logger.info(
                 "extract_document: id=%s status=%s — skipping",
-                document_id, doc.extract_status,
+                document_id,
+                doc.extract_status,
             )
             return
         if doc.mime_type != "application/pdf":
@@ -2500,16 +2644,29 @@ from trip_tracker.search.sync import document_to_doc, enqueue_meili_sync
 @pytest.mark.asyncio
 async def test_document_to_doc_shape(db_session: AsyncSession) -> None:
     u = User(oidc_subject="dt1", email="dt1@x.com", display_name="DT1")
-    db_session.add(u); await db_session.flush()
-    t = Trip(title="Paris vacation", start_date=date(2026, 6, 1),
-             end_date=date(2026, 6, 7), created_by=u.id)
-    db_session.add(t); await db_session.flush()
+    db_session.add(u)
+    await db_session.flush()
+    t = Trip(
+        title="Paris vacation",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 7),
+        created_by=u.id,
+    )
+    db_session.add(t)
+    await db_session.flush()
     db_session.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
-    d = Document(owner_user_id=u.id, trip_id=t.id, filename="bp.pdf",
-                 mime_type="application/pdf", size_bytes=10,
-                 sha256="f" * 64, storage_key="ff/" + "f" * 64,
-                 extracted_text="AIR FRANCE")
-    db_session.add(d); await db_session.commit()
+    d = Document(
+        owner_user_id=u.id,
+        trip_id=t.id,
+        filename="bp.pdf",
+        mime_type="application/pdf",
+        size_bytes=10,
+        sha256="f" * 64,
+        storage_key="ff/" + "f" * 64,
+        extracted_text="AIR FRANCE",
+    )
+    db_session.add(d)
+    await db_session.commit()
 
     doc = await document_to_doc(d, db=db_session)
     assert doc["id"] == str(d.id)
@@ -2526,11 +2683,18 @@ async def test_orphan_document_traveler_ids_falls_back_to_owner(
     db_session: AsyncSession,
 ) -> None:
     u = User(oidc_subject="dt2", email="dt2@x.com", display_name="DT2")
-    db_session.add(u); await db_session.flush()
-    d = Document(owner_user_id=u.id, filename="o.pdf",
-                 mime_type="application/pdf", size_bytes=10,
-                 sha256="9" * 64, storage_key="99/" + "9" * 64)
-    db_session.add(d); await db_session.commit()
+    db_session.add(u)
+    await db_session.flush()
+    d = Document(
+        owner_user_id=u.id,
+        filename="o.pdf",
+        mime_type="application/pdf",
+        size_bytes=10,
+        sha256="9" * 64,
+        storage_key="99/" + "9" * 64,
+    )
+    db_session.add(d)
+    await db_session.commit()
     doc = await document_to_doc(d, db=db_session)
     assert doc["traveler_ids"] == [str(u.id)]
     assert doc["trip_id"] is None
@@ -2559,17 +2723,25 @@ from trip_tracker.search.reindex import reindex_all
 @pytest.mark.asyncio
 async def test_reindex_walks_documents(db_url: str, db_session: AsyncSession) -> None:
     u = User(oidc_subject="rd1", email="rd1@x.com", display_name="RD1")
-    db_session.add(u); await db_session.flush()
-    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2),
-             created_by=u.id)
-    db_session.add(t); await db_session.flush()
+    db_session.add(u)
+    await db_session.flush()
+    t = Trip(title="T", start_date=date(2026, 6, 1), end_date=date(2026, 6, 2), created_by=u.id)
+    db_session.add(t)
+    await db_session.flush()
     db_session.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
-    db_session.add(Document(
-        owner_user_id=u.id, trip_id=t.id, filename="r.pdf",
-        mime_type="application/pdf", size_bytes=10,
-        sha256="1" * 64, storage_key="11/" + "1" * 64,
-        extract_status="extracted", extracted_text="hello",
-    ))
+    db_session.add(
+        Document(
+            owner_user_id=u.id,
+            trip_id=t.id,
+            filename="r.pdf",
+            mime_type="application/pdf",
+            size_bytes=10,
+            sha256="1" * 64,
+            storage_key="11/" + "1" * 64,
+            extract_status="extracted",
+            extracted_text="hello",
+        )
+    )
     await db_session.commit()
 
     indexes = {n: MagicMock() for n in ("trips", "segments", "documents")}
@@ -2599,17 +2771,22 @@ async def document_to_doc(doc: Document, *, db: AsyncSession) -> dict[str, Any]:
     """Render a Document as a Meili index payload. Spec §9.2."""
     if doc.trip_id is not None:
         traveler_ids = [
-            str(uid) for uid in (await db.execute(
-                select(TripTraveler.user_id).where(TripTraveler.trip_id == doc.trip_id)
-            )).scalars().all()
+            str(uid)
+            for uid in (
+                await db.execute(
+                    select(TripTraveler.user_id).where(TripTraveler.trip_id == doc.trip_id)
+                )
+            )
+            .scalars()
+            .all()
         ]
     else:
         traveler_ids = [str(doc.owner_user_id)]
     return {
         "id": str(doc.id),
         "owner_user_id": str(doc.owner_user_id),
-        "trip_id":     str(doc.trip_id)     if doc.trip_id     else None,
-        "segment_id":  str(doc.segment_id)  if doc.segment_id  else None,
+        "trip_id": str(doc.trip_id) if doc.trip_id else None,
+        "segment_id": str(doc.segment_id) if doc.segment_id else None,
         "traveler_ids": traveler_ids,
         "filename": doc.filename,
         "extracted_text": doc.extracted_text or "",
@@ -2630,8 +2807,7 @@ async def enqueue_meili_sync(
     *,
     entity: Literal["trip", "segment", "document"],
     entity_id: uuid.UUID,
-) -> None:
-    ...
+) -> None: ...
 ```
 
 The existing implementation body (`q.enqueue("sync_meili", ...)`) is unchanged.
@@ -2652,6 +2828,7 @@ async def sync_meili(ctx: dict[str, Any], *, entity: str, entity_id: str) -> Non
         elif entity == "document":
             from trip_tracker.models.document import Document
             from trip_tracker.search.sync import document_to_doc
+
             # Match the trip/segment arms: resolve the string id to a UUID
             # once, then use db.get() (avoids the raw-string == UUID compare
             # that other arms intentionally don't do).
@@ -2674,7 +2851,7 @@ In `src/trip_tracker/search/client.py`, add the constants near the existing `_TR
 
 ```python
 _DOCUMENTS_FILTERABLE = ["traveler_ids", "trip_id", "segment_id", "owner_user_id"]
-_DOCUMENTS_SORTABLE   = ["created_at_unix"]
+_DOCUMENTS_SORTABLE = ["created_at_unix"]
 ```
 
 And extend the loop tuple in `ensure_indexes_configured`:
@@ -2725,7 +2902,9 @@ And initialize `counts = {"trips": 0, "segments": 0, "documents": 0}`. Update th
 The CLI's print line in `__main__.py`'s `_reindex` becomes:
 
 ```python
-print(f"Reindex complete: trips={counts['trips']} segments={counts['segments']} documents={counts['documents']}")
+print(
+    f"Reindex complete: trips={counts['trips']} segments={counts['segments']} documents={counts['documents']}"
+)
 ```
 
 - [ ] **Step 9.8 — Add documents to ⌘K palette**
@@ -2793,6 +2972,7 @@ git commit -m "feat(search): documents Meili index + palette/proxy/reindex exten
 from fastapi.templating import Jinja2Templates
 from trip_tracker.templates import templates  # or however the project exposes Jinja env
 
+
 @router.get("/trips/{trip_id}/documents")
 async def list_for_trip(
     trip_id: uuid.UUID,
@@ -2802,15 +2982,21 @@ async def list_for_trip(
 ) -> Response:
     if not await _user_can_access_trip(db, user, trip_id):
         raise HTTPException(404)
-    docs = (await db.execute(
-        select(Document).where(Document.trip_id == trip_id)
-        .order_by(Document.created_at.desc())
-    )).scalars().all()
-    segs = (await db.execute(
-        select(Segment).where(Segment.trip_id == trip_id)
-    )).scalars().all()
+    docs = (
+        (
+            await db.execute(
+                select(Document)
+                .where(Document.trip_id == trip_id)
+                .order_by(Document.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    segs = (await db.execute(select(Segment).where(Segment.trip_id == trip_id))).scalars().all()
     return templates.TemplateResponse(
-        request, "trips/_documents.html",
+        request,
+        "trips/_documents.html",
         {"trip_id": trip_id, "documents": docs, "segments": segs},
     )
 ```

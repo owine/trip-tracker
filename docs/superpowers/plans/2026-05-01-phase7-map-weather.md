@@ -194,9 +194,11 @@ def test_city_is_frozen_dataclass() -> None:
     c = lookup_city("Paris")
     assert c is not None
     import dataclasses
+
     assert dataclasses.is_dataclass(c)
     # Cannot mutate (frozen=True)
     import pytest
+
     with pytest.raises(dataclasses.FrozenInstanceError):
         c.population = 0  # type: ignore[misc]
 ```
@@ -277,15 +279,15 @@ from importlib import resources
 class City:
     name: str
     asciiname: str
-    country_code: str   # ISO 3166-1 alpha-2
+    country_code: str  # ISO 3166-1 alpha-2
     population: int
     lat: float
     lon: float
 
 
 def _load() -> tuple[
-    dict[str, list[City]],            # name (case-folded) → cities sorted by pop desc
-    dict[tuple[str, str], list[City]], # (asciiname, country_code) → cities
+    dict[str, list[City]],  # name (case-folded) → cities sorted by pop desc
+    dict[tuple[str, str], list[City]],  # (asciiname, country_code) → cities
 ]:
     by_name: dict[str, list[City]] = defaultdict(list)
     by_ascii_country: dict[tuple[str, str], list[City]] = defaultdict(list)
@@ -357,9 +359,9 @@ from trip_tracker.parsers.enrich import get_airport
 
 def resolve_point(loc: dict[str, Any] | None) -> tuple[float, float] | None:
     """Pick the best (lat, lon) for a JSONB location dict, in priority order:
-       1. iata → airports lookup
-       2. (city, country) → cities1000 lookup
-       3. None
+    1. iata → airports lookup
+    2. (city, country) → cities1000 lookup
+    3. None
     """
     if not loc:
         return None
@@ -441,21 +443,21 @@ def test_n_points_count() -> None:
 
 def test_jfk_to_cdg_arches_north() -> None:
     """A great-circle JFK → CDG passes north of the straight Mercator line."""
-    start = (40.64, -73.78)   # JFK
-    end = (49.01, 2.55)       # CDG
+    start = (40.64, -73.78)  # JFK
+    end = (49.01, 2.55)  # CDG
     midpoint_idx = 50 // 2
     points = great_circle_points(start, end, n_points=50)
     mid_lat, _mid_lon = points[midpoint_idx]
     # The straight Mercator midpoint of JFK→CDG is at lat ~44.8.
     # The great-circle midpoint is at ~52° (curving north over Greenland).
     straight_mid_lat = (start[0] + end[0]) / 2
-    assert mid_lat > straight_mid_lat + 4   # at least 4° farther north
+    assert mid_lat > straight_mid_lat + 4  # at least 4° farther north
 
 
 def test_short_distance_arc_is_nearly_linear() -> None:
     """JFK → BOS is short (~300 km); arc should be nearly straight."""
-    start = (40.64, -73.78)   # JFK
-    end = (42.36, -71.01)     # BOS
+    start = (40.64, -73.78)  # JFK
+    end = (42.36, -71.01)  # BOS
     points = great_circle_points(start, end, n_points=20)
     # Midpoint should be very close to the straight midpoint
     mid_lat, mid_lon = points[10]
@@ -660,11 +662,16 @@ from trip_tracker.weather.client import DailyForecast, Forecast
 
 def _f() -> Forecast:
     return Forecast(
-        lat=48.86, lon=2.35, timezone="Europe/Paris",
+        lat=48.86,
+        lon=2.35,
+        timezone="Europe/Paris",
         days=[
             DailyForecast(
-                date=date(2026, 6, 1), temp_max_c=22.4, temp_min_c=13.5,
-                weather_code=1, precip_prob=10,
+                date=date(2026, 6, 1),
+                temp_max_c=22.4,
+                temp_min_c=13.5,
+                weather_code=1,
+                precip_prob=10,
             ),
         ],
     )
@@ -734,9 +741,18 @@ async def test_refresh_weather_fetches_and_caches() -> None:
     from trip_tracker.worker import refresh_weather
 
     fake_forecast = Forecast(
-        lat=48.86, lon=2.35, timezone="Europe/Paris",
-        days=[DailyForecast(date=date(2026, 6, 1), temp_max_c=20.0,
-                             temp_min_c=10.0, weather_code=1, precip_prob=0)],
+        lat=48.86,
+        lon=2.35,
+        timezone="Europe/Paris",
+        days=[
+            DailyForecast(
+                date=date(2026, 6, 1),
+                temp_max_c=20.0,
+                temp_min_c=10.0,
+                weather_code=1,
+                precip_prob=0,
+            )
+        ],
     )
     fake_redis = MagicMock()
     fake_redis.set = AsyncMock()
@@ -780,8 +796,8 @@ class DailyForecast(BaseModel):
     date: date
     temp_max_c: float
     temp_min_c: float
-    weather_code: int      # WMO code; mapped to emoji + label client-side
-    precip_prob: int       # 0-100
+    weather_code: int  # WMO code; mapped to emoji + label client-side
+    precip_prob: int  # 0-100
 
 
 class Forecast(BaseModel):
@@ -909,7 +925,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     ctx["engine"] = create_async_engine(str(s.database_url))
     ctx["meili"] = build_client(s)
     ctx["storage"] = LocalFsStorage(Path(s.documents_dir))
-    ctx["redis"] = AsyncRedis.from_url(s.redis_url)   # NEW for Phase 7
+    ctx["redis"] = AsyncRedis.from_url(s.redis_url)  # NEW for Phase 7
 ```
 
 4. In `shutdown(ctx)`, close the redis client:
@@ -921,7 +937,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
         await engine.dispose()
     redis = ctx.get("redis")
     if redis is not None:
-        await redis.aclose()                          # NEW for Phase 7
+        await redis.aclose()  # NEW for Phase 7
 ```
 
 5. Append `refresh_weather` to the `functions` list:
@@ -1002,11 +1018,13 @@ from trip_tracker.models.user import User
 
 
 def _cookie(user, settings):
-    return {"tt_session": encode_session(
-        SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-        secret=settings.session_secret.get_secret_value(),
-        max_age=3600,
-    )}
+    return {
+        "tt_session": encode_session(
+            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
+            secret=settings.session_secret.get_secret_value(),
+            max_age=3600,
+        )
+    }
 
 
 @asynccontextmanager
@@ -1015,7 +1033,8 @@ async def _ctx(app, settings, user):
     async with (
         app.router.lifespan_context(app),
         httpx.AsyncClient(
-            transport=transport, base_url="http://test",
+            transport=transport,
+            base_url="http://test",
             cookies=_cookie(user, settings),
         ) as c,
     ):
@@ -1025,30 +1044,41 @@ async def _ctx(app, settings, user):
 @pytest.fixture
 def authenticated_client_factory(db_url, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", db_url)
+
     def _make(user):
         settings = Settings()
         app = create_app(settings=settings)
         return _ctx(app, settings, user)
+
     return _make
 
 
 async def _seed(db: AsyncSession) -> User:
     u = User(oidc_subject="m1", email="m1@x.com", display_name="M1")
-    db.add(u); await db.flush()
-    t = Trip(title="Paris", start_date=date(2026, 6, 1), end_date=date(2026, 6, 7),
-             created_by=u.id)
-    db.add(t); await db.flush()
+    db.add(u)
+    await db.flush()
+    t = Trip(title="Paris", start_date=date(2026, 6, 1), end_date=date(2026, 6, 7), created_by=u.id)
+    db.add(t)
+    await db.flush()
     db.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
-    db.add(Segment(
-        trip_id=t.id, owner_user_id=u.id, type="flight", status="confirmed",
-        provider="Air France",
-        start_at=datetime(2026, 6, 1, 13, tzinfo=UTC), start_tz="UTC",
-        end_at=datetime(2026, 6, 1, 22, tzinfo=UTC), end_tz="Europe/Paris",
-        start_location={"iata": "JFK", "city": "New York"},
-        end_location={"iata": "CDG", "city": "Paris"},
-        details={"flight_number": "AF007"},
-        parse_source="manual", parse_confidence=1.0,
-    ))
+    db.add(
+        Segment(
+            trip_id=t.id,
+            owner_user_id=u.id,
+            type="flight",
+            status="confirmed",
+            provider="Air France",
+            start_at=datetime(2026, 6, 1, 13, tzinfo=UTC),
+            start_tz="UTC",
+            end_at=datetime(2026, 6, 1, 22, tzinfo=UTC),
+            end_tz="Europe/Paris",
+            start_location={"iata": "JFK", "city": "New York"},
+            end_location={"iata": "CDG", "city": "Paris"},
+            details={"flight_number": "AF007"},
+            parse_source="manual",
+            parse_confidence=1.0,
+        )
+    )
     await db.commit()
     return u
 
@@ -1068,9 +1098,7 @@ async def test_anonymous_request_401(db_url, monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_authed_request_200(
-    db_session: AsyncSession, authenticated_client_factory
-) -> None:
+async def test_authed_request_200(db_session: AsyncSession, authenticated_client_factory) -> None:
     u = await _seed(db_session)
     async with authenticated_client_factory(u) as c:
         r = await c.get("/map")
@@ -1087,20 +1115,30 @@ async def test_other_users_segments_excluded(
 ) -> None:
     u_self = await _seed(db_session)
     other = User(oidc_subject="m2", email="m2@x.com", display_name="M2")
-    db_session.add(other); await db_session.flush()
-    other_trip = Trip(title="Berlin", start_date=date(2026, 7, 1),
-                      end_date=date(2026, 7, 5), created_by=other.id)
-    db_session.add(other_trip); await db_session.flush()
+    db_session.add(other)
+    await db_session.flush()
+    other_trip = Trip(
+        title="Berlin", start_date=date(2026, 7, 1), end_date=date(2026, 7, 5), created_by=other.id
+    )
+    db_session.add(other_trip)
+    await db_session.flush()
     db_session.add(TripTraveler(trip_id=other_trip.id, user_id=other.id, role="owner"))
-    db_session.add(Segment(
-        trip_id=other_trip.id, owner_user_id=other.id, type="flight",
-        status="confirmed", provider="Lufthansa",
-        start_at=datetime(2026, 7, 1, 9, tzinfo=UTC), start_tz="UTC",
-        start_location={"iata": "JFK"},
-        end_location={"iata": "BER"},
-        details={"flight_number": "LH401"},
-        parse_source="manual", parse_confidence=1.0,
-    ))
+    db_session.add(
+        Segment(
+            trip_id=other_trip.id,
+            owner_user_id=other.id,
+            type="flight",
+            status="confirmed",
+            provider="Lufthansa",
+            start_at=datetime(2026, 7, 1, 9, tzinfo=UTC),
+            start_tz="UTC",
+            start_location={"iata": "JFK"},
+            end_location={"iata": "BER"},
+            details={"flight_number": "LH401"},
+            parse_source="manual",
+            parse_confidence=1.0,
+        )
+    )
     await db_session.commit()
 
     async with authenticated_client_factory(u_self) as c:
@@ -1154,8 +1192,14 @@ templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
 # Color palette for trip-color cycling (lifetime view)
 _PALETTE = [
-    "#3b82f6", "#10b981", "#f59e0b", "#ef4444",
-    "#8b5cf6", "#ec4899", "#14b8a6", "#f97316",
+    "#3b82f6",
+    "#10b981",
+    "#f59e0b",
+    "#ef4444",
+    "#8b5cf6",
+    "#ec4899",
+    "#14b8a6",
+    "#f97316",
 ]
 
 
@@ -1192,18 +1236,24 @@ async def map_lifetime(
         for pt in (start_pt, end_pt):
             if pt is None:
                 continue
-            markers.append({
-                "lat": pt[0], "lon": pt[1],
-                "trip_id": str(trip.id), "trip_title": trip.title,
-                "color": color,
-            })
+            markers.append(
+                {
+                    "lat": pt[0],
+                    "lon": pt[1],
+                    "trip_id": str(trip.id),
+                    "trip_title": trip.title,
+                    "color": color,
+                }
+            )
 
         if seg.type == "flight" and start_pt and end_pt:
-            arcs.append({
-                "points": great_circle_points(start_pt, end_pt, n_points=50),
-                "color": color,
-                "trip_id": str(trip.id),
-            })
+            arcs.append(
+                {
+                    "points": great_circle_points(start_pt, end_pt, n_points=50),
+                    "color": color,
+                    "trip_id": str(trip.id),
+                }
+            )
 
     payload = json.dumps({"markers": markers, "arcs": arcs})
     return templates.TemplateResponse(
@@ -1315,6 +1365,7 @@ In `src/trip_tracker/app.py`:
 
 ```python
 from trip_tracker.routes.map import router as map_router
+
 app.include_router(map_router)
 ```
 
@@ -1384,11 +1435,13 @@ from trip_tracker.weather.client import DailyForecast, Forecast
 
 
 def _cookie(user, settings):
-    return {"tt_session": encode_session(
-        SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
-        secret=settings.session_secret.get_secret_value(),
-        max_age=3600,
-    )}
+    return {
+        "tt_session": encode_session(
+            SessionPayload(user_id=user.id, oidc_subject=user.oidc_subject),
+            secret=settings.session_secret.get_secret_value(),
+            max_age=3600,
+        )
+    }
 
 
 @asynccontextmanager
@@ -1397,7 +1450,8 @@ async def _ctx(app, settings, user):
     async with (
         app.router.lifespan_context(app),
         httpx.AsyncClient(
-            transport=transport, base_url="http://test",
+            transport=transport,
+            base_url="http://test",
             cookies=_cookie(user, settings),
         ) as c,
     ):
@@ -1407,30 +1461,39 @@ async def _ctx(app, settings, user):
 @pytest.fixture
 def authenticated_client_factory(db_url, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", db_url)
+
     def _make(user):
         settings = Settings()
         app = create_app(settings=settings)
         return _ctx(app, settings, user)
+
     return _make
 
 
 async def _seed_with_future_trip(db: AsyncSession) -> tuple[User, Trip]:
     u = User(oidc_subject="t1", email="t1@x.com", display_name="T1")
-    db.add(u); await db.flush()
+    db.add(u)
+    await db.flush()
     soon = date.today() + timedelta(days=5)
-    t = Trip(title="Paris", start_date=soon, end_date=soon + timedelta(days=6),
-             created_by=u.id)
-    db.add(t); await db.flush()
+    t = Trip(title="Paris", start_date=soon, end_date=soon + timedelta(days=6), created_by=u.id)
+    db.add(t)
+    await db.flush()
     db.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
-    db.add(Segment(
-        trip_id=t.id, owner_user_id=u.id, type="flight", status="confirmed",
-        start_at=datetime.combine(soon, datetime.min.time()).replace(hour=13, tzinfo=UTC),
-        start_tz="UTC",
-        start_location={"iata": "JFK"},
-        end_location={"iata": "CDG"},
-        details={"flight_number": "AF007"},
-        parse_source="manual", parse_confidence=1.0,
-    ))
+    db.add(
+        Segment(
+            trip_id=t.id,
+            owner_user_id=u.id,
+            type="flight",
+            status="confirmed",
+            start_at=datetime.combine(soon, datetime.min.time()).replace(hour=13, tzinfo=UTC),
+            start_tz="UTC",
+            start_location={"iata": "JFK"},
+            end_location={"iata": "CDG"},
+            details={"flight_number": "AF007"},
+            parse_source="manual",
+            parse_confidence=1.0,
+        )
+    )
     await db.commit()
     return u, t
 
@@ -1441,9 +1504,14 @@ async def test_per_trip_renders_with_cached_weather(
 ) -> None:
     u, t = await _seed_with_future_trip(db_session)
     cached = Forecast(
-        lat=49.01, lon=2.55, timezone="Europe/Paris",
-        days=[DailyForecast(date=date.today(), temp_max_c=22.0, temp_min_c=14.0,
-                             weather_code=1, precip_prob=10)],
+        lat=49.01,
+        lon=2.55,
+        timezone="Europe/Paris",
+        days=[
+            DailyForecast(
+                date=date.today(), temp_max_c=22.0, temp_min_c=14.0, weather_code=1, precip_prob=10
+            )
+        ],
     )
     with patch("trip_tracker.routes.map.get_cached", AsyncMock(return_value=cached)):
         async with authenticated_client_factory(u) as c:
@@ -1476,7 +1544,8 @@ async def test_per_trip_404_for_non_traveler(
 ) -> None:
     _u, t = await _seed_with_future_trip(db_session)
     other = User(oidc_subject="t2", email="t2@x.com", display_name="T2")
-    db_session.add(other); await db_session.commit()
+    db_session.add(other)
+    await db_session.commit()
     async with authenticated_client_factory(other) as c:
         r = await c.get(f"/trips/{t.id}/map")
     assert r.status_code in (403, 404)
@@ -1488,20 +1557,30 @@ async def test_past_trip_skips_weather_fetch(
 ) -> None:
     """Trip start > 14 days in past → no weather card, no enqueue."""
     u = User(oidc_subject="t3", email="t3@x.com", display_name="T3")
-    db_session.add(u); await db_session.flush()
+    db_session.add(u)
+    await db_session.flush()
     long_ago = date.today() - timedelta(days=100)
-    t = Trip(title="OldTrip", start_date=long_ago, end_date=long_ago + timedelta(days=3),
-             created_by=u.id)
-    db_session.add(t); await db_session.flush()
+    t = Trip(
+        title="OldTrip", start_date=long_ago, end_date=long_ago + timedelta(days=3), created_by=u.id
+    )
+    db_session.add(t)
+    await db_session.flush()
     db_session.add(TripTraveler(trip_id=t.id, user_id=u.id, role="owner"))
-    db_session.add(Segment(
-        trip_id=t.id, owner_user_id=u.id, type="flight", status="confirmed",
-        start_at=datetime.combine(long_ago, datetime.min.time()).replace(tzinfo=UTC),
-        start_tz="UTC",
-        start_location={"iata": "JFK"}, end_location={"iata": "CDG"},
-        details={"flight_number": "AF1"},
-        parse_source="manual", parse_confidence=1.0,
-    ))
+    db_session.add(
+        Segment(
+            trip_id=t.id,
+            owner_user_id=u.id,
+            type="flight",
+            status="confirmed",
+            start_at=datetime.combine(long_ago, datetime.min.time()).replace(tzinfo=UTC),
+            start_tz="UTC",
+            start_location={"iata": "JFK"},
+            end_location={"iata": "CDG"},
+            details={"flight_number": "AF1"},
+            parse_source="manual",
+            parse_confidence=1.0,
+        )
+    )
     await db_session.commit()
 
     enq = AsyncMock()
@@ -1544,13 +1623,12 @@ _GROUND_GATE_KM = 500.0
 _WEATHER_FUTURE_DAYS = 14
 
 
-async def _enqueue_weather_refresh(
-    queue: Queue, lat: float, lon: float
-) -> None:
+async def _enqueue_weather_refresh(queue: Queue, lat: float, lon: float) -> None:
     """Fire-and-forget saq enqueue for refresh_weather. Dedupes via key."""
     await queue.enqueue(
         "refresh_weather",
-        lat=lat, lon=lon,
+        lat=lat,
+        lon=lon,
         unique=True,
         key=f"weather:{lat:.2f}:{lon:.2f}",
     )
@@ -1566,20 +1644,26 @@ async def map_per_trip(
 ) -> HTMLResponse:
     """Per-trip map view: numbered markers + flight arcs + weather popups."""
     # Auth: traveler-scoped
-    is_traveler = (await db.execute(
-        select(TripTraveler.user_id).where(
-            TripTraveler.trip_id == trip_id, TripTraveler.user_id == user.id
+    is_traveler = (
+        await db.execute(
+            select(TripTraveler.user_id).where(
+                TripTraveler.trip_id == trip_id, TripTraveler.user_id == user.id
+            )
         )
-    )).scalar_one_or_none() is not None
+    ).scalar_one_or_none() is not None
     if not is_traveler:
         raise HTTPException(status_code=404, detail="Not found")
 
-    trip = (await db.execute(
-        select(Trip).where(Trip.id == trip_id)
-    )).scalar_one()
-    segments = (await db.execute(
-        select(Segment).where(Segment.trip_id == trip_id).order_by(Segment.start_at)
-    )).scalars().all()
+    trip = (await db.execute(select(Trip).where(Trip.id == trip_id))).scalar_one()
+    segments = (
+        (
+            await db.execute(
+                select(Segment).where(Segment.trip_id == trip_id).order_by(Segment.start_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     # Resolve points + build markers in chronological order
     markers: list[dict[str, Any]] = []
@@ -1597,24 +1681,30 @@ async def map_per_trip(
             if pt is None:
                 continue
             seq += 1
-            markers.append({
-                "lat": pt[0], "lon": pt[1],
-                "seq": seq,
-                "label": f"{seg.type} · {seg.provider or ''}".strip(" ·"),
-                "start_at": seg.start_at.isoformat() if seg.start_at else None,
-            })
+            markers.append(
+                {
+                    "lat": pt[0],
+                    "lon": pt[1],
+                    "seq": seq,
+                    "label": f"{seg.type} · {seg.provider or ''}".strip(" ·"),
+                    "start_at": seg.start_at.isoformat() if seg.start_at else None,
+                }
+            )
 
         if seg.type == "flight" and s_pt and e_pt:
-            arcs.append({
-                "points": great_circle_points(s_pt, e_pt, n_points=50),
-                "color": "#3b82f6",
-            })
+            arcs.append(
+                {
+                    "points": great_circle_points(s_pt, e_pt, n_points=50),
+                    "color": "#3b82f6",
+                }
+            )
 
         # Ground polyline gate: same-day OR <500km between consecutive non-flight segs
         if seg.type != "flight" and s_pt:
             if last_non_flight_pt is not None and last_non_flight_start_at is not None:
                 same_day = (
-                    seg.start_at and last_non_flight_start_at
+                    seg.start_at
+                    and last_non_flight_start_at
                     and seg.start_at.date() == last_non_flight_start_at.date()
                 )
                 close_enough = haversine_km(last_non_flight_pt, s_pt) < _GROUND_GATE_KM
@@ -1634,8 +1724,10 @@ async def map_per_trip(
         for seg in segments:
             if seg.start_at and seg.start_at.date() < today - timedelta(days=1):
                 continue
-            for pt, loc in ((resolve_point(seg.start_location), seg.start_location),
-                            (resolve_point(seg.end_location), seg.end_location)):
+            for pt, loc in (
+                (resolve_point(seg.start_location), seg.start_location),
+                (resolve_point(seg.end_location), seg.end_location),
+            ):
                 if pt is None:
                     continue
                 # Round to 2 decimals matching cache key
@@ -1645,6 +1737,7 @@ async def map_per_trip(
                     unique_pts[key] = city
 
         from redis.asyncio import Redis as AsyncRedis
+
         redis = AsyncRedis.from_url(settings.redis_url)
         try:
             queue = Queue.from_url(settings.redis_url)
@@ -1653,26 +1746,38 @@ async def map_per_trip(
                     cached: Forecast | None = await get_cached(lat, lon, redis)
                     if cached is None:
                         await _enqueue_weather_refresh(queue, lat, lon)
-                        weather_cards.append({
-                            "lat": lat, "lon": lon, "city": city, "loading": True,
-                        })
+                        weather_cards.append(
+                            {
+                                "lat": lat,
+                                "lon": lon,
+                                "city": city,
+                                "loading": True,
+                            }
+                        )
                     else:
-                        weather_cards.append({
-                            "lat": lat, "lon": lon, "city": city, "loading": False,
-                            "days": [d.model_dump(mode="json") for d in cached.days],
-                            "timezone": cached.timezone,
-                        })
+                        weather_cards.append(
+                            {
+                                "lat": lat,
+                                "lon": lon,
+                                "city": city,
+                                "loading": False,
+                                "days": [d.model_dump(mode="json") for d in cached.days],
+                                "timezone": cached.timezone,
+                            }
+                        )
             finally:
                 await queue.disconnect()
         finally:
             await redis.aclose()
 
-    payload = json.dumps({
-        "markers": markers,
-        "arcs": arcs,
-        "ground": ground_polyline_points,
-        "weather": weather_cards,
-    })
+    payload = json.dumps(
+        {
+            "markers": markers,
+            "arcs": arcs,
+            "ground": ground_polyline_points,
+            "weather": weather_cards,
+        }
+    )
     return templates.TemplateResponse(
         request,
         "map/trip.html",
