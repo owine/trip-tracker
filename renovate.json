@@ -6,7 +6,6 @@
     "github>owine/renovate-config:python",
     "github>owine/renovate-config:docker"
   ],
-  "ignorePaths": ["tests/fixtures/**", "src/trip_tracker/static/data/**"],
   "packageRules": [
     {
       "description": "Hatchling build tooling",
