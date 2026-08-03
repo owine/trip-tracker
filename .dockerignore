@@ -1,12 +1,15 @@
 .git
-.venv
-__pycache__
-*.pyc
-.pytest_cache
-.mypy_cache
-.ruff_cache
+# Docker matches patterns against the full path from the context root, so a bare
+# `__pycache__` only matches ./__pycache__. These need `**/` to catch nested ones.
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
 .coverage
 htmlcov
+dist/
 .tailwind
 .env
 .env.local
