@@ -57,7 +57,7 @@ services:
     networks: [internal]
 
   trip-tracker-search:
-    image: getmeili/meilisearch:v1.50
+    image: getmeili/meilisearch:v1.51
     restart: unless-stopped
     environment:
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
