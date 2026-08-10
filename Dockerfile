@@ -59,6 +59,26 @@ WORKDIR /app
 # at startup because root owns the volume's mount point by default.
 RUN mkdir -p /data/documents && chown -R app:app /data
 
+# Drop the base image's system pip. Nothing at runtime needs it — the app runs
+# entirely from /app/.venv (built by uv in the builder stage), and alembic/saq/
+# uvicorn are venv console scripts. Removing it also removes pip's vendored
+# tree and, with it, `pip/_vendor/bom.cdx.json`: pip 26.2.1 (new in
+# python:3.14.7-slim) added that CycloneDX manifest declaring vendored
+# msgpack 1.1.2 + setuptools 70.3.0, which syft records into the `sbom: true`
+# build attestation and Trivy then reports as 2 HIGH findings — failing
+# trivy-scan on every main push. The vendored code shipped in 3.14.6-slim too,
+# just undeclared, so this is a reporting fix, not a new exposure. Deleting the
+# package beats a .trivyignore (advisory IDs go stale when pip re-vendors) or a
+# skip-files path (hardcodes python3.14, breaks silently at 3.15). The
+# interpreter itself is untouched; use `python -m ensurepip` or `uv pip` if you
+# ever need pip inside a running container. Placed before the COPY layers so it
+# stays cached when only source changes. purelib is resolved at build time
+# rather than hardcoded so this survives future minor-version bumps.
+RUN SITE="$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')" \
+    && rm -rf "$SITE"/pip "$SITE"/pip-*.dist-info \
+       /usr/local/bin/pip /usr/local/bin/pip3 /usr/local/bin/pip3.* \
+    && if python -c "import pip" 2>/dev/null; then echo "pip still importable" >&2; exit 1; fi
+
 # Pull in just the venv + source from builder.
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/src /app/src
