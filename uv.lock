@@ -45,7 +45,7 @@ wheels = [
 
 [[package]]
 name = "anthropic"
-version = "0.121.0"
+version = "0.122.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -57,9 +57,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/0f/ca/3cb2c20ee729736fbd4546d5d8b67e818288529fe70cb7a80dbf80aef70b/anthropic-0.121.0.tar.gz", hash = "sha256:e79d6e08ab3376602fc9a70d4d5ea3540817c76cf7e16658bed790834e1833d6", size = 1013292, upload-time = "2026-08-07T17:11:07.241Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fa/23/9987d70b74e3481d5bc5d2021d3e10fd5f60c1f7b54088ea86506d9b7f2b/anthropic-0.122.0.tar.gz", hash = "sha256:ffec56ae96657c8d19fa575ec96f140f380c353a07ab7d61b92eb18ee6536601", size = 1021535, upload-time = "2026-08-13T18:36:00.307Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fa/91/b3d41643f1f639927e8c5fb02c3bd8bffe6f1f29e219b3bd4c61e267b15c/anthropic-0.121.0-py3-none-any.whl", hash = "sha256:6048713fa441e59e1cba8363171cd2a86273b25bd213e9c7ac70a523af88b011", size = 1035493, upload-time = "2026-08-07T17:11:08.508Z" },
+    { url = "https://files.pythonhosted.org/packages/26/5b/f5c87e71097a9f89f1b414d1ef7ae8439051fae57d5e4ee90946082982b8/anthropic-0.122.0-py3-none-any.whl", hash = "sha256:45ec906452ffae6b5f7f0c53d01f50bfb7e4ce878d7ae8e4309d13171e557e67", size = 1041853, upload-time = "2026-08-13T18:36:01.831Z" },
 ]
 
 [[package]]
@@ -1163,7 +1163,7 @@ wheels = [
 
 [[package]]
 name = "meilisearch-python-sdk"
-version = "7.4.1"
+version = "7.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiofiles" },
@@ -1171,9 +1171,9 @@ dependencies = [
     { name = "httpx2", extra = ["http2"] },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1b/67/b9654fcc2d78312c4b0dd0560d33a2348ad3b8a8f28ecb1e18c96446cc4b/meilisearch_python_sdk-7.4.1.tar.gz", hash = "sha256:71caeb3689ca26afad76e97c43f0bf7cd01f7a38318f1b2a86aa4fef692979e7", size = 243094, upload-time = "2026-07-30T00:11:19.592Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/f0/d6bdc61d03c5305a966693ddc42c3a15d9bf1847788039a281ded482e603/meilisearch_python_sdk-7.5.0.tar.gz", hash = "sha256:dcf16afd37a49a4e8a31ea9cb23fc66ca9eeda90e4406fd5020240a420f65983", size = 246323, upload-time = "2026-08-11T13:22:59.202Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/fb/0e699f9b2e3f70727e1d4b5413c4d47a87543b0037bce876f5074af4c07f/meilisearch_python_sdk-7.4.1-py3-none-any.whl", hash = "sha256:ec87566b9acbb6b086153ae5c34635d5e17868b4a4e828cb2c76dad6ff69cdaf", size = 80401, upload-time = "2026-07-30T00:11:18.413Z" },
+    { url = "https://files.pythonhosted.org/packages/20/18/3465e1bf857e000d8e2733aeadc75ac3eeaf1ffcdfa8a8a90db8852086b2/meilisearch_python_sdk-7.5.0-py3-none-any.whl", hash = "sha256:d02c8e0ab22943123b840b4e6e04907c3ffcabf3d493741bb0d769ec5b32015a", size = 80350, upload-time = "2026-08-11T13:22:58.029Z" },
 ]
 
 [[package]]
@@ -2121,7 +2121,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = "==1.19.1" },
-    { name = "anthropic", specifier = "==0.121.0" },
+    { name = "anthropic", specifier = "==0.122.0" },
     { name = "asyncpg", specifier = "==0.31.0" },
     { name = "authlib", specifier = "==1.7.2" },
     { name = "extruct", specifier = "==0.18.0" },
@@ -2130,7 +2130,7 @@ requires-dist = [
     { name = "itsdangerous", specifier = "==2.2.0" },
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "joserfc", specifier = "==1.7.4" },
-    { name = "meilisearch-python-sdk", specifier = "==7.4.1" },
+    { name = "meilisearch-python-sdk", specifier = "==7.5.0" },
     { name = "pdfplumber", specifier = "==0.11.10" },
     { name = "pydantic", specifier = "==2.13.4" },
     { name = "pydantic-settings", specifier = "==2.15.0" },
