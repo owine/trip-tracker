@@ -1,0 +1,54 @@
+# Trivy suppressions. Every entry MUST carry a `statement` (why) and an
+# `expired_at` (when it stops being suppressed) — an entry without an expiry
+# rots silently into a permanently unscanned CVE. After `expired_at` Trivy
+# reports the finding again and `trivy-scan` goes red, which is the point:
+# expiry forces a re-review rather than letting the suppression outlive its
+# justification.
+#
+# Referenced by BOTH trivy-action steps in .github/workflows/ci.yml (the
+# table step and the SARIF gate step) so the human-readable log reflects
+# exactly what the gate enforces.
+
+vulnerabilities:
+  # util-linux 2.41-5 in Debian 13 (trixie). Fixed upstream in
+  # 2.41.5-0+deb13u1, but the fix is unreachable from here: the Dockerfile
+  # pins python:3.14.7-slim by digest, and that tag still resolves to
+  # sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4
+  # — the exact digest already pinned. Docker Hub has not rebuilt the slim
+  # image against the patched Debian packages, so there is no newer base for
+  # Renovate to bump to and no digest bump that clears these.
+  #
+  # These are REAL, FIXED-UPSTREAM vulnerabilities, not false positives —
+  # unlike the pip-vendored-SBOM phantoms resolved in PR #189. They ship in
+  # the runtime image (util-linux, login, mount and their libraries) and are
+  # suppressed here as an accepted risk, not a dismissal.
+  #
+  # Blocked main CI since 2026-08-17. Suppressed 2026-08-25.
+  #
+  # ON EXPIRY: first re-check whether python:3.14.7-slim (or its successor)
+  # has been rebuilt — `docker buildx imagetools inspect python:3.14.7-slim`
+  # against the Dockerfile pin. If the digest moved, bump the base and DELETE
+  # this block rather than extending the date. Only extend if upstream is
+  # still stale, and prefer upgrading util-linux in the runtime stage if this
+  # has dragged on.
+  - id: CVE-2025-14104
+    statement: util-linux 2.41-5; fixed in 2.41.5-0+deb13u1, unavailable in the pinned python:3.14.7-slim base.
+    expired_at: 2026-09-24
+  - id: CVE-2026-13595
+    statement: util-linux 2.41-5; fixed in 2.41.5-0+deb13u1, unavailable in the pinned python:3.14.7-slim base.
+    expired_at: 2026-09-24
+  - id: CVE-2026-27456
+    statement: util-linux 2.41-5; fixed in 2.41.5-0+deb13u1, unavailable in the pinned python:3.14.7-slim base.
+    expired_at: 2026-09-24
+  - id: CVE-2026-53612
+    statement: util-linux 2.41-5; fixed in 2.41.5-0+deb13u1, unavailable in the pinned python:3.14.7-slim base.
+    expired_at: 2026-09-24
+  - id: CVE-2026-53613
+    statement: util-linux 2.41-5; fixed in 2.41.5-0+deb13u1, unavailable in the pinned python:3.14.7-slim base.
+    expired_at: 2026-09-24
+  - id: CVE-2026-53614
+    statement: util-linux 2.41-5; fixed in 2.41.5-0+deb13u1, unavailable in the pinned python:3.14.7-slim base.
+    expired_at: 2026-09-24
+  - id: CVE-2026-53615
+    statement: util-linux 2.41-5; fixed in 2.41.5-0+deb13u1, unavailable in the pinned python:3.14.7-slim base.
+    expired_at: 2026-09-24
