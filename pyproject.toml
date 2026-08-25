@@ -18,7 +18,7 @@ dependencies = [
     "itsdangerous==2.2.0",
     "structlog==26.1.0",
     "python-multipart==0.0.32",
-    "anthropic==0.122.0",
+    "anthropic==0.125.0",
     "redis==8.1.0",
     "extruct==0.18.0",
     "saq[hiredis]==0.26.4",
@@ -42,7 +42,7 @@ dev = [
     "djlint==1.44.2",
     "bandit[toml]==1.9.4",
     "pip-audit==2.10.1",
-    "icalendar==7.2.2",
+    "icalendar==7.3.0",
 ]
 
 [tool.uv]
