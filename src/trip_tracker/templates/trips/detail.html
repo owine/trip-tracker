@@ -191,7 +191,7 @@
       Spent so far: <strong>{{ home_currency }} {{ money(total_paid_home, home_currency) }}</strong>
       · Expected: {{ home_currency }} {{ money(total_expected_home, home_currency) }}
       {% if total_saved_home is not none and total_saved_home > 0 %}
-        · &#9992; Saved by points: ~{{ home_currency }} {{ money(total_saved_home, home_currency) }}
+        · ✈ Saved by points: ~{{ home_currency }} {{ money(total_saved_home, home_currency) }}
       {% endif %}
     </p>
     {% if by_category %}

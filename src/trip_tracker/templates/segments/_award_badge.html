@@ -1,7 +1,7 @@
 {# Award badge. Caller provides `award` (dict|None). #}
 {% if award %}
   <span class="ml-2 rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-900">
-    &#9992; {{ award.points_spent | k_format }} {{ award.program | program_short }}
+    ✈ {{ award.points_spent | k_format }} {{ award.program | program_short }}
     {% if award.cash_copay_minor and award.cash_copay_minor > 0 %}
       + {{ award.cash_copay_currency }}
       {{ money(award.cash_copay_minor, award.cash_copay_currency) }}
