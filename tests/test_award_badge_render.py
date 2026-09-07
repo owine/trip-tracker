@@ -96,7 +96,7 @@ async def test_badge_renders_for_award_segment(
     # Badge should contain "Chase UR" (program_short).
     assert "Chase UR" in r.text
     # Verify the airplane glyph is present.
-    assert "&#9992;" in r.text
+    assert "✈" in r.text
 
 
 @pytest.mark.asyncio
