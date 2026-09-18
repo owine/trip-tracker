@@ -12,19 +12,44 @@
 #
 # Currently empty by design. The list is deliberately not a parking lot: a
 # finding earns an entry only when the fix is genuinely unreachable from the
-# pinned base image. CVE-2026-14456 (openssl 3.5.6-1~deb13u2, fixed in
-# 3.5.7-1~deb13u2) is failing trivy-scan as of 2026-08-31 and is knowingly
-# NOT suppressed — Docker Hub has not yet rebuilt python:3.14.7-slim against
-# the patched package, and main stays red until it does rather than hiding a
-# real, fixed-upstream CVE behind an expiry date.
+# pinned base image.
+#
+# --- Current state (2026-09-18) -------------------------------------------
+#
+# `trivy-scan` is RED on main with 13 HIGH/CRITICAL findings, all knowingly
+# NOT suppressed. Every one is a base-image package with a published Debian
+# 13 fix that python:3.14.7-slim has not picked up yet:
+#
+#   perl-base     5.40.1-6          -> 5.40.1-6+deb13u1   (7: 3 CRIT, 4 HIGH)
+#   libpcre2-8-0  10.46-1~deb13u1   -> 10.46-1~deb13u2    (3 HIGH)
+#   libsqlite3-0  3.46.1-7+deb13u1  -> 3.46.1-7+deb13u2   (2 HIGH)
+#   gzip          1.13-1            -> 1.13-1+deb13u1     (1 HIGH)
+#
+# There is nothing to bump: the Dockerfile pin and the current upstream
+# `python:3.14.7-slim` tag are the same digest (cad9a2c, landed 2026-09-07
+# via PR #227), and no 3.14.8-slim exists. The runtime stage apt-installs
+# nothing, so these come from the base image alone — the only repo-side
+# "fix" would be an `apt-get upgrade` in the runtime stage, which is
+# deliberately not done (it defeats the reproducibility of a digest pin).
+#
+# Main stays red until Docker Hub rebuilds, rather than hiding real,
+# fixed-upstream CVEs behind an expiry date. When the digest moves, Renovate
+# opens the bump and this clears itself. Base rebuild cadence has recently
+# been ~2 weeks (2026-08-17, 08-31, 09-07).
+#
+# --- Resolved history ------------------------------------------------------
+#
+# CVE-2026-14456 (openssl 3.5.6-1~deb13u2 -> 3.5.7-1~deb13u2) was the red
+# blocker recorded here from 2026-08-31. Resolved by the cad9a2c rebuild
+# (PR #227): openssl no longer appears in the findings. It was never
+# suppressed — the wait-for-rebuild path worked as intended.
 #
 # The previous 7 util-linux entries (CVE-2025-14104, CVE-2026-13595,
 # CVE-2026-27456, CVE-2026-53612..53615) were removed on 2026-08-31: Docker
-# Hub rebuilt python:3.14.7-slim (digest moved to
-# sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5,
-# landed via PR #215) and the rebuild ships util-linux 2.41.5-0+deb13u1 — the
-# fixed version. The suppressions no longer suppressed anything. This is the
-# "if the digest moved, bump the base and DELETE this block" path, taken
-# ahead of the 2026-09-24 expiry.
+# Hub rebuilt python:3.14.7-slim (digest moved to cae66f2, landed via
+# PR #215) and the rebuild shipped util-linux 2.41.5-0+deb13u1 — the fixed
+# version. The suppressions no longer suppressed anything. This is the "if
+# the digest moved, bump the base and DELETE this block" path, taken ahead
+# of the 2026-09-24 expiry.
 
 vulnerabilities: []
