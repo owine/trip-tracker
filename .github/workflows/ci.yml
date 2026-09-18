@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
@@ -38,7 +38,7 @@ jobs:
         run: uv run djlint src/trip_tracker/templates --check
 
   typecheck:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
@@ -48,7 +48,7 @@ jobs:
       - run: uv run mypy
 
   test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     services:
       postgres:
         image: postgres:18.6-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
@@ -68,20 +68,14 @@ jobs:
         with: { enable-cache: true }
       - run: uv python install 3.14
       - run: uv sync --all-groups --frozen
-      - name: Install postgres 18 client tools (PGDG)
+      - name: Put postgres server binaries on PATH
         run: |
-          # Ubuntu Noble's default repo ships postgresql-client 16, which can't
-          # pg_dump from the PG 18 service container. Pull 18 from PGDG.
-          sudo install -d /usr/share/postgresql-common/pgdg
-          sudo curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-            -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc
-          . /etc/os-release
-          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
-            | sudo tee /etc/apt/sources.list.d/pgdg.list
-          sudo apt-get update
-          # postgresql-18 (server) is required by pytest-postgresql, which
-          # spawns its own ephemeral cluster via pg_ctl/initdb for unit tests.
-          sudo apt-get install -y postgresql-client-18 postgresql-18
+          # ubuntu-26.04 ships PostgreSQL 18 from PGDG already, but Ubuntu keeps
+          # the server binaries (initdb/pg_ctl) off $PATH by convention.
+          # pytest-postgresql spawns its own ephemeral cluster and needs them.
+          echo "::notice::pg_config --bindir = $(pg_config --bindir)"
+          ls -l "$(pg_config --bindir)/initdb" "$(pg_config --bindir)/pg_ctl"
+          pg_config --bindir >> "$GITHUB_PATH"
       - name: Build Tailwind CSS (required for static mount)
         run: bash scripts/build-tailwind.sh
       - name: Run tests with coverage
@@ -92,7 +86,7 @@ jobs:
           fail_ci_if_error: false
 
   security-python:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
@@ -107,7 +101,7 @@ jobs:
         run: uv run pip-audit --skip-editable
 
   security-secrets:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with: { fetch-depth: 0 }
@@ -116,7 +110,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   security-semgrep:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     container: returntocorp/semgrep@sha256:34ab619bf1391a24bfda3f05debd0d8a6ce3093c2d5f9d39cfc00f83c1397823
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -146,7 +140,7 @@ jobs:
   #   - pull_request: build amd64 only (validation; arm64 caught post-merge)
   # Always runs so its outputs are available to docker-build's strategy.
   detect-changes:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       image: ${{ steps.filter.outputs.image }}
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -174,12 +168,12 @@ jobs:
         run: |
           # Hand-maintained: these `runner` values are inside a JSON string, so
           # Renovate never sees them (it only reads literal `runs-on:` labels).
-          # Update them together with the `runs-on: ubuntu-24.04` labels above
+          # Update them together with the `runs-on: ubuntu-26.04` labels above
           # whenever the runner image moves, or the two will drift apart.
           if [ "$EVENT_NAME" = "push" ]; then
-            echo 'matrix=[{"platform":"linux/amd64","runner":"ubuntu-24.04","arch":"amd64"},{"platform":"linux/arm64","runner":"ubuntu-24.04-arm","arch":"arm64"}]' >> "$GITHUB_OUTPUT"
+            echo 'matrix=[{"platform":"linux/amd64","runner":"ubuntu-26.04","arch":"amd64"},{"platform":"linux/arm64","runner":"ubuntu-26.04-arm","arch":"arm64"}]' >> "$GITHUB_OUTPUT"
           else
-            echo 'matrix=[{"platform":"linux/amd64","runner":"ubuntu-24.04","arch":"amd64"}]' >> "$GITHUB_OUTPUT"
+            echo 'matrix=[{"platform":"linux/amd64","runner":"ubuntu-26.04","arch":"amd64"}]' >> "$GITHUB_OUTPUT"
           fi
 
   # Per-arch native image builds.
@@ -271,13 +265,13 @@ jobs:
 
   # Stable-named aggregator so the branch ruleset can require a single
   # `docker-build` check regardless of the matrix dimensions (platform/runner/
-  # arch — `ubuntu-24.04` rotates when Renovate bumps runner images).
+  # arch — `ubuntu-26.04` rotates when Renovate bumps runner images).
   # Treats "skipped" as success: doc-only PRs intentionally skip the matrix via
   # detect-changes, and the aggregator must not block those merges.
   docker-build:
     needs: docker-build-matrix
     if: always()
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Verify matrix succeeded or was skipped
         env:
@@ -293,7 +287,7 @@ jobs:
   manifest-merge:
     if: github.event_name == 'push'
     needs: docker-build-matrix
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     outputs:
       digest: ${{ steps.digest.outputs.digest }}
     steps:
@@ -357,7 +351,7 @@ jobs:
   trivy-scan:
     if: github.event_name == 'push'
     needs: manifest-merge
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       # Needed only for .trivyignore.yaml — this job scans a published digest,
       # not the working tree, so without a checkout the ignore file would be
