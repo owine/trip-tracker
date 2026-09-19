@@ -166,10 +166,20 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
         run: |
-          # Hand-maintained: these `runner` values are inside a JSON string, so
-          # Renovate never sees them (it only reads literal `runs-on:` labels).
-          # Update them together with the `runs-on: ubuntu-26.04` labels above
-          # whenever the runner image moves, or the two will drift apart.
+          # The built-in github-actions manager still can't see these
+          # `runner` values: both echo lines build a quoted JSON string inside
+          # a `run:` step, not parsed YAML. They ARE tracked anyway — the
+          # shared renovate-config preset (owine/renovate-config#103) adds a
+          # customManager pattern for exactly this shape, capturing with the
+          # same shape as the built-in manager, so they land in the same PR as
+          # the literal `runs-on:` labels above. Do NOT hand-bump them.
+          #
+          # The tracking depends on the SHAPE: the regex matches
+          # `"runner":"<os>-<version>"` with the version's first character a
+          # digit and any suffix kept attached (`26.04-arm` is its own
+          # datasource version, not `26.04` decorated). Renaming the JSON key,
+          # building the string from variables, or reformatting it across
+          # lines un-tracks it silently — nothing errors anywhere.
           if [ "$EVENT_NAME" = "push" ]; then
             echo 'matrix=[{"platform":"linux/amd64","runner":"ubuntu-26.04","arch":"amd64"},{"platform":"linux/arm64","runner":"ubuntu-26.04-arm","arch":"arm64"}]' >> "$GITHUB_OUTPUT"
           else
