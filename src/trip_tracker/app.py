@@ -31,6 +31,7 @@ from trip_tracker.routes.settings import router as settings_router
 from trip_tracker.routes.trips import router as trips_router
 from trip_tracker.search.client import build_client, ensure_indexes_configured
 from trip_tracker.search.proxy import router as search_router
+from trip_tracker.sentry_setup import init_sentry
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     configure_logging(level=settings.log_level, format=settings.log_format)
+    init_sentry(settings, component="app")
 
     app = FastAPI(
         title="trip-tracker",

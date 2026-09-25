@@ -46,6 +46,10 @@ class WorkerSettings(BaseSettings):
     log_level: str = "INFO"
     log_format: str = "json"  # "json" | "console"
 
+    # Error reporting (GlitchTip, Sentry protocol). Unset/empty DSN → disabled.
+    sentry_dsn: SecretStr | None = None
+    sentry_environment: str = "production"
+
     # Phase 3 — parser pipeline (worker runs the parsers)
     anthropic_api_key: SecretStr
     redis_url: str
