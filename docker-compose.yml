@@ -17,6 +17,8 @@ services:
       ADMIN_GROUP: ${ADMIN_GROUP:-trip-tracker:admin}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-json}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       TZ: ${TZ:-UTC}
       REDIS_URL: ${REDIS_URL:-redis://trip-tracker-redis:6379/0}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
@@ -87,6 +89,8 @@ services:
       LLM_CONFIDENCE_FLOOR: ${LLM_CONFIDENCE_FLOOR:-0.7}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       LOG_FORMAT: ${LOG_FORMAT:-json}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       MEILI_URL: ${MEILI_URL:-http://trip-tracker-search:7700}
       MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
     volumes:

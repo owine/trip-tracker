@@ -18,6 +18,7 @@ from email.policy import default as email_policy_default
 from pathlib import Path
 from typing import Any
 
+import sentry_sdk
 from redis.asyncio import Redis as AsyncRedis
 from saq import CronJob, Queue
 from sqlalchemy import delete, select
@@ -41,6 +42,7 @@ from trip_tracker.parsers.dispatch import dispatch_parse
 from trip_tracker.parsers.llm import LLMClient
 from trip_tracker.search.client import MeiliClientProtocol, build_client
 from trip_tracker.search.sync import enqueue_meili_sync, segment_to_doc, trip_to_doc
+from trip_tracker.sentry_setup import capture_once, init_sentry, message_id_hash
 from trip_tracker.weather.cache import set_cached
 from trip_tracker.weather.client import fetch_forecast
 
@@ -74,6 +76,11 @@ async def _enqueue_doc_extracts(settings: WorkerSettings, new_doc_ids: list[uuid
 async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
     """Parse one RawEmail and persist the result.
 
+    Runs in its own Sentry isolation scope tagged with the RawEmail id, and
+    reports a crash from inside that scope so the event carries the parse
+    context. saq then logs the same exception from its parent task;
+    `capture_once` makes `scrub_event` drop that duplicate.
+
     Idempotent: re-running on an already-parsed RawEmail is a no-op.
     saq passes kwargs through `ctx` for the function's keyword args (note
     the kw-only signature). Engine and settings live in the worker context.
@@ -82,6 +89,18 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
     raw.headers['X-Tt-Hint']. Pass it through to dispatch_parse here so the
     LLM picks up the user's correction. v0.3.0 ships without this propagation.
     """
+    with sentry_sdk.isolation_scope() as scope:
+        scope.set_tag("raw_email_id", raw_email_id)
+        try:
+            await _parse_raw_email(ctx, raw_email_id=raw_email_id, scope=scope)
+        except Exception as exc:
+            capture_once(exc)
+            raise
+
+
+async def _parse_raw_email(
+    ctx: dict[str, Any], *, raw_email_id: str, scope: sentry_sdk.Scope
+) -> None:
     settings: WorkerSettings = ctx["settings"]
     # Use the engine populated by startup() in production. Tests may inject
     # their own engine via ctx["engine"]. Either way, the engine is owned by
@@ -102,6 +121,7 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
                 raw.parse_status,
             )
             return
+        scope.set_tag("message_id_sha256", message_id_hash(raw.message_id))
 
         local_part = raw.to_address.split("@", 1)[0].lower()
         owner = (
@@ -148,9 +168,19 @@ async def parse_raw_email(ctx: dict[str, Any], *, raw_email_id: str) -> None:
                 ),
             )
 
+        scope.set_tag("parser", outcome.result.source)
+
         if not outcome.result.segments:
             raw.parse_status = "no_segments"
             await db.commit()
+            # The silent failure: a forwarded email that yields no trip.
+            scope.set_tag("budget_skipped", str(outcome.budget_skipped).lower())
+            scope.fingerprint = ["parse-failed", outcome.result.source]
+            logger.error(
+                "parse_failed: no segments raw_email_id=%s parser=%s",
+                raw_email_id,
+                outcome.result.source,
+            )
             # Phase 5: enqueue PDF extraction even when there are no segments —
             # an email can carry a boarding-pass PDF the parser doesn't recognise.
             await _enqueue_doc_extracts(settings, new_doc_ids)
@@ -353,6 +383,7 @@ async def startup(ctx: dict[str, Any]) -> None:
     """Build worker-process singletons. saq calls this once when the worker boots."""
     s = WorkerSettings()
     ctx["settings"] = s
+    init_sentry(s, component="worker")
     # Build one engine per worker process (not per task) so the connection
     # pool is reused across thousands of jobs. Disposed in shutdown().
     ctx["engine"] = create_async_engine(str(s.database_url))

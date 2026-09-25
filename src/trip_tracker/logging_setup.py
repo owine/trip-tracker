@@ -8,6 +8,8 @@ from typing import Any
 
 import structlog
 
+from trip_tracker.sentry_setup import structlog_processor
+
 
 def configure_logging(*, level: str = "INFO", format: str = "json") -> None:
     """Configure structlog + stdlib logging. Call once at app start."""
@@ -18,6 +20,8 @@ def configure_logging(*, level: str = "INFO", format: str = "json") -> None:
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         structlog.processors.StackInfoRenderer(),
+        # No-op unless Sentry is initialised; must precede format_exc_info.
+        structlog_processor,
         structlog.processors.format_exc_info,
     ]
 

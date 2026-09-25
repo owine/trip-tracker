@@ -380,6 +380,8 @@ boots with only the env vars it actually needs. App needs both columns set.
 | `MEILI_URL` | `http://trip-tracker-search:7700` | Override only for external Meilisearch |
 | `LOG_LEVEL` | `INFO` | `DEBUG`/`WARNING`/`ERROR` |
 | `LOG_FORMAT` | `json` | `console` for human-readable in dev |
+| `SENTRY_DSN` | (unset) | GlitchTip DSN, app + worker. Unset → error reporting off. See [`docs/observability.md`](docs/observability.md) |
+| `SENTRY_ENVIRONMENT` | `production` | `environment` on GlitchTip events |
 | `TZ` | `UTC` | Container timezone, e.g. `America/Chicago` |
 | `ADMIN_GROUP` | `trip-tracker:admin` | OIDC group claim that grants `/admin/*` access |
 | `SESSION_COOKIE_NAME` | `tt_session` | Don't change unless reverse-proxy needs it |
