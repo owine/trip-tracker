@@ -71,7 +71,7 @@ async def _persist_raw_email(
         .on_conflict_do_nothing(index_elements=["message_id"])
         .returning(RawEmail.id)
     )
-    result: CursorResult[tuple[()]] = await db.execute(stmt)  # type: ignore[assignment]
+    result: CursorResult[uuid.UUID] = await db.execute(stmt)  # type: ignore[assignment]
     return result.scalar_one_or_none()
 
 

@@ -47,13 +47,13 @@ async def record_nonce(session: AsyncSession, *, ts_seconds: int, nonce: str) ->
         )
         .on_conflict_do_nothing(index_elements=["ts_seconds", "nonce"])
     )
-    result: CursorResult[tuple[()]] = await session.execute(stmt)  # type: ignore[assignment]
+    result: CursorResult[()] = await session.execute(stmt)  # type: ignore[assignment]
     return result.rowcount == 1
 
 
 async def prune_replay_cache(session: AsyncSession) -> int:
     """Delete rows past ``expires_at``. Returns rows deleted."""
-    result: CursorResult[tuple[()]] = await session.execute(  # type: ignore[assignment]
+    result: CursorResult[()] = await session.execute(  # type: ignore[assignment]
         delete(WebhookReplay).where(WebhookReplay.expires_at < text("now()"))
     )
     return result.rowcount or 0
