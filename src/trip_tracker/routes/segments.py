@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import Select, String, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -104,7 +104,7 @@ def _to_utc(local: datetime, tz: str) -> datetime:
 def _user_trips(
     db: AsyncSession,  # noqa: ARG001
     user_id: uuid.UUID,
-) -> Any:
+) -> Select[Trip]:
     return (
         select(Trip)
         .join(TripTraveler, TripTraveler.trip_id == Trip.id)
@@ -499,7 +499,7 @@ async def award_programs_autocomplete(
 ) -> list[str]:
     """Return up to 20 most recently used distinct award `program` values for the
     current user, ordered by recency. Used to populate the form datalist."""
-    program_expr = func.jsonb_extract_path_text(Segment.details, "award", "program")
+    program_expr = func.jsonb_extract_path_text(Segment.details, "award", "program", type_=String)
     result = await db.execute(
         select(program_expr)
         .where(Segment.owner_user_id == user.id)
