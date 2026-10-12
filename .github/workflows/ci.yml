@@ -111,7 +111,7 @@ jobs:
 
   security-semgrep:
     runs-on: ubuntu-26.04
-    container: returntocorp/semgrep@sha256:32e459968daabe7ab86968184a29109b9564aa00392401156f9788452b42786b
+    container: returntocorp/semgrep@sha256:93963d9295a366f59e4850127b1550400ee7b388f04fe144e4a1f6325d96e01b
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       # Two p/python supply-chain rules are excluded here — both protections
@@ -129,7 +129,7 @@ jobs:
           --sarif --output semgrep.sarif
         env:
           SEMGREP_RULES: p/owasp-top-ten p/python
-      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4.38.3
         if: always()
         with:
           sarif_file: semgrep.sarif
@@ -395,7 +395,7 @@ jobs:
           exit-code: "1"
           ignore-unfixed: true
           trivyignores: .trivyignore.yaml
-      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2  # v4.38.2
+      - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d  # v4.38.3
         if: always()
         with:
           sarif_file: trivy.sarif
