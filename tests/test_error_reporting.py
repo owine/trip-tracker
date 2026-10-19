@@ -114,7 +114,10 @@ def test_init_configures_errors_only(monkeypatch: pytest.MonkeyPatch) -> None:
         assert opts["release"] == "0123456789abcdef"
         assert opts["environment"] == "staging"
         assert opts["traces_sample_rate"] == 0
-        assert opts["send_default_pii"] is False
+        assert opts["send_default_pii"] is None
+        assert opts["data_collection"]["provided_by_user"] is False
+        assert opts["data_collection"]["user_info"] is False
+        assert opts["event_scrubber"] is not None
         assert opts["include_local_variables"] is False
         assert opts["max_request_body_size"] == "never"
         assert opts["auto_session_tracking"] is False  # GlitchTip has no sessions
