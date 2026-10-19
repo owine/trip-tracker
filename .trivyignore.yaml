@@ -10,33 +10,30 @@
 # exactly what the gate enforces. The file must exist even when empty —
 # trivy-action hard-fails with "cannot find ignorefile" if it is absent.
 #
-# Currently empty by design. The list is deliberately not a parking lot: a
-# finding earns an entry only when the fix is genuinely unreachable from the
-# pinned base image.
+# The list is deliberately not a parking lot: a finding earns an entry only
+# when the fix is genuinely unreachable from the pinned base image, or when it
+# is a verified false positive.
 #
-# --- Current state (2026-09-18) -------------------------------------------
+# --- Current state (2026-10-19) -------------------------------------------
 #
-# `trivy-scan` is RED on main with 13 HIGH/CRITICAL findings, all knowingly
-# NOT suppressed. Every one is a base-image package with a published Debian
-# 13 fix that python:3.14.7-slim has not picked up yet:
+# One secrets entry: a FALSE POSITIVE. Trivy's `gcp-service-account` rule
+# matches the literal text `"type": "service_account"` (the first field of a
+# GCP key file). anthropic 1.14.0+ (bumped 1.13 -> 1.15 in #314) uses that
+# exact string in docstrings for the Managed Agents `execution_identity`
+# default, e.g. "sending `{"type": "service_account"}` stores the default".
+# The image had 11 CRITICAL hits (.py plus the compiled .pyc copies), with no
+# key material in any of them.
 #
-#   perl-base     5.40.1-6          -> 5.40.1-6+deb13u1   (7: 3 CRIT, 4 HIGH)
-#   libpcre2-8-0  10.46-1~deb13u1   -> 10.46-1~deb13u2    (3 HIGH)
-#   libsqlite3-0  3.46.1-7+deb13u1  -> 3.46.1-7+deb13u2   (2 HIGH)
-#   gzip          1.13-1            -> 1.13-1+deb13u1     (1 HIGH)
+# The entry is scoped to the anthropic package only, so a real key anywhere
+# else in the image (app code, another dependency) still fails the gate.
+# `python*` keeps it valid across interpreter bumps. Image-scan paths need
+# the leading `/`: an unanchored `app/...` matches in `trivy fs` but NOT in
+# `trivy image`. Both behaviours were checked on Trivy 0.70.0 (the
+# trivy-action version) against the real SDK file plus a planted key.
 #
-# There is nothing to bump: the Dockerfile pin and the current upstream
-# `python:3.14.7-slim` tag are the same digest (cad9a2c, landed 2026-09-07
-# via PR #227), and no 3.14.8-slim exists. The runtime stage apt-installs
-# nothing, so these come from the base image alone — the only repo-side
-# "fix" would be an `apt-get upgrade` in the runtime stage, which is
-# deliberately not done (it defeats the reproducibility of a digest pin).
-#
-# Main stays red until Docker Hub rebuilds, rather than hiding real,
-# fixed-upstream CVEs behind an expiry date. When the digest moves, Renovate
-# opens the bump and this clears itself. Base rebuild cadence has recently
-# been ~2 weeks (2026-08-17, 08-31, 09-07).
-#
+# The 13 Debian CVEs recorded here since 2026-09-18 are gone: the
+# python:3.15.0-slim base (#316, Debian 13.7) ships the fixed packages.
+
 # --- Resolved history ------------------------------------------------------
 #
 # CVE-2026-14456 (openssl 3.5.6-1~deb13u2 -> 3.5.7-1~deb13u2) was the red
@@ -53,3 +50,14 @@
 # of the 2026-09-24 expiry.
 
 vulnerabilities: []
+
+secrets:
+  - id: gcp-service-account
+    paths:
+      - "/app/.venv/lib/python*/site-packages/anthropic/**"
+    statement: >-
+      False positive. anthropic SDK docstrings contain the literal
+      `{"type": "service_account"}` (Managed Agents execution_identity
+      default). No credential material. Scoped to the anthropic package so
+      real keys elsewhere in the image still fail the scan.
+    expired_at: 2027-01-19
