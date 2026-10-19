@@ -58,7 +58,7 @@ packages = ["src/trip_tracker"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"  # ruff doesn't yet recognize py314; py313 is a safe subset
+target-version = "py313"  # deliberate: a py314+ target makes ruff format unparenthesize except groups (PEP 758)
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -83,7 +83,6 @@ ignore = ["S101"]           # allow `assert` in tests
 "src/trip_tracker/search/client.py" = ["SIM105", "S110"]
 
 [tool.mypy]
-python_version = "3.14"
 strict = true
 warn_unreachable = true
 warn_redundant_casts = true
