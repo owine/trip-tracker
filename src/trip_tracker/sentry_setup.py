@@ -84,7 +84,9 @@ def init_sentry(settings: WorkerSettings, *, component: str) -> bool:
         environment=settings.sentry_environment,
         # Errors only: GlitchTip's performance support is limited.
         traces_sample_rate=0,
-        send_default_pii=False,
+        # PII stays off by leaving both send_default_pii (deprecated in 2.72)
+        # and data_collection unset; passing data_collection would disable
+        # the default EventScrubber and opt into collecting most categories.
         include_local_variables=False,
         # Ingest endpoints receive whole emails as the request body.
         max_request_body_size="never",

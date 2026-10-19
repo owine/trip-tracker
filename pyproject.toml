@@ -18,14 +18,14 @@ dependencies = [
     "itsdangerous==2.2.0",
     "structlog==26.1.0",
     "python-multipart==0.0.32",
-    "anthropic==1.13.0",
+    "anthropic==1.15.0",
     "redis==8.1.0",
     "extruct==0.18.0",
     "saq[hiredis]==0.26.4",
     "meilisearch-python-sdk==8.0.1",
     "pdfplumber==0.11.10",
     "joserfc==1.7.5",
-    "sentry-sdk==2.71.0",
+    "sentry-sdk==2.72.0",
 ]
 
 [dependency-groups]
