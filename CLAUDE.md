@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Self-hosted itinerary aggregator (TripIt replacement). Forwarded confirmation
 emails → parsed segments → day-by-day trip timeline, with search, documents,
-ICS feed, maps/weather, and expenses. Python 3.14, FastAPI, server-rendered
+ICS feed, maps/weather, and expenses. Python 3.15, FastAPI, server-rendered
 Jinja + Tailwind (no JS framework — Leaflet on map pages is the only exception).
 
 `README.md` is the operator-facing manual (env var reference, Authelia OIDC
@@ -142,11 +142,13 @@ handlers that must distinguish 410 from 404 — never use it on mutations).
   `numeric(20,10)` frozen `fx_rate`. Use `expenses/currencies.py::minor_digits`
   — JPY has 0 decimals, BHD has 3. FX is frozen at entry; if Frankfurter is
   unreachable with a cold cache the save 503s rather than storing a wrong rate.
-- **`requires-python` is an exact pin** (`==3.14.6`) and must track the
-  Dockerfile's `python:3.14.6-slim` base. Drift makes uv build the venv against
+- **`requires-python` is an exact pin** (`==X.Y.Z`) and must match the
+  Dockerfile's `python:X.Y.Z-slim` base. Drift makes uv build the venv against
   a uv-managed interpreter under `/root`, unreachable by the non-root runtime
   user — a past production outage. `UV_PYTHON_PREFERENCE=only-system` in the
-  builder stage now fails the build loudly instead.
+  builder stage now fails the build loudly instead. Renovate's `python runtime`
+  group (shared `owine/renovate-config:python` preset) bumps both in one PR;
+  never push to that branch, or Renovate stops updating it.
 - **Dependency pinning:** every runtime and dev dep is patch-pinned in
   `pyproject.toml`; GitHub Actions and Docker bases are SHA-pinned. Renovate
   (via the shared `owine/renovate-config` presets) does the bumping. Don't
@@ -155,8 +157,12 @@ handlers that must distinguish 410 from 404 — never use it on mutations).
   the hook version is always the `pyproject.toml` pin. Don't reintroduce mirror
   repos with their own `rev:` — that skew used to break CI after clean hook runs.
   Requires `uv sync` first.
-- **Ruff targets `py313`, mypy targets `3.14`.** Ruff doesn't yet know py314;
-  py313 is the safe subset. mypy is `strict = true` with `warn_unreachable`.
+- **Ruff targets `py313`; mypy has no `python_version`.** mypy infers it from
+  the interpreter `uv run` provides, i.e. the exact `requires-python` pin, so
+  Renovate's python-runtime bumps carry it along. Don't re-add it. Ruff's target
+  is pinned on purpose: a py314+ target makes `ruff format` strip the parens
+  from `except (A, B):` (PEP 758), so moving it is a separate decision. mypy is
+  `strict = true` with `warn_unreachable`.
 - **`filterwarnings = ["error"]`** — a new library DeprecationWarning fails the
   suite until explicitly ignored.
 - **`tests/conftest.py` is shared infrastructure.** Autouse fixtures set every
