@@ -91,15 +91,16 @@ USER app
 EXPOSE 8000
 
 # Build-time identification. Placed AFTER all heavy COPY layers so a changing
-# GIT_SHA / VERSION only invalidates this tiny ENV layer, not the venv or
-# source layers above. Defaults let local builds work without needing args.
-# VERSION is `github.ref_name` from CI: a semver tag like "v0.8.1" on tagged
-# releases, or the branch name (e.g. "main") on branch pushes. Empty on local
-# dev builds → Python falls back to trip_tracker.__version__ from pyproject.
-ARG GIT_SHA=unknown
-ARG VERSION=
+# GIT_SHA / BUILD_DATE only invalidates this tiny ENV layer, not the venv or
+# source layers above. Empty defaults let local builds work without args
+# (Python reports "unknown"). There is deliberately no release VERSION: a
+# GitHub Release retags a digest CI already built from main (release.yml), so
+# the image can't know its release name at build time. SHA + build date are
+# true under every tag the digest is ever given.
+ARG GIT_SHA=
+ARG BUILD_DATE=
 ENV TRIP_TRACKER_GIT_SHA=$GIT_SHA
-ENV TRIP_TRACKER_VERSION=$VERSION
+ENV TRIP_TRACKER_BUILD_DATE=$BUILD_DATE
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD python -c "import httpx; r = httpx.get('http://127.0.0.1:8000/healthz', timeout=3); raise SystemExit(0 if r.status_code == 200 else 1)"

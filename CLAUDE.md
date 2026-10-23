@@ -13,12 +13,16 @@ Jinja + Tailwind (no JS framework — Leaflet on map pages is the only exception
 setup, ForwardEmail wiring, per-phase feature docs). Read it before changing
 anything deploy-adjacent.
 
-Versioning is not what `git tag` suggests: the package version is `0.8.1` and
-Phase 9 shipped on `main` without a version bump. The `v0.9.0` tag is **not** an
-ancestor of `main` — it marks an abandoned line of work, and Phase 9 was
-re-landed on `main` separately. `pyproject.toml`'s `version` and `main`'s HEAD
-are authoritative; don't reason from tags. The README status block states the
-same caveat for operators — if this story changes, update both.
+Releases are `vX.Y.Z` GitHub Releases (fresh start at `v1.0.0`; the old
+`v0.x` tags/releases were deleted). Publishing one runs `release.yml`, which
+**retags** the image CI already built, signed and scanned for that commit on
+`main` (`:sha-<long>`) as `X.Y.Z`/`X.Y`/`X`/`latest` — it never rebuilds, and
+`X.Y`/`X`/`latest` only move forward. Pushes to `main` publish `:main` and
+`:sha-<long>` only. Because a release is a retag, nothing inside the image
+knows its release number: the footer and `/healthz` report commit SHA + build
+date (`build_info.py`), and `pyproject.toml`'s `version` is a `0.0.0`
+packaging placeholder — never bump it. The README status block says the same
+for operators; if this story changes, update both.
 
 ## Commands
 
@@ -123,8 +127,8 @@ code changes needed**.
 Routers in `routes/` are plain FastAPI returning `HTMLResponse` from Jinja
 templates. Each route module builds its own `Jinja2Templates` and must call
 `templating.register_globals(templates)` so shared filters/globals (`money`,
-`k_format`, `category_labels`, `app_version`) exist. Auth is cookie-session
-(`itsdangerous`) established via Authelia OIDC; the guards live in
+`k_format`, `category_labels`, `git_sha_short`, `build_day`) exist. Auth is
+cookie-session (`itsdangerous`) established via Authelia OIDC; the guards live in
 `auth/deps.py` — `require_user`, `require_admin`, `require_traveler`
 (404s on soft-merged trips) and `require_traveler_including_merged` (read-only
 handlers that must distinguish 410 from 404 — never use it on mutations).
@@ -179,6 +183,13 @@ gate `docker-build`. PRs build amd64 only with `push=false` and skip entirely
 for doc-only changes (paths-filter); pushes to main build both arches, merge a
 multi-arch manifest, cosign-sign it, and Trivy-scan the published digest.
 GHCR package is **private** — pulls need auth.
+
+`.github/workflows/release.yml` (on `release: published`): strict `vX.Y.Z`
+tag, tagged commit must be on `main`, waits ≤45 min for that commit's `main`
+CI run to succeed, then copies the `:sha-<long>` digest (walking back ≤50
+commits to the nearest built one) to the semver tags + `latest`, verifies all
+tags resolve to that digest, and verifies ci.yml's cosign signature on it.
+Keep ci.yml's `type=sha,format=long` tag in sync with that lookup.
 
 Two semgrep `p/python` supply-chain rules are `--exclude-rule`'d because the
 protections they check for live in the Renovate preset, not this repo. Don't

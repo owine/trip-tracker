@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from trip_tracker import __version__
+from trip_tracker import build_info
 from trip_tracker.auth.routes import router as auth_router
 from trip_tracker.config import Settings
 from trip_tracker.db import dispose_db, init_db
@@ -59,7 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="trip-tracker",
-        version=__version__,
+        version=build_info.GIT_SHA_SHORT,
         lifespan=lifespan,
         docs_url=None,  # no public Swagger
         redoc_url=None,

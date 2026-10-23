@@ -4,13 +4,16 @@ Self-hosted itinerary aggregator. Forwarded confirmation emails (flights, hotels
 rentals, trains, transfers, activities) → unified day-by-day timeline.
 
 > **Status:** Phase 9 — parse-time duplicate detection, `/inbox` triage, and
-> trip consolidation (merge with a 7-day undo). The package version stays
-> `0.8.1`; no `0.9.0` release was cut on `main`.
+> trip consolidation (merge with a 7-day undo).
 > See [`docs/superpowers/specs/2026-04-26-trip-tracker-design.md`](docs/superpowers/specs/2026-04-26-trip-tracker-design.md) for the full spec.
 >
-> The `v0.9.0` git tag is **not** an ancestor of `main` — it marks the end of a
-> line of work that was abandoned, and Phase 9 was re-landed on `main` instead.
-> Build from `main`, not from that tag.
+> **Releases** are `vX.Y.Z` GitHub Releases, starting fresh at `v1.0.0` (the
+> old `v0.x` tags and releases were removed; `vN.M` phase names in this README
+> are historical, not image tags). Each release retags the image already built
+> and signed from `main` — no rebuild — as `ghcr.io/owine/trip-tracker:X.Y.Z`,
+> `:X.Y`, `:X` and `:latest`. `:main` and `:sha-<commit>` track every push to
+> `main`. The page footer and `/healthz` show the commit SHA and build date,
+> not a release number; `pyproject.toml`'s `version` is a placeholder.
 
 ## Quick start (local dev)
 
@@ -374,7 +377,7 @@ boots with only the env vars it actually needs. App needs both columns set.
 
 | Env var | Default | Notes |
 |---|---|---|
-| `TRIP_TRACKER_IMAGE` | `ghcr.io/REPLACE_OWNER/trip-tracker:latest` | Pin to a specific tag for stability |
+| `TRIP_TRACKER_IMAGE` | `ghcr.io/REPLACE_OWNER/trip-tracker:latest` | `latest` = newest release. Pin `:X.Y.Z` (or `:X` to take minor/patch releases) for stability; `:main` follows unreleased `main` |
 | `TRIP_HOST` | `trips.example.com` | Used in Traefik routing rule |
 | `REDIS_URL` | `redis://trip-tracker-redis:6379/0` | Override only for external Redis |
 | `MEILI_URL` | `http://trip-tracker-search:7700` | Override only for external Meilisearch |
