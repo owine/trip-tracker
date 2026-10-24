@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.templating import Jinja2Templates
 
 import trip_tracker
+from trip_tracker import templating
 from trip_tracker.templating import register_globals
 
 TEMPLATES_DIR = Path(trip_tracker.__file__).parent / "templates"
@@ -40,3 +42,19 @@ def test_footer_local_dev_build() -> None:
     assert "dev" in footer
     assert "<a " not in footer
     assert "built" not in footer
+
+
+def test_register_globals_wires_build_info(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The render tests above override globals; this pins the wiring itself.
+    # Sentinels (not build_info's live values) so test_build_info's module
+    # reloads can't make this order-dependent.
+    for name in ("GIT_SHA", "GIT_SHA_SHORT", "BUILD_DATE", "BUILD_DAY"):
+        monkeypatch.setattr(templating, name, f"sentinel-{name}")
+    templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+    templating.register_globals(templates)
+    g = templates.env.globals
+    assert g["git_sha"] == "sentinel-GIT_SHA"
+    assert g["git_sha_short"] == "sentinel-GIT_SHA_SHORT"
+    assert g["build_date"] == "sentinel-BUILD_DATE"
+    assert g["build_day"] == "sentinel-BUILD_DAY"
+    assert "app_version" not in g

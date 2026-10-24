@@ -41,8 +41,14 @@ jobs:
       TAG: ${{ github.event.release.tag_name }}
     steps:
       - id: version
-        name: Require a strict vX.Y.Z tag
+        name: Require a strict vX.Y.Z tag on a non-prerelease
+        env:
+          PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
+          if [ "$PRERELEASE" = true ]; then
+            echo "::error::$TAG is marked pre-release; only full releases get image tags (and may move latest)."
+            exit 1
+          fi
           re='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
           if ! [[ "$TAG" =~ $re ]]; then
             echo "::error::Tag '$TAG' is not vX.Y.Z (no pre-release/build suffix, no leading zeros); nothing published."
@@ -56,9 +62,15 @@ jobs:
 
       - id: commit
         name: Require the tagged commit to be on main
+        env:
+          EVENT_SHA: ${{ github.sha }}  # the tag's commit when the release was published
         run: |
           # refs/tags/ peels annotated tags to their commit.
           sha=$(gh api "repos/$REPO/commits/refs/tags/$TAG" --jq .sha)
+          if [ "$sha" != "$EVENT_SHA" ]; then
+            echo "::error::$TAG now points at $sha but was $EVENT_SHA when the release was published; refusing a moved tag."
+            exit 1
+          fi
           status=$(gh api "repos/$REPO/compare/$sha...main" --jq .status)
           case "$status" in
             identical|ahead) echo "::notice::$TAG -> $sha (main is $status)" ;;
@@ -102,12 +114,15 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     # Serialise the read-tags/compare/push critical section so two releases
-    # can't race each other and move a floating tag backwards.
+    # can't race each other and move a floating tag backwards. GitHub keeps
+    # only ONE pending job per group: if three releases queue at once, the
+    # middle one is cancelled — re-run it (retag is idempotent).
     concurrency:
       group: release-retag
       cancel-in-progress: false
     permissions:
       contents: read   # walk main's history via the commits API
+      actions: read    # re-check CI on the source commit
       packages: write  # read the private package; push the release tags
     env:
       GH_TOKEN: ${{ github.token }}
@@ -150,6 +165,23 @@ jobs:
           echo "::error::No $IMAGE:sha-<commit> image within 50 commits of $SHA"
           exit 1
 
+      # Bind the digest to a scanned build. A CI re-run on the source commit
+      # re-pushes `:sha-<long>` with a NEW digest (build date/provenance differ)
+      # minutes before its Trivy scan finishes; cosign alone can't tell. The
+      # digest was resolved above, so if a re-run pushed it, that run is still
+      # in progress (or failed) now — fail closed. Also covers a walked-back
+      # ancestor, whose CI the gate job never checked.
+      - name: Re-check CI on the source commit after resolving its digest
+        env:
+          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          run=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$SOURCE_COMMIT&event=push&branch=main&per_page=1" \
+            --jq '.workflow_runs[0] // empty | "\(.status)/\(.conclusion) \(.html_url)"')
+          case "$run" in
+            completed/success\ *) echo "::notice::CI on $SOURCE_COMMIT: $run" ;;
+            *) echo "::error::CI on source commit $SOURCE_COMMIT is not completed/success (${run:-no run}); re-run once it is"; exit 1 ;;
+          esac
+
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
 
       # Before moving any tag: the digest must carry ci.yml's keyless signature
@@ -165,7 +197,9 @@ jobs:
             "$IMAGE@$DIGEST" > /dev/null
 
       - id: tags
-        name: Compute release tags (X.Y, X and latest only move forward)
+        name: Compute release tags (X.Y.Z immutable; X.Y, X, latest forward-only)
+        env:
+          DIGEST: ${{ steps.source.outputs.digest }}
         run: |
           # Registry v2 tags/list; GHCR pages at 100 by default and returns a
           # relative `Link: <...>; rel="next"` header for the next page.
@@ -187,6 +221,16 @@ jobs:
           if [ -n "$url" ]; then
             echo "::error::GHCR tag listing did not finish within 50 pages"
             exit 1
+          fi
+
+          # X.Y.Z is immutable: re-running this release is fine (same digest),
+          # but never repoint a published version at different content.
+          if grep -qxF "$VERSION" "$all"; then
+            existing=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest.Digest}}' | jq -er .)
+            if [ "$existing" != "$DIGEST" ]; then
+              echo "::error::$IMAGE:$VERSION already exists as $existing (this run resolved $DIGEST); refusing to overwrite a published version."
+              exit 1
+            fi
           fi
 
           semver=$(grep -E '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' "$all" || true)
@@ -219,7 +263,10 @@ jobs:
           # A single source is copied as-is, so the digest is unchanged.
           docker buildx imagetools create "${args[@]}" "$IMAGE@$DIGEST"
 
+      # Runs even if the retag step failed part-way, so the summary shows
+      # which aliases were written. Re-running the release reconciles them.
       - name: Verify every release tag resolves to the source digest
+        if: ${{ !cancelled() && steps.tags.outcome == 'success' }}
         env:
           DIGEST: ${{ steps.source.outputs.digest }}
           TAGS: ${{ steps.tags.outputs.tags }}
@@ -231,11 +278,13 @@ jobs:
             echo "| tag | digest |"
             echo "|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
+          bad=0
           for t in $TAGS; do
-            got=$(docker buildx imagetools inspect "$IMAGE:$t" --format '{{json .Manifest.Digest}}' | jq -er .)
+            got=$(docker buildx imagetools inspect "$IMAGE:$t" --format '{{json .Manifest.Digest}}' 2>/dev/null | jq -er . || echo missing)
             echo "| \`$t\` | \`$got\` |" >> "$GITHUB_STEP_SUMMARY"
             if [ "$got" != "$DIGEST" ]; then
               echo "::error::$IMAGE:$t resolves to $got, expected $DIGEST"
-              exit 1
+              bad=1
             fi
           done
+          exit "$bad"
