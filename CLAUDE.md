@@ -21,8 +21,12 @@ Releases are `vX.Y.Z` GitHub Releases (fresh start at `v1.0.0`; the old
 `:sha-<long>` only. Because a release is a retag, nothing inside the image
 knows its release number: the footer and `/healthz` report commit SHA + build
 date (`build_info.py`), and `pyproject.toml`'s `version` is a `0.0.0`
-packaging placeholder — never bump it. The README status block says the same
-for operators; if this story changes, update both.
+packaging placeholder — never bump it. release-drafter keeps one draft
+release current from merged PR titles (shared config in
+`owine/renovate-config`); cut a release by publishing that draft by hand —
+a release published with `GITHUB_TOKEN` would not trigger `release.yml`. The
+README status block says the same for operators; if this story changes,
+update both.
 
 ## Commands
 
