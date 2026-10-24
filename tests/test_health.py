@@ -17,9 +17,11 @@ async def test_healthz_ok() -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok"
-    assert "version" in body
-    assert body["version"]  # never empty
-    # git_sha is "unknown" outside a CI-built image, but the key must be present
-    # so deploy-side health probes can rely on it for verification.
+    # git_sha / build_date are "unknown" outside a CI-built image, but the keys
+    # must be present so deploy-side health probes can rely on them.
     assert "git_sha" in body
     assert "git_sha_short" in body
+    assert body["build_date"]  # never empty
+    # No release version: a release retags an existing digest, so the image
+    # can't know which release name(s) it is being pulled under.
+    assert "version" not in body

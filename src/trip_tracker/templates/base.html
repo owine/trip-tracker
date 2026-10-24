@@ -30,7 +30,6 @@
       {% include "_search_palette.html" %}
     {% endif %}
     <footer class="mx-auto mt-12 max-w-2xl px-4 py-4 text-center text-xs text-zinc-400 dark:text-zinc-600">
-      {{ app_version }} ·
       {% if git_sha != "unknown" %}
         <a href="https://github.com/owine/trip-tracker/commit/{{ git_sha }}"
            class="hover:underline"
@@ -38,6 +37,9 @@
            rel="noopener">{{ git_sha_short }}</a>
       {% else %}
         {{ git_sha_short }}
+      {% endif %}
+      {% if build_date != "unknown" %}
+        · built <time datetime="{{ build_date }}" title="{{ build_date }}">{{ build_day }}</time>
       {% endif %}
     </footer>
     <script defer

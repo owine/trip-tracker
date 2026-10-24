@@ -238,14 +238,14 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          # GIT_SHA bakes the commit identifier into the image's final ENV layer
-          # so /healthz and the page footer can report which commit is running.
-          # VERSION is github.ref_name: a semver tag like "v0.8.1" on tagged
-          # releases, or the branch name (e.g. "main") on branch pushes — same
-          # source the org.opencontainers.image.version label uses.
+          # GIT_SHA + BUILD_DATE bake into the image's final ENV layer so
+          # /healthz and the page footer report which commit is running and
+          # when it was built. No release version: release.yml retags this
+          # digest later without rebuilding, so it can't be known here.
+          # BUILD_DATE reuses metadata-action's org.opencontainers.image.created.
           build-args: |
             GIT_SHA=${{ github.sha }}
-            VERSION=${{ github.ref_name }}
+            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
           # push=true on main, push=false on PRs (validation only).
           # push-by-digest is only meaningful when actually pushing; harmless otherwise.
           outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=${{ github.event_name == 'push' }}
@@ -319,14 +319,17 @@ jobs:
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
         with:
           images: ghcr.io/${{ github.repository }}
-          # Tag-less release model: every push to main produces a fresh image.
-          # `:latest` and `:main` both float to current main HEAD; `:sha-<long>`
-          # is the immutable per-commit pin for rollback.
-          # `org.opencontainers.image.version` label auto-populates from the
-          # matched tag pattern — currently "main" (branch name fallback), but
-          # will become the semver value once we cut tagged releases again.
+          # Versioned release model: every push to main builds, signs and scans
+          # an image tagged `:main` (floats to main HEAD) and `:sha-<long>`
+          # (immutable per-commit pin). `:latest` and the semver tags
+          # (`X.Y.Z`, `X.Y`, `X`) are NOT set here — publishing a `vX.Y.Z`
+          # GitHub Release runs release.yml, which looks up `:sha-<long>` and
+          # retags that exact digest (no rebuild), so the released image is
+          # the one this job signed and trivy-scan scanned. Keep the sha tag
+          # format in sync with release.yml's lookup.
+          # The per-arch images' `org.opencontainers.image.version` label (set
+          # in docker-build-matrix) stays "main": a retag can't rewrite config.
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
             type=sha,format=long
 
@@ -339,10 +342,13 @@ jobs:
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
 
+      # Resolve via this commit's own sha tag — never a floating tag. `:main`
+      # can be moved by a newer push between create and inspect, which would
+      # send cosign and Trivy to the wrong digest.
       - id: digest
         name: Resolve merged manifest list digest
         run: |
-          digest=$(docker buildx imagetools inspect "ghcr.io/${{ github.repository }}:latest" --format '{{json .Manifest.Digest}}' | jq -r .)
+          digest=$(docker buildx imagetools inspect "ghcr.io/${{ github.repository }}:sha-${{ github.sha }}" --format '{{json .Manifest.Digest}}' | jq -r .)
           echo "digest=${digest}" >> "$GITHUB_OUTPUT"
 
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
