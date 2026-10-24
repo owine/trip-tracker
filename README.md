@@ -14,6 +14,8 @@ rentals, trains, transfers, activities) → unified day-by-day timeline.
 > `:X.Y`, `:X` and `:latest`. `:main` and `:sha-<commit>` track every push to
 > `main`. The page footer and `/healthz` show the commit SHA and build date,
 > not a release number; `pyproject.toml`'s `version` is a placeholder.
+> To release, publish the draft that release-drafter keeps up to date on the
+> Releases page.
 
 ## Quick start (local dev)
 
