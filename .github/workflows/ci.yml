@@ -7,12 +7,6 @@ on:
 
 permissions:
   contents: read
-  security-events: write
-  pull-requests: read      # gitleaks/semgrep enumerate PR commits
-  actions: read            # semgrep reads workflow-runs API
-  packages: write          # docker-build/manifest-merge push to GHCR (main push only)
-  id-token: write          # cosign keyless signing (main push only)
-  attestations: write      # buildx provenance/sbom attestations (main push only)
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -102,6 +96,9 @@ jobs:
 
   security-secrets:
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      pull-requests: read  # gitleaks lists PR commits
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with: { fetch-depth: 0 }
@@ -111,6 +108,10 @@ jobs:
 
   security-semgrep:
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      actions: read            # upload-sarif reads the workflow run
+      security-events: write   # upload-sarif
     container: returntocorp/semgrep@sha256:451b3d875c00dac7ed5db5293e584a07de11449a409c10b3c2d2652f429630b6
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -141,6 +142,9 @@ jobs:
   # Always runs so its outputs are available to docker-build's strategy.
   detect-changes:
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      pull-requests: read  # paths-filter uses the PR files API
     outputs:
       image: ${{ steps.filter.outputs.image }}
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -213,6 +217,9 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write  # push-by-digest to GHCR (provenance/SBOM ride along in the registry)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
@@ -298,6 +305,9 @@ jobs:
     if: github.event_name == 'push'
     needs: docker-build-matrix
     runs-on: ubuntu-26.04
+    permissions:
+      packages: write  # push manifest list + cosign signature
+      id-token: write  # cosign keyless (Fulcio OIDC)
     outputs:
       digest: ${{ steps.digest.outputs.digest }}
     steps:
@@ -368,6 +378,10 @@ jobs:
     if: github.event_name == 'push'
     needs: manifest-merge
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: read          # pull the private GHCR image
+      security-events: write  # upload-sarif
     steps:
       # Needed only for .trivyignore.yaml — this job scans a published digest,
       # not the working tree, so without a checkout the ignore file would be
