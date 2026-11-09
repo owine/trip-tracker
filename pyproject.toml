@@ -13,7 +13,7 @@ dependencies = [
     "jinja2==3.1.6",
     "pydantic==2.14.2",
     "pydantic-settings==2.16.2",
-    "sqlalchemy[asyncio]==2.1.6",
+    "sqlalchemy[asyncio]==2.1.8",
     "asyncpg==0.32.0",
     "alembic==1.20.1",
     "authlib==1.9.5",
@@ -37,7 +37,7 @@ dev = [
     "pytest-asyncio==1.4.1",
     "pytest-cov==7.1.0",
     "pytest-postgresql==9.1.1",
-    "psycopg[binary]==3.3.6",          # used by pytest-postgresql
+    "psycopg[binary]==3.3.8",          # used by pytest-postgresql
     "respx==0.23.1",                   # mock httpx
     "ruff==0.17.3",
     "mypy==2.4.1",
