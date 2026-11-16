@@ -37,7 +37,7 @@ dev = [
     "pytest-asyncio==1.4.1.post1",
     "pytest-cov==7.1.0",
     "pytest-postgresql==9.1.1",
-    "psycopg[binary]==3.3.8",          # used by pytest-postgresql
+    "psycopg[binary]==3.3.9",          # used by pytest-postgresql
     "respx==0.23.1",                   # mock httpx
     "ruff==0.17.4",
     "mypy==2.4.1",
