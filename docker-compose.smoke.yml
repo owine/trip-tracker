@@ -3,8 +3,6 @@
 # Uses !override to REPLACE the dev override's port mapping rather than merge.
 services:
   trip-tracker-db:
-    environment:
-      PGDATA: /var/lib/postgresql/data
     ports: !override
       - "5433:5432"
   trip-tracker-redis:

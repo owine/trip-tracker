@@ -408,6 +408,42 @@ needs DB/Redis/LLM/Meili/log/documents env vars. App-only fields
 environment. See the trimmed `trip-tracker-worker` block in
 `docker-compose.yml`.
 
+### Postgres major upgrades
+
+A new Postgres major cannot read the previous major's data directory, so
+bumping the `postgres:` image major (e.g. 18 → 19) needs a data migration.
+Mount the volume at `/var/lib/postgresql`, not `/var/lib/postgresql/data`.
+Since 18 the official images keep data in `/var/lib/postgresql/<major>/docker`
+and refuse to start with a mount at the old path.
+
+Dump and restore is the simplest route at this app's size:
+
+```bash
+docker compose stop trip-tracker-app trip-tracker-worker
+docker compose exec -T trip-tracker-db pg_dump -U trip -d trip -Fc > trip.dump
+docker compose stop trip-tracker-db
+# Bump the image and point the DB at a NEW, empty volume mounted at
+# /var/lib/postgresql. Keep the old volume until you've verified, for rollback.
+docker compose up -d --wait trip-tracker-db
+docker compose exec -T trip-tracker-db pg_restore -U trip -d trip --exit-on-error < trip.dump
+docker compose up -d
+```
+
+Notes:
+
+- Restore recomputes the generated `segments.search_text` tsvector, because
+  `pg_dump` doesn't export generated values.
+- On PostgreSQL 19, take the dump with 19's `pg_dump` if the old server ever
+  had `standard_conforming_strings = off`. The default is `on`, so this rarely
+  matters.
+- If you use `pg_upgrade` instead (for example the `pgautoupgrade` image),
+  check `SELECT datlocprovider FROM pg_database WHERE datname = 'trip';`.
+  `c` (libc, the image default) needs nothing more. For ICU or builtin,
+  PostgreSQL 19 changes full-text character classification, so run
+  `UPDATE segments SET provider = provider;` then
+  `REINDEX INDEX ix_segments_search_text;`.
+- Meilisearch needs no step; it's derived from Postgres.
+
 ### Authelia OIDC client
 
 The app is a confidential OIDC client with PKCE S256. It reads claims directly
