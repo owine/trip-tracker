@@ -38,14 +38,18 @@ services:
     networks: [proxy, internal]
 
   trip-tracker-db:
-    image: postgres:18.6-alpine
+    image: postgres:19.0-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: trip
       POSTGRES_DB: trip
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
-      - trip-tracker-pg:/var/lib/postgresql/data
+      # 18+ images keep data in /var/lib/postgresql/<major>/docker and refuse to
+      # start with a mount at the old .../data path. Mount the parent so a major
+      # upgrade can pg_upgrade --link across sibling dirs (README: "Postgres
+      # major upgrades").
+      - trip-tracker-pg:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U trip -d trip"]
       interval: 10s

@@ -408,6 +408,60 @@ needs DB/Redis/LLM/Meili/log/documents env vars. App-only fields
 environment. See the trimmed `trip-tracker-worker` block in
 `docker-compose.yml`.
 
+### Postgres major upgrades
+
+A new Postgres major cannot read the previous major's data directory, so
+bumping the `postgres:` image major (e.g. 18 → 19) needs a data migration.
+Mount the volume at `/var/lib/postgresql`, not `/var/lib/postgresql/data`.
+Since 18 the official images keep data in `/var/lib/postgresql/<major>/docker`
+and refuse to start with a mount at the old path.
+
+If you bump the image without migrating, the new container exits with
+`Error: in 18+, these Docker images are configured to store database data
+in a format ...` and names the old data it found. That's the expected
+fail-safe: it never initializes an empty cluster over your data. Run the
+migration below.
+
+Dump and restore is the simplest route at this app's size:
+
+```bash
+# 0. PostgreSQL 19 can't load a pre-19 dump taken with
+#    standard_conforming_strings = off. Check it; the default is `on`.
+docker compose exec trip-tracker-db psql -U trip -d trip -Atc 'show standard_conforming_strings'
+#    If it prints `off`, replace step 1's pg_dump with 19's client, run inside
+#    the old DB container's network namespace (no compose network name needed):
+#      docker run --rm --network container:$(docker compose ps -q trip-tracker-db) \
+#        -e PGPASSWORD="$DB_PASSWORD" postgres:19.0-alpine \
+#        pg_dump -h localhost -U trip -d trip -Fc > trip.dump
+
+# 1. Dump with the app stopped.
+docker compose stop trip-tracker-app trip-tracker-worker
+docker compose exec -T trip-tracker-db pg_dump -U trip -d trip -Fc > trip.dump \
+  && docker compose stop trip-tracker-db
+
+# 2. Bump the image and point the DB at a NEW, empty volume mounted at
+#    /var/lib/postgresql. Keep the old volume until you've verified, for rollback.
+
+# 3. Restore in one transaction: any error rolls back everything, and the app
+#    only starts if the restore succeeded.
+docker compose up -d --wait trip-tracker-db
+docker compose exec -T trip-tracker-db \
+  pg_restore -U trip -d trip --single-transaction --exit-on-error < trip.dump \
+  && docker compose up -d
+```
+
+Notes:
+
+- Restore recomputes the generated `segments.search_text` tsvector, because
+  `pg_dump` doesn't export generated values.
+- If you use `pg_upgrade` instead (for example the `pgautoupgrade` image),
+  check `SELECT datlocprovider FROM pg_database WHERE datname = 'trip';`.
+  `c` (libc, the image default) needs nothing more. For ICU or builtin,
+  PostgreSQL 19 changes full-text character classification, so run
+  `UPDATE segments SET provider = provider;` then
+  `REINDEX INDEX ix_segments_search_text;`.
+- Meilisearch needs no step; it's derived from Postgres.
+
 ### Authelia OIDC client
 
 The app is a confidential OIDC client with PKCE S256. It reads claims directly

@@ -63,8 +63,12 @@ container runs `alembic upgrade head` before serving (see Dockerfile `CMD`).
 ### Running tests requires a real Postgres *server* on PATH
 
 `tests/conftest.py` uses `pytest-postgresql`, which spawns its own ephemeral
-cluster via `initdb`/`pg_ctl`. Client tools alone aren't enough — CI installs
-`postgresql-18` (server) from PGDG for exactly this reason. Tests marked
+cluster via `initdb`/`pg_ctl` — whichever is first on PATH is the version
+under test. Client tools alone aren't enough — CI installs
+`postgresql-$PG_MAJOR` (server, currently 19) from PGDG for exactly this
+reason; there is deliberately no Postgres service container. Keep `PG_MAJOR`
+in `ci.yml` in step with the `postgres:` image major in `docker-compose.yml`.
+Locally, put the matching `postgresql@N` first on PATH. Tests marked
 `live_llm` are excluded by default via `addopts`.
 
 ## Architecture
