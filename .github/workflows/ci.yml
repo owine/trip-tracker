@@ -57,8 +57,10 @@ jobs:
       - run: uv sync --all-groups --frozen
       - name: Install postgres server binaries and put them on PATH
         run: |
-          # ubuntu-26.04 ships PostgreSQL 18 from PGDG; install $PG_MAJOR next to
-          # it. Binaries only: suppress the auto-created/started "main" cluster.
+          # ubuntu-26.04 preinstalls PostgreSQL 18 but has no PGDG apt source, so
+          # the apt.postgresql.org.sh branch below runs on the stock image (kept
+          # conditional in case a future image adds PGDG). Install $PG_MAJOR next
+          # to 18, binaries only: suppress the auto-created/started "main" cluster.
           # Ubuntu keeps initdb/pg_ctl off $PATH, and with two majors installed
           # pg_config --bindir is ambiguous, so use the versioned dir explicitly.
           sudo sed -i 's/^#\?\s*create_main_cluster\s*=.*/create_main_cluster = false/' \
