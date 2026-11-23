@@ -21,8 +21,8 @@ dependencies = [
     "itsdangerous==2.2.0",
     "structlog==26.1.0",
     "python-multipart==0.0.34",
-    "anthropic==2.8.0",
-    "redis==8.1.0",
+    "anthropic==2.11.0",
+    "redis==8.2.0",
     "extruct==0.18.0",
     "saq[hiredis]==0.26.5",
     "meilisearch-python-sdk==8.1.6",
@@ -46,7 +46,7 @@ dev = [
     "djlint==1.54.0",
     "bandit[toml]==1.9.4",
     "pip-audit==2.10.1",
-    "icalendar==7.3.0",
+    "icalendar==7.3.2",
 ]
 
 [tool.uv]
