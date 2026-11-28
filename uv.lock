@@ -36,7 +36,7 @@ wheels = [
 
 [[package]]
 name = "anthropic"
-version = "2.12.0"
+version = "2.14.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -48,9 +48,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/26/05/fdf767b3da8fc8e2d78eef15c98a5ead03be2753b4e9cfcda58f0995f0b0/anthropic-2.12.0.tar.gz", hash = "sha256:571e6d250bcd6bbaf5fd5f3c764b8e11af9901ad2e44b025f8e773c6cc7a7173", size = 2025823, upload-time = "2026-11-20T15:57:03.541Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/ca/714857a41e333b9292b1db0d642d46256d27b3efe4697df642286ca23ad9/anthropic-2.14.0.tar.gz", hash = "sha256:afb02f4df8efba429ff769bbfd71340d8b244b41ba42c073a45cc307702549fe", size = 2090851, upload-time = "2026-11-24T21:01:49.208Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4a/a6/1cde7a75d1be07582f6b3c2dd12ddba9d1fb278f5b9685f30dbf6b39dc2c/anthropic-2.12.0-py3-none-any.whl", hash = "sha256:8631e3880ee18b0f87ce61d5d08e67804200463cf27c4182024715e232c99ba6", size = 2556840, upload-time = "2026-11-20T15:57:01.546Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/27/8bbae12e619497c651f35fec779389ab04e6b7b92b022f94390ec82be973/anthropic-2.14.0-py3-none-any.whl", hash = "sha256:5cf986851f61c0858ac88c6f7c28490369a68ff4a89c309849605b764da0664d", size = 2726387, upload-time = "2026-11-24T21:01:46.861Z" },
 ]
 
 [[package]]
@@ -1354,16 +1354,16 @@ wheels = [
 
 [[package]]
 name = "pdfplumber"
-version = "0.11.10"
+version = "0.11.11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pdfminer-six" },
     { name = "pillow" },
     { name = "pypdfium2" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/05/56/6f450312ba05a27d7713b73857c1a25100dbda04fbc1331b13fb227a607d/pdfplumber-0.11.10.tar.gz", hash = "sha256:b95b2d28c66efb0a794a83b88c6c6aea5987532a445d20a1cbcfa657022e6e57", size = 102892, upload-time = "2026-06-15T03:31:31.035Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/22/6673c563900b0c69d48d4e7f57db296900375b3c2de776e7527a8fae3735/pdfplumber-0.11.11.tar.gz", hash = "sha256:e38eb7d3a4c822f93067cf6694dcec655f032619f4bd41ebd34f882fc22fbb87", size = 104005, upload-time = "2026-11-21T02:22:00.645Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a2/9a/07d658e1e7fad860f1c541ab941348125dbdab773be3a0afaf32361866c7/pdfplumber-0.11.10-py3-none-any.whl", hash = "sha256:7741ea81bf165b474b153e6789d10d18e06b6ddcf3ec84289c3ef2fed6802580", size = 60047, upload-time = "2026-06-15T03:31:29.702Z" },
+    { url = "https://files.pythonhosted.org/packages/25/27/0b40cb094fe566445fef76ff5c458b63031baf17c246b40b116d472ce2ac/pdfplumber-0.11.11-py3-none-any.whl", hash = "sha256:81fd7c493ac69a0645a68da49320e4e2cace05d99824439accc7b5b3d955f3bc", size = 60456, upload-time = "2026-11-21T02:21:59.498Z" },
 ]
 
 [[package]]
@@ -1974,15 +1974,15 @@ hiredis = [
 
 [[package]]
 name = "sentry-sdk"
-version = "2.75.0"
+version = "2.76.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d2/95/121b20d75e738d249a0e26e6476a2acb178673e8228002748fc0cd85ce55/sentry_sdk-2.75.0.tar.gz", hash = "sha256:c38ac2d4b2435c11da821e173bb9d9088c98f41ae92f559ce0e424170a8e1a29", size = 1092308, upload-time = "2026-11-12T13:24:13.977Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/f5/0ea84f508b959db1b1349b446034b945ea8c0c7d5b8f463860acbdf77764/sentry_sdk-2.76.0.tar.gz", hash = "sha256:08115d93eab60ab6e49e2b867254aaa0babaca4dfa4d8fcf905c5d980e157041", size = 1092284, upload-time = "2026-11-23T08:47:59.093Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ec/ee/fbfe67386d64a7218013c8346b88b89d72f279b4ddb434ed5e94bea3d389/sentry_sdk-2.75.0-py3-none-any.whl", hash = "sha256:9a10e97de2cbd42ad7e4a6e02a0d5af19de9811eb02445077d41ba14c08e170c", size = 555165, upload-time = "2026-11-12T13:24:11.923Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/7f/ed55e3b972af18226da01dc5d0a11a966cb15d4bc0f5f74ab4e6ba0c105d/sentry_sdk-2.76.0-py3-none-any.whl", hash = "sha256:1cd9a82a1610ce8f472efd3841542e3b957a26d5ffe83ddf48215bfd07c3833f", size = 555933, upload-time = "2026-11-23T08:47:57.442Z" },
 ]
 
 [[package]]
@@ -2173,7 +2173,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = "==1.20.1" },
-    { name = "anthropic", specifier = "==2.12.0" },
+    { name = "anthropic", specifier = "==2.14.0" },
     { name = "asyncpg", specifier = "==0.32.0" },
     { name = "authlib", specifier = "==1.9.10" },
     { name = "extruct", specifier = "==0.18.0" },
@@ -2183,13 +2183,13 @@ requires-dist = [
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "joserfc", specifier = "==1.8.0" },
     { name = "meilisearch-python-sdk", specifier = "==8.1.6" },
-    { name = "pdfplumber", specifier = "==0.11.10" },
+    { name = "pdfplumber", specifier = "==0.11.11" },
     { name = "pydantic", specifier = "==2.14.4" },
     { name = "pydantic-settings", specifier = "==2.16.3" },
     { name = "python-multipart", specifier = "==0.0.34" },
     { name = "redis", specifier = "==8.2.0" },
     { name = "saq", extras = ["hiredis"], specifier = "==0.26.5" },
-    { name = "sentry-sdk", specifier = "==2.75.0" },
+    { name = "sentry-sdk", specifier = "==2.76.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = "==2.1.9" },
     { name = "structlog", specifier = "==26.1.0" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.54.0" },
